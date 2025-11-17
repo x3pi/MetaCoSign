@@ -1,0 +1,1 @@
+1. Thư mục chữa khoảng cách dẫn tới lỗi `../../../pkg/bls/bls.go:10:2: blst.go: malformed #cgo argument`
