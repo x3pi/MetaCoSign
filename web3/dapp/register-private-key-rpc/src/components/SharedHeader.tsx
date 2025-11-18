@@ -1,6 +1,6 @@
 // src/components/SharedHeader.tsx
 import React, { useState, useEffect, useRef } from "react";
-import { NavLink, Link } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useWallet } from "../contexts/WalletContext";
 import { chain991 } from "~/constants/customChain";
 import type { PageLink } from "../App";
@@ -51,7 +51,7 @@ interface SharedHeaderProps {
   pageLinks: PageLink[];
 }
 
-const SharedHeader: React.FC<SharedHeaderProps> = ({ pageLinks }) => {
+const SharedHeader: React.FC<SharedHeaderProps> = () => {
   const {
     connectedAccount,
     isConnecting,
@@ -95,17 +95,6 @@ const SharedHeader: React.FC<SharedHeaderProps> = ({ pageLinks }) => {
 
   // === 1. ĐỊNH NGHĨA STYLE M3 BẰNG TAILWIND ===
 
-  // Style chung cho các nút nav: bo tròn `rounded-full` (M3 Shape)
-  const navButtonBaseStyle =
-    "px-4 py-2 rounded-full text-sm font-medium transition-colors duration-150 ease-in-out";
-
-  // Style cho nút active: "Tonal Pill" (M3 Secondary Container)
-  const activeNavButtonStyle = "bg-teal-600/30 text-teal-300 font-semibold";
-
-  // Style cho nút inactive: Chỉ là text (M3 On-Surface-Variant)
-  const inactiveNavButtonStyle =
-    "text-neutral-400 hover:bg-white/10 hover:text-neutral-200";
-
   // Style chung cho các nút/pills bên phải: bo tròn `rounded-full`
   const walletPillBaseStyle =
     "px-4 py-2 rounded-full text-xs font-medium shadow-sm transition-all duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-opacity-75 flex items-center justify-center";
@@ -135,29 +124,8 @@ const SharedHeader: React.FC<SharedHeaderProps> = ({ pageLinks }) => {
               className="text-xl font-bold text-primary cursor-pointer hover:opacity-80 transition-opacity"
               onClick={() => setIsMobileMenuOpen(false)}
             >
-              Account
+              Account Manager
             </Link>
-          </div>
-
-          {/* Điều hướng Desktop (M3 Navigation Style) */}
-          <div className="hidden lg:flex lg:ml-6">
-            <div className="flex space-x-1">
-              {" "}
-              {/* Giảm khoảng cách */}
-              {pageLinks.map((link) => (
-                <NavLink
-                  key={link.path}
-                  to={link.path}
-                  className={({ isActive }) =>
-                    `${navButtonBaseStyle} ${
-                      isActive ? activeNavButtonStyle : inactiveNavButtonStyle
-                    }`
-                  }
-                >
-                  {link.label}
-                </NavLink>
-              ))}
-            </div>
           </div>
 
           {/* === 3. CỤM VÍ PHIÊN BẢN DESKTOP (M3 Shape: rounded-full) === */}
@@ -269,143 +237,6 @@ const SharedHeader: React.FC<SharedHeaderProps> = ({ pageLinks }) => {
           </div>
         </div>
       </div>
-
-      {/* === 4. MENU MOBILE (M3 Navigation Drawer Style) === */}
-      {isMobileMenuOpen && (
-        <>
-          {/* Overlay (Dark scrim) */}
-          <div
-            className="lg:hidden fixed inset-0 top-16 bg-black/40 z-30 transition-opacity duration-200"
-            onClick={() => setIsMobileMenuOpen(false)}
-          />
-
-          {/* Sidebar Drawer */}
-          <div
-            ref={menuRef}
-            className="lg:hidden fixed top-16 left-0 h-[calc(100vh-4rem)] w-64 bg-neutral-900 border-r border-neutral-800 shadow-2xl z-40 overflow-y-auto flex flex-col"
-            id="mobile-menu"
-          >
-            {/* Navigation Links Section */}
-            <div className="flex-1 px-3 py-6 space-y-1">
-              {/* Section Header */}
-              <div className="px-3 mb-4">
-                <h2 className="text-xs font-bold uppercase tracking-wider text-neutral-500">
-                  Navigation
-                </h2>
-              </div>
-
-              {/* Nav Links */}
-              {pageLinks.map((link) => (
-                <NavLink
-                  key={link.path}
-                  to={link.path}
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className={({ isActive }) => {
-                    const baseClass =
-                      "flex items-center px-4 py-3 rounded-lg text-sm font-medium transition-all duration-150 ease-in-out relative";
-                    if (isActive) {
-                      return `${baseClass} bg-teal-600/20 text-teal-300 border-l-4 border-teal-500`;
-                    }
-                    return `${baseClass} text-neutral-300 hover:bg-neutral-800/50`;
-                  }}
-                >
-                  <div className="w-1 h-1 rounded-full mr-3 bg-teal-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-                  {link.label}
-                </NavLink>
-              ))}
-            </div>
-
-            {/* Divider */}
-            <div className="border-t border-neutral-800" />
-
-            {/* Account Section */}
-            <div className="px-3 py-6 space-y-4">
-              {/* Section Header */}
-              <h2 className="px-3 text-xs font-bold uppercase tracking-wider text-neutral-500">
-                Account
-              </h2>
-
-              {/* Account Info Card */}
-              {connectedAccount ? (
-                <div className="mx-3 bg-linear-to-br from-teal-600/10 to-teal-600/5 rounded-xl p-4 border border-teal-600/20 space-y-3">
-                  <div>
-                    <p className="text-xs text-neutral-400 font-medium mb-1">
-                      Wallet Address
-                    </p>
-                    <p className="font-mono text-xs text-teal-300 break-all">
-                      {`${connectedAccount.substring(
-                        0,
-                        6
-                      )}...${connectedAccount.substring(
-                        connectedAccount.length - 4
-                      )}`}
-                    </p>
-                  </div>
-
-                  <div className="bg-neutral-800/30 rounded-lg px-3 py-2 flex items-center justify-between">
-                    <span className="text-xs text-neutral-400">Chain ID</span>
-                    <span
-                      className={`px-2 py-1 rounded-full text-[10px] font-semibold ${
-                        currentChainId === chain991.id
-                          ? "bg-green-500/20 text-green-300"
-                          : "bg-yellow-500/20 text-yellow-300"
-                      }`}
-                    >
-                      {currentChainId ?? "N/A"}
-                    </span>
-                  </div>
-                </div>
-              ) : (
-                <div className="mx-3 bg-neutral-800/30 rounded-xl p-4 border border-neutral-700/50 text-center py-6">
-                  <p className="text-sm text-neutral-400">
-                    No wallet connected
-                  </p>
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              <div className="mx-3 space-y-2">
-                {connectedAccount &&
-                  currentChainId !== null &&
-                  currentChainId !== chain991.id && (
-                    <button
-                      onClick={handleSwitchToChain991}
-                      className="w-full flex items-center justify-center px-4 py-3 rounded-lg bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 text-sm font-medium transition-all duration-150"
-                    >
-                      🔗 Switch to {chain991.name}
-                    </button>
-                  )}
-
-                {!connectedAccount ? (
-                  <button
-                    onClick={() => {
-                      connectWallet();
-                      setIsMobileMenuOpen(false);
-                    }}
-                    disabled={isConnecting}
-                    className="w-full flex items-center justify-center px-4 py-3 rounded-lg bg-teal-600 hover:bg-teal-700 disabled:bg-teal-600/50 text-white text-sm font-semibold transition-all duration-150 shadow-lg space-x-2"
-                  >
-                    {isConnecting && <LoadingSpinnerIcon />}
-                    <span>
-                      {isConnecting ? "Connecting..." : "Connect Wallet"}
-                    </span>
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => {
-                      disconnectWallet();
-                      setIsMobileMenuOpen(false);
-                    }}
-                    className="w-full flex items-center justify-center px-4 py-3 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-sm font-medium transition-all duration-150 border border-neutral-700"
-                  >
-                    🚪 Disconnect
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        </>
-      )}
 
       {/* === 5. THANH STATUS (M3 "Snackbar" Component) === */}
       {/* Giao diện này vốn đã rất M3, giữ nguyên */}

@@ -1,0 +1,40 @@
+syntax = "proto3";
+package proto;
+
+option go_package = "github.com/meta-node-blockchain/meta-node/pkg/proto";
+// BlsAccountData lưu thông tin account đã đăng ký BLS
+message BlsAccountData {
+    bytes address = 1;              // 20 bytes (Ethereum address)
+    bytes bls_public_key = 2;       // BLS public key bytes
+    int64 registered_at = 3;        // Unix timestamp
+    bytes register_tx_hash = 4;     // 32 bytes (transaction hash)
+    bool is_confirmed = 5;
+    int64 confirmed_at = 6;
+    bytes confirm_tx_hash = 7;      // 32 bytes
+}
+// PendingTransaction lưu giao dịch chưa confirm
+message PendingTransaction {
+    bytes address = 1;
+    bytes bls_public_key = 2;
+    string raw_transaction_hex = 3;  // Changed: Lưu hex string thay vì bytes
+    int64 created_at = 4;
+    uint64 nonce = 5;
+    uint64 original_gas_price = 6;
+}
+// NEW: Tách danh sách confirmed và unconfirmed
+message BlsAccountList {
+    message AccountEntry {
+        bytes address = 1;
+        bool is_confirmed = 2;
+    }
+    repeated AccountEntry accounts = 1;
+}
+
+// NEW: Batch transaction data
+message BatchBlsAccountData {
+    repeated BlsAccountData accounts = 1;
+}
+
+message BatchPendingTransaction {
+    repeated PendingTransaction transactions = 1;
+}

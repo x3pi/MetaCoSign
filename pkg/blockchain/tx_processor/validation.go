@@ -84,7 +84,6 @@ func VerifyTransaction(
 
 		switch {
 		case as.Nonce() == 0 && isSetBls:
-
 			if !tx.ValidEthSign() {
 				return transaction.InvalidSignSecp
 			}

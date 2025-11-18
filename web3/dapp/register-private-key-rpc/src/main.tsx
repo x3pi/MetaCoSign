@@ -10,9 +10,9 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ThemeProvider>
       <WalletProvider>
-        <BrowserRouter basename="/register-bls-key/">
-          <App />
-        </BrowserRouter>
+          <BrowserRouter basename="/register-bls-key/">
+            <App />
+          </BrowserRouter>
       </WalletProvider>
     </ThemeProvider>
   </StrictMode>

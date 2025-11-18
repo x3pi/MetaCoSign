@@ -810,6 +810,7 @@ func (t *Transaction) ValidEthSign() bool {
 	logger.Info(t.proto.Type)
 
 	ethTx := t.ToEthTransaction()
+	logger.Info("___ ethTx: ", ethTx)
 	if ethTx == nil {
 		return false
 	}

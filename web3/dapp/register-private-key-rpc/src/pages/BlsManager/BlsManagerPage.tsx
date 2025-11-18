@@ -3,6 +3,7 @@ import { useWallet } from "~/contexts/WalletContext";
 import { isAddress, encodeFunctionData, TransactionExecutionError } from "viem";
 import type { Hex } from "viem";
 import { chain991 } from "~/constants/customChain";
+import { contracts } from "~/constants/contracts";
 import {
   Card,
   CardContent,
@@ -17,43 +18,9 @@ import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Badge } from "~/components/ui/badge";
 import { Key, Loader2, CheckCircle2 } from "lucide-react";
 
-const AccountManagerAbi = [
-  {
-    inputs: [
-      {
-        internalType: "bytes",
-        name: "publicKey",
-        type: "bytes",
-      },
-    ],
-    name: "setBlsPublicKey",
-    outputs: [
-      {
-        internalType: "bool",
-        name: "",
-        type: "bool",
-      },
-    ],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [],
-    name: "blsPublicKey",
-    outputs: [
-      {
-        internalType: "bytes",
-        name: "",
-        type: "bytes",
-      },
-    ],
-    stateMutability: "view",
-    type: "function",
-  },
-] as const;
-
-const PREDEFINED_CONTRACT_ADDRESS: `0x${string}` =
-  "0x00000000000000000000000000000000D844bb55";
+// Sử dụng contract config từ constants
+const { abi: AccountManagerAbi, address: PREDEFINED_CONTRACT_ADDRESS } =
+  contracts.AccountManager;
 
 function BlsManagerPage() {
   const {
@@ -82,17 +49,6 @@ function BlsManagerPage() {
       setPageStatus("");
     }
   }, [walletError, walletStatus]);
-
-  useEffect(() => {
-    if (
-      !PREDEFINED_CONTRACT_ADDRESS ||
-      !isAddress(PREDEFINED_CONTRACT_ADDRESS)
-    ) {
-      setPageError(
-        "Configuration Error: Invalid predefined contract address. Please update the code."
-      );
-    }
-  }, []);
 
   const handleSetPublicKey = async () => {
     clearWalletError();
@@ -143,13 +99,6 @@ function BlsManagerPage() {
         address: finalConnectedAccount,
         blockTag: "pending",
       });
-
-      setPageStatus("Fetching gas price (legacy)...");
-      const gasPrice = await publicClient.getGasPrice();
-      if (gasPrice === undefined || gasPrice === null) {
-        throw new Error("Could not retrieve legacy gas price.");
-      }
-
       setPageStatus("Estimating gas limit...");
       const gasLimit = await publicClient.estimateGas({
         account: finalConnectedAccount,
@@ -165,10 +114,10 @@ function BlsManagerPage() {
         value: 0n,
         nonce: nonce,
         gas: gasLimit,
-        gasPrice: gasPrice,
+        gasPrice: 0n,
         chain: chain991,
       };
-
+      console.log("Transaction Request:", transactionRequest);
       setPageStatus("Requesting wallet to sign and send transaction...");
       const hash = await walletClient.sendTransaction(transactionRequest);
 
@@ -192,7 +141,6 @@ function BlsManagerPage() {
         JSON.stringify(err, Object.getOwnPropertyNames(err as object), 2)
       );
       let errorMessage = "Unknown error";
-
       if (err instanceof TransactionExecutionError) {
         errorMessage = `Transaction Execution Error: ${
           err.shortMessage || err.message
@@ -219,7 +167,7 @@ function BlsManagerPage() {
   };
 
   return (
-    <div className="min-h-screen bg-linear-to-b from-neutral-900 via-neutral-900 to-neutral-950 p-4 md:p-8">
+    <div className="min-h-screen bg-app p-4 md:p-8">
       <div className="max-w-2xl mx-auto space-y-6">
         <Card className="border-teal-500/20">
           <CardHeader className="space-y-3">

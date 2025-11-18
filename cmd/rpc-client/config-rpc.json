@@ -10,6 +10,6 @@
   "cert_file": "certificate.pem",
   "key_file": "private.key",
   "master_password": "your_strong_master_password_here",
-  "app_pepper": "your_unique_secret_pepper_here"
-
+  "app_pepper": "your_unique_secret_pepper_here",
+  "ldb_bls_wallet_path": "./db/bls_wallets"
 }
