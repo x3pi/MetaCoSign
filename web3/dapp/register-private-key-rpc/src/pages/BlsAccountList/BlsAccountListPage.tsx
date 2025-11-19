@@ -1,15 +1,23 @@
-import { useState, useEffect, useCallback } from "react";
-import { encodeFunctionData, type Hex, hexToString } from "viem";
+import { useState, useEffect, useCallback, useRef } from "react";
+import {
+  encodeFunctionData,
+  encodePacked,
+  type Hex,
+  hexToBytes,
+  hexToString,
+} from "viem";
 import { useWallet } from "~/contexts/WalletContext";
 import { PageContainer } from "~/components/PageContainer";
 import { PageCard } from "~/components/PageCard";
-import { Button } from "~/components/ui/button";
+import { AppButton } from "~/components/ui/app-button";
 import { Label } from "~/components/ui/label";
 import { Badge } from "~/components/ui/badge";
 import { Alert } from "~/components/ui/alert";
 import { contracts } from "~/constants/contracts";
 import { chain991 } from "~/constants/customChain";
 import LoadingSpinnerIcon from "~/components/LoadingSpinnerIcon";
+import Pagination from "~/components/pagination/Pagination";
+import TransactionListPage from "./components/TransactionListPage";
 
 interface BlsAccount {
   address: Uint8Array;
@@ -20,19 +28,24 @@ interface BlsAccount {
   registerTxHash: Uint8Array;
   confirmTxHash?: Uint8Array;
 }
-
+interface CachedAuth {
+  signature: Hex;
+  timestamp: bigint;
+  expiry: number;
+}
 const BLS_PUBLIC_KEY =
   "0x86d5de6f7c9c13cc0d959a553cc0e4853ba5faae45a28da9bddc8ef8e104eb5d3dece8dfaa24f11b4243ec27537e3184" as Hex;
 
 function BlsAccountListPage() {
   const { walletClient, publicClient } = useWallet();
-
+  const loadAuthCache = useRef<CachedAuth | null>(null);
+  const confirmAuthCache = useRef<Record<string, CachedAuth>>({});
   const [filter, setFilter] = useState<"confirmed" | "unconfirmed">(
     "unconfirmed"
   );
   const [accounts, setAccounts] = useState<BlsAccount[]>([]);
-  const [page, setPage] = useState(0);
-  const [pageSize] = useState(20);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
@@ -40,60 +53,100 @@ function BlsAccountListPage() {
   const [confirmingAddress, setConfirmingAddress] = useState<string | null>(
     null
   );
+  const [showTransactionList, setShowTransactionList] = useState(false);
+  const [selectedAddressForTx, setSelectedAddressForTx] = useState<string>("");
 
   // Load accounts callback
   const loadAccounts = useCallback(async () => {
     if (!publicClient) return;
-
     setIsLoading(true);
     setError("");
-
     try {
-      const timestamp = Math.floor(Date.now() / 1000);
+      if (!walletClient) {
+        throw new Error("Wallet client not connected");
+      }
+      const account = walletClient.account;
+      if (!account) {
+        throw new Error("No account connected");
+      }
+      let signature: Hex;
+      let timestamp: bigint;
+      const now = Math.floor(Date.now() / 1000);
+      
+      if (loadAuthCache.current && loadAuthCache.current.expiry > now + 10) {
+        signature = loadAuthCache.current.signature;
+        timestamp = loadAuthCache.current.timestamp;
+      } else {
+        timestamp = BigInt(now);
+        const message = encodePacked(
+          ["bytes", "uint256"],
+          [BLS_PUBLIC_KEY, timestamp]
+        );
+        const sig = await walletClient.signMessage({
+          account: account.address,
+          message: { raw: message },
+        });
+        signature = sig as Hex;
 
-      // TODO: Sign with actual BLS private key
-      // For now, use a dummy signature (96 bytes)
-      const signature = ("0x" + "00".repeat(96)) as Hex;
-      // Call getAllAccount via eth_call
+        loadAuthCache.current = {
+          signature: signature,
+          timestamp: timestamp,
+          expiry: now + 270, // 4.5 minutes
+        };
+      }
       const data = encodeFunctionData({
         abi: contracts.AccountManager.abi,
         functionName: "getAllAccount",
         args: [
-          signature,
+          signature as Hex, // Ethereum signature (65 bytes)
           BLS_PUBLIC_KEY,
           BigInt(timestamp),
-          BigInt(page),
+          BigInt(currentPage - 1), // Convert to 0-indexed for API
           BigInt(pageSize),
           filter === "confirmed",
         ],
       });
 
-      // Use eth_call to read data
+      // Call eth_call
       const result = await publicClient.call({
         to: contracts.AccountManager.address,
         data: data,
       });
 
       if (result.data) {
-        // The backend will return JSON in the result data
-        // Decode hex to string then parse JSON
-        try {
-          const jsonStr = hexToString(result.data);
-          const response: {
-            accounts: BlsAccount[];
-            total: number;
-            page: number;
-            pageSize: number;
-            totalPage: number;
-          } = JSON.parse(jsonStr);
+        const jsonStr = hexToString(result.data);
+        const response: {
+          accounts: Array<{
+            address: string;
+            blsPublicKey: string;
+            registeredAt: number;
+            registerTxHash: string;
+            isConfirmed: boolean;
+            confirmedAt: number;
+            confirmTxHash: string;
+          }>;
+          total: number;
+          page: number;
+          pageSize: number;
+          totalPage: number;
+        } = JSON.parse(jsonStr);
+        const convertedAccounts: BlsAccount[] = response.accounts.map(
+          (acc) => ({
+            address: hexToBytes(acc.address as Hex),
+            blsPublicKey: hexToBytes(acc.blsPublicKey as Hex),
+            registeredAt: BigInt(acc.registeredAt),
+            isConfirmed: acc.isConfirmed,
+            confirmedAt: acc.confirmedAt ? BigInt(acc.confirmedAt) : undefined,
+            registerTxHash: hexToBytes(acc.registerTxHash as Hex),
+            confirmTxHash: acc.confirmTxHash
+              ? hexToBytes(acc.confirmTxHash as Hex)
+              : undefined,
+          })
+        );
 
-          setAccounts(response.accounts);
-          setTotal(response.total);
-          setTotalPages(response.totalPage);
-        } catch (parseErr) {
-          console.error("Failed to parse response:", parseErr);
-          setError("Failed to parse accounts data");
-        }
+        setAccounts(convertedAccounts);
+        setTotal(response.total);
+        setTotalPages(response.totalPage);
       } else {
         setAccounts([]);
         setTotal(0);
@@ -105,40 +158,75 @@ function BlsAccountListPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [publicClient, page, pageSize, filter]);
+  }, [walletClient, publicClient, currentPage, pageSize, filter]);
 
   // Load accounts when filter or page changes
   useEffect(() => {
     loadAccounts();
   }, [loadAccounts]);
-
+  
+  // ✅ Only clear cache when address actually changes (not on first mount)
+  const previousAddress = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const currentAddress = walletClient?.account?.address;
+    if (previousAddress.current && previousAddress.current !== currentAddress) {
+      // Address changed, clear caches
+      loadAuthCache.current = null;
+      confirmAuthCache.current = {};
+    }
+    previousAddress.current = currentAddress;
+  }, [walletClient?.account?.address]);
   const handleConfirmAccount = async (accountAddress: Hex) => {
     if (!walletClient || !publicClient) {
       setError("Wallet not connected");
       return;
     }
+    console.log("vào confirm");
     setConfirmingAddress(accountAddress);
+    let signature: Hex;
+    let timestamp: bigint;
     setError("");
-
     try {
-      // Encode confirmAccount function call
-      const data = encodeFunctionData({
-        abi: contracts.AccountManager.abi,
-        functionName: "confirmAccount",
-        args: [accountAddress],
-      });
-
       const account = walletClient.account;
       if (!account) {
         throw new Error("No account connected");
       }
+      const now = Math.floor(Date.now() / 1000);
+      const cachedAuth = confirmAuthCache.current[accountAddress];
+      
+      // ✅ Use cache if it's still valid (with 10 second buffer instead of 30)
+      if (cachedAuth && cachedAuth.expiry > now + 10) {
+        signature = cachedAuth.signature;
+        timestamp = cachedAuth.timestamp;
+      } else {
+        timestamp = BigInt(now);
+        const message = encodePacked(
+          ["address", "uint256"],
+          [accountAddress, timestamp]
+        );
 
+        const sig = await walletClient.signMessage({
+          account: account.address,
+          message: { raw: message },
+        });
+        signature = sig as Hex;
+
+        confirmAuthCache.current[accountAddress] = {
+          signature: signature,
+          timestamp: timestamp,
+          expiry: now + 270, // 4.5 minutes
+        };
+      }
       // Get nonce
       const nonce = await publicClient.getTransactionCount({
         address: account.address,
         blockTag: "pending",
       });
-
+      const data = encodeFunctionData({
+        abi: contracts.AccountManager.abi,
+        functionName: "confirmAccount",
+        args: [accountAddress, BigInt(timestamp), signature as Hex],
+      });
       // Estimate gas
       const gasLimit = await publicClient.estimateGas({
         account: account.address,
@@ -148,7 +236,7 @@ function BlsAccountListPage() {
       });
 
       // Get gas price
-      const gasPrice = await publicClient.getGasPrice();
+      //   const gasPrice = await publicClient.getGasPrice();
 
       // Send transaction
       const txHash = await walletClient.sendTransaction({
@@ -158,19 +246,14 @@ function BlsAccountListPage() {
         value: 0n,
         nonce: nonce,
         gas: gasLimit,
-        gasPrice: gasPrice,
+        gasPrice: 0n,
         chain: chain991,
       });
-
-      console.log("Confirm transaction sent:", txHash);
-
       // Wait for transaction
       const receipt = await publicClient.waitForTransactionReceipt({
         hash: txHash,
       });
-
       if (receipt.status === "success") {
-        // Reload accounts
         await loadAccounts();
         setError("");
         alert(`Account ${accountAddress} confirmed successfully!`);
@@ -179,7 +262,9 @@ function BlsAccountListPage() {
       }
     } catch (err) {
       console.error("Error confirming account:", err);
-      setError(err instanceof Error ? err.message : "Failed to confirm account");
+      setError(
+        err instanceof Error ? err.message : "Failed to confirm account"
+      );
     } finally {
       setConfirmingAddress(null);
     }
@@ -222,35 +307,33 @@ function BlsAccountListPage() {
       >
         {/* Filter Buttons */}
         <div className="flex gap-4 mb-6">
-          <Button
+          <AppButton
             onClick={() => {
               setFilter("unconfirmed");
-              setPage(0);
+              setCurrentPage(1);
             }}
-            variant={filter === "unconfirmed" ? "default" : "outline"}
+            appVariant={filter === "unconfirmed" ? "primary" : "outline"}
             className="flex-1"
           >
             Unconfirmed ({filter === "unconfirmed" ? total : "?"})
-          </Button>
-          <Button
+          </AppButton>
+          <AppButton
             onClick={() => {
               setFilter("confirmed");
-              setPage(0);
+              setCurrentPage(1);
             }}
-            variant={filter === "confirmed" ? "default" : "outline"}
+            appVariant={filter === "confirmed" ? "primary" : "outline"}
             className="flex-1"
           >
             Confirmed ({filter === "confirmed" ? total : "?"})
-          </Button>
+          </AppButton>
         </div>
-
         {/* Error Alert */}
         {error && (
           <Alert variant="destructive" className="mb-4">
             {error}
           </Alert>
         )}
-
         {/* Loading State */}
         {isLoading && (
           <div className="flex justify-center items-center py-12">
@@ -308,30 +391,40 @@ function BlsAccountListPage() {
                     </div>
                   </div>
 
-                  {/* Confirm Button (only for unconfirmed) */}
-                  {!account.isConfirmed && (
-                    <Button
-                      onClick={() =>
-                        handleConfirmAccount(bytesToAddress(account.address))
-                      }
-                      disabled={
-                        confirmingAddress ===
-                        bytesToAddress(account.address)
-                      }
+                  {/* Action Buttons */}
+                  <div className="ml-4 flex gap-2">
+                    {!account.isConfirmed && (
+                      <AppButton
+                        onClick={() =>
+                          handleConfirmAccount(bytesToAddress(account.address))
+                        }
+                        disabled={
+                          confirmingAddress === bytesToAddress(account.address)
+                        }
+                        size="sm"
+                        appVariant="success"
+                      >
+                        {confirmingAddress === bytesToAddress(account.address) ? (
+                          <>
+                            <LoadingSpinnerIcon />
+                            <span className="ml-2">Confirming...</span>
+                          </>
+                        ) : (
+                          "Confirm"
+                        )}
+                      </AppButton>
+                    )}
+                    <AppButton
+                      onClick={() => {
+                        setShowTransactionList(true);
+                        setSelectedAddressForTx(bytesToAddress(account.address));
+                      }}
                       size="sm"
-                      className="ml-4"
+                      appVariant="outline"
                     >
-                      {confirmingAddress ===
-                      bytesToAddress(account.address) ? (
-                        <>
-                          <LoadingSpinnerIcon />
-                          <span className="ml-2">Confirming...</span>
-                        </>
-                      ) : (
-                        "Confirm"
-                      )}
-                    </Button>
-                  )}
+                      View TX
+                    </AppButton>
+                  </div>
                 </div>
               </div>
             ))}
@@ -350,41 +443,41 @@ function BlsAccountListPage() {
 
         {/* Pagination */}
         {totalPages > 1 && (
-          <div className="flex items-center justify-between mt-6 pt-6 border-t border-border">
-            <Button
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-              disabled={page === 0 || isLoading}
-              variant="outline"
-            >
-              Previous
-            </Button>
-
-            <span className="text-sm text-app-muted">
-              Page {page + 1} of {totalPages} ({total} total accounts)
-            </span>
-
-            <Button
-              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-              disabled={page >= totalPages - 1 || isLoading}
-              variant="outline"
-            >
-              Next
-            </Button>
-          </div>
+          <Pagination
+            currentPage={currentPage}
+            totalPageCount={totalPages}
+            onPageChange={setCurrentPage}
+            siblingCount={1}
+          />
         )}
 
         {/* Refresh Button */}
         <div className="mt-6">
-          <Button
+          <AppButton
             onClick={loadAccounts}
             disabled={isLoading}
-            variant="outline"
+            appVariant="outline"
             className="w-full"
           >
             {isLoading ? "Loading..." : "Refresh"}
-          </Button>
+          </AppButton>
         </div>
       </PageCard>
+
+      {/* Transaction List Modal */}
+      {showTransactionList && selectedAddressForTx && (
+        <div className="fixed inset-0 z-40 bg-black/20">
+          <div className="overflow-auto">
+            <TransactionListPage
+              address={selectedAddressForTx}
+              onClose={() => {
+                setShowTransactionList(false);
+                setSelectedAddressForTx("");
+              }}
+            />
+          </div>
+         </div>
+      )}
     </PageContainer>
   );
 }

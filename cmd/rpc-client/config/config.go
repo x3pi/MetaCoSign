@@ -24,6 +24,7 @@ type Config struct {
 	MasterPassword       string   `json:"master_password"`
 	AppPepper            string   `json:"app_pepper"`
 	LdbBlsWalletsPath    string   `json:"ldb_bls_wallet_path"`
+	OwnerRpcAddress      string   `json:"owner_rpc_address"`
 }
 
 func Load(path string, tcpCfgPath string) (*Config, *tcp_config.ClientConfig, error) {

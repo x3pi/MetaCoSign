@@ -784,7 +784,10 @@ func (t *Transaction) SetSign(privateKey p_common.PrivateKey) {
 func (t *Transaction) SetSignBytes(bytes []byte) {
 	t.proto.Sign = bytes
 }
-
+func (t *Transaction) SetMaxGasPrice(gasPrice uint64) {
+	t.proto.MaxGasPrice = gasPrice
+	t.ClearCacheHash()
+}
 func (t *Transaction) SetNonce(nonce uint64) {
 	nonceBytes := make([]byte, 8)
 	binary.BigEndian.PutUint64(nonceBytes, nonce)

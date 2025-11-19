@@ -122,19 +122,8 @@ function BlsManagerPage() {
       const hash = await walletClient.sendTransaction(transactionRequest);
 
       setPageStatus(
-        `Transaction sent! Hash: ${hash}. Awaiting confirmation...`
+        `Transaction sent! Hash: ${hash} confirmed`
       );
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
-
-      if (receipt.status === "success") {
-        setPageStatus(
-          `Transaction successful! BLS Public Key updated. Block: ${receipt.blockNumber.toString()}`
-        );
-        setPublicKeyInput("");
-      } else {
-        setPageError(`Transaction failed. Status: ${receipt.status}.`);
-        setPageStatus("");
-      }
     } catch (err: unknown) {
       console.error(
         "Detailed error sending transaction:",

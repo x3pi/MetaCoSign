@@ -5,23 +5,24 @@
 
 /* CSS Variables cho Dark/Light Mode - Đổi màu ở đây sẽ ảnh hưởng toàn bộ app */
 :root {
-  /* Light Mode Colors */
+  /* Light Mode Colors - MÀU SÁNG THỰC SỰ */
   --color-background: #ffffff;
-  --color-background-secondary: #f5f5f5;
-  --color-background-tertiary: #e5e5e5;
+  --color-background-secondary: #f9fafb; /* gray-50 */
+  --color-background-tertiary: #f3f4f6; /* gray-100 */
 
-  --color-foreground: #171717;
-  --color-foreground-secondary: #404040;
-  --color-foreground-muted: #737373;
+  --color-foreground: #111827; /* gray-900 - text tối rõ */
+  --color-foreground-secondary: #374151; /* gray-700 */
+  --color-foreground-muted: #6b7280; /* gray-500 */
 
-  --color-border: #d4d4d4;
-  --color-border-secondary: #e5e5e5;
+  --color-border: #d1d5db; /* gray-300 - border rõ hơn */
+  --color-border-secondary: #e5e7eb; /* gray-200 */
 
   --color-card: #ffffff;
-  --color-card-hover: #fafafa;
+  --color-card-secondary: #f9fafb; /* gray-50 */
+  --color-card-hover: #f3f4f6; /* gray-100 */
 
   /* Brand Colors - Đổi màu brand ở đây */
-  --color-primary: #3b82f6; /* blue-600 (ĐÃ ĐỔI TỪ TEAL SANG BLUE) */
+  --color-primary: #3b82f6; /* blue-600 */
   --color-primary-hover: #2563eb; /* blue-700 */
   --color-primary-light: #93c5fd; /* blue-300 */
 
@@ -40,23 +41,24 @@
 }
 
 .dark {
-  /* Dark Mode Colors */
-  --color-background: #0a0a0a;
-  --color-background-secondary: #171717;
-  --color-background-tertiary: #262626;
+  /* Dark Mode Colors - MÀU TỐI THỰC SỰ */
+  --color-background: #0a0a0a; /* Đen thực sự */
+  --color-background-secondary: #141414; /* gray-950 */
+  --color-background-tertiary: #1f1f1f; /* Tối hơn */
 
-  --color-foreground: #fafafa;
-  --color-foreground-secondary: #d4d4d4;
-  --color-foreground-muted: #a3a3a3;
+  --color-foreground: #fafafa; /* Trắng sáng */
+  --color-foreground-secondary: #d4d4d4; /* gray-300 */
+  --color-foreground-muted: #a3a3a3; /* gray-400 */
 
-  --color-border: #404040;
-  --color-border-secondary: #262626;
+  --color-border: #404040; /* gray-700 - tối hơn */
+  --color-border-secondary: #262626; /* gray-800 */
 
-  --color-card: #171717;
-  --color-card-hover: #262626;
+  --color-card: #141414; /* Tối thực sự */
+  --color-card-secondary: #1f1f1f;
+  --color-card-hover: #262626; /* gray-800 */
 
   /* Brand Colors - Dark mode */
-  --color-primary: #60a5fa; /* blue-400 (ĐÃ ĐỔI TỪ TEAL SANG BLUE) */
+  --color-primary: #60a5fa; /* blue-400 */
   --color-primary-hover: #3b82f6; /* blue-500 */
   --color-primary-light: #93c5fd; /* blue-300 */
 
@@ -69,23 +71,28 @@
   --color-error: #ef4444; /* red-500 */
   --color-info: #60a5fa; /* blue-400 */
 
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.5);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.5);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.5);
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.8);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.8);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.8);
 }
 
-/* Utility classes để tái sử dụng - Dùng các class này thay vì Tailwind trực tiếp */
+/* Utility classes để tái sử dụng - THAY THẾ HOÀN TOÀN TAILWIND COLORS */
+
+/* Background Colors */
 .bg-primary {
   background-color: var(--color-primary);
 }
 .bg-primary-hover:hover {
   background-color: var(--color-primary-hover);
 }
-.text-primary {
-  color: var(--color-primary);
+.bg-success {
+  background-color: var(--color-success);
 }
-.border-primary {
-  border-color: var(--color-border);
+.bg-warning {
+  background-color: var(--color-warning);
+}
+.bg-error {
+  background-color: var(--color-error);
 }
 
 .bg-app {
@@ -94,8 +101,42 @@
 .bg-app-secondary {
   background-color: var(--color-background-secondary);
 }
+.bg-app-tertiary {
+  background-color: var(--color-background-tertiary);
+}
+
+.bg-card {
+  background-color: var(--color-card);
+}
+.bg-card-secondary {
+  background-color: var(--color-card-secondary);
+}
+.bg-card-hover:hover {
+  background-color: var(--color-card-hover);
+}
+
+/* Text Colors */
+.text-primary {
+  color: var(--color-primary);
+}
+.text-success {
+  color: var(--color-success);
+}
+.text-warning {
+  color: var(--color-warning);
+}
+.text-error {
+  color: var(--color-error);
+}
+
 .text-app {
   color: var(--color-foreground);
+}
+.text-foreground {
+  color: var(--color-foreground);
+}
+.text-foreground-secondary {
+  color: var(--color-foreground-secondary);
 }
 .text-app-secondary {
   color: var(--color-foreground-secondary);
@@ -104,88 +145,77 @@
   color: var(--color-foreground-muted);
 }
 
-.bg-success {
-  background-color: var(--color-success);
+/* Border Colors */
+.border-primary {
+  border-color: var(--color-primary);
 }
-.text-success {
-  color: var(--color-success);
+.border-border {
+  border-color: var(--color-border);
 }
-.bg-error {
-  background-color: var(--color-error);
-}
-.text-error {
-  color: var(--color-error);
+.border-border-secondary {
+  border-color: var(--color-border-secondary);
 }
 
+/* Hover Effects cho Background */
+.hover\:bg-primary:hover {
+  background-color: var(--color-primary);
+}
+.hover\:bg-primary-hover:hover {
+  background-color: var(--color-primary-hover);
+}
+.hover\:bg-card-hover:hover {
+  background-color: var(--color-card-hover);
+}
+
+/* Disabled States */
+.disabled\:opacity-50:disabled {
+  opacity: 0.5;
+}
+.disabled\:cursor-not-allowed:disabled {
+  cursor: not-allowed;
+}
+
+/* White/Transparent for buttons */
+.text-white {
+  color: #ffffff;
+}
+.bg-white {
+  background-color: #ffffff;
+}
+.bg-transparent {
+  background-color: transparent;
+}
+
+/* Base styles - let CSS variables handle colors */
 :root {
   font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424; /* Bạn có thể muốn màu này giống với bg-neutral-950 của App.tsx */
-
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  /* Let CSS variables handle background color */
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+}
+
 a {
   font-weight: 500;
-  color: #646cff;
+  color: var(--color-primary);
   text-decoration: inherit;
 }
 a:hover {
-  color: #535bf2;
+  color: var(--color-primary-hover);
 }
 
-body {
-  margin: 0;
-  /* display: flex; */ /* << Bỏ dòng này */
-  /* place-items: center; */ /* << Bỏ dòng này */
-  min-width: 320px; /* Giữ lại để hỗ trợ màn hình nhỏ */
-  min-height: 100vh; /* Có thể giữ lại hoặc để App.tsx quản lý với min-h-screen */
-  background-color: #171717; /* Ví dụ: màu nền bg-neutral-950 của Tailwind */
-  /* Hoặc #242424 như trong :root nếu muốn */
-}
-
-h1 {
-  font-size: 3.2em; /* Đây là style mặc định, có thể không cần nếu Tailwind quản lý */
-  line-height: 1.1; /* Tương tự */
-}
-
+/* Reset button styles to prevent conflicts with Tailwind */
 button {
-  /* Các style button mặc định này có thể xung đột với Tailwind, cân nhắc bỏ nếu Tailwind đã định nghĩa đủ */
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
   font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  /* button { background-color: #f9f9f9; } */ /* Cân nhắc style cho button ở light mode */
-  body {
-    background-color: #ffffff; /* Nền cho light mode */
-  }
 }

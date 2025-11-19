@@ -2,6 +2,7 @@ package account_handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	ethCommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/app"
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/utils"
 	"github.com/meta-node-blockchain/meta-node/pkg/account_handler/abi_account"
@@ -21,6 +23,7 @@ import (
 	"github.com/meta-node-blockchain/meta-node/pkg/storage"
 	utilsPkg "github.com/meta-node-blockchain/meta-node/pkg/utils"
 	mt_types "github.com/meta-node-blockchain/meta-node/types"
+	"github.com/syndtr/goleveldb/leveldb"
 )
 
 // Nó không còn chứa chainState nữa.
@@ -84,14 +87,36 @@ func (h *AccountHandlerNoReceipt) HandleAccountTransaction(
 		result, err = h.handleConfirmAccount(tx, method, inputData[4:])
 		return true, result, err
 
-	case "getAllAccount":
-		result, err = h.handleGetAllAccount(tx, method, inputData[4:])
-		return true, result, err
+	// case "getAllAccount":
+	// 	result, err = h.handleGetAllAccount(method, inputData[4:])
+	// 	return true, result, err
 
 	default:
 		return false, nil, nil
 	}
 }
+func (h *AccountHandlerNoReceipt) HandleEthCall(ctx context.Context, data []byte) (interface{}, error) {
+	if len(data) < 4 {
+		return nil, fmt.Errorf("invalid call data: too short")
+	}
+	// Lấy method signature từ 4 bytes đầu
+	method, err := h.abi.MethodById(data[:4])
+	if err != nil {
+		return nil, fmt.Errorf("method not found: %w", err)
+	}
+
+	logger.Info("🔍 HandleEthCall method: %s", method.Name)
+
+	// Chỉ handle getAllAccount cho eth_call
+	switch method.Name {
+	case "getAllAccount":
+		return h.handleGetAllAccount(method, data[4:])
+
+	default:
+		return nil, fmt.Errorf("unsupported eth_call method: %s", method.Name)
+	}
+}
+
 func (h *AccountHandlerNoReceipt) handleSetBlsPublicKey(
 	tx mt_types.Transaction,
 	method *abi.Method,
@@ -118,13 +143,16 @@ func (h *AccountHandlerNoReceipt) handleSetBlsPublicKey(
 		IsConfirmed:    false,
 	}
 
-	if err := h.storage.SaveBlsAccount(accountData); err != nil {
+	// Lưu account data vào unconfirmed storage
+	if err := h.storage.AddAccountToBlsPublicKey(accountData, false); err != nil {
 		return fmt.Errorf("failed to save account data: %w", err)
 	}
+
+	// Lưu pending transaction
 	pendingTx := &pb.PendingTransaction{
 		Address:           fromAddress.Bytes(),
 		BlsPublicKey:      blsPublicKeyBytes,
-		RawTransactionHex: rawTransactionHex, // Chỉ lưu hex string
+		RawTransactionHex: rawTransactionHex,
 		CreatedAt:         time.Now().Unix(),
 		Nonce:             tx.GetNonce(),
 		OriginalGasPrice:  0,
@@ -133,9 +161,7 @@ func (h *AccountHandlerNoReceipt) handleSetBlsPublicKey(
 	if err := h.storage.SavePendingTransaction(pendingTx); err != nil {
 		return fmt.Errorf("failed to save pending transaction: %w", err)
 	}
-	if err := h.storage.AddAccountToBlsPublicKey(blsPublicKeyBytes, fromAddress, false); err != nil {
-		return fmt.Errorf("failed to add account to BLS list: %w", err)
-	}
+
 	return nil
 }
 
@@ -144,113 +170,131 @@ func (h *AccountHandlerNoReceipt) handleConfirmAccount(
 	method *abi.Method,
 	inputData []byte,
 ) (string, error) {
-
 	args, err := method.Inputs.Unpack(inputData)
 	if err != nil {
 		return "", fmt.Errorf("lỗi khi unpack input data: %v", err)
 	}
+	accountAddress, _ := args[0].(ethCommon.Address)
+	timestamp, _ := args[1].(*big.Int)
+	signatureBytes, _ := args[2].([]byte)
 
-	accountAddress, ok := args[0].(ethCommon.Address)
-	if !ok {
-		return "", fmt.Errorf("invalid account address format")
+	currentTime := time.Now().Unix()
+	if utilsPkg.Abs(currentTime-timestamp.Int64()) > 300 {
+		return "", fmt.Errorf("timestamp expired (current: %d, provided: %d)", currentTime, timestamp.Int64())
 	}
+	message := make([]byte, 0, 52) // 20 bytes address + 32 bytes uint256
+	message = append(message, accountAddress.Bytes()...)
+	timestampBytes := make([]byte, 32)
+	timestamp.FillBytes(timestampBytes)
+	message = append(message, timestampBytes...)
+
+	prefixedMessage := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", len(message), message)
+	messageHash := crypto.Keccak256Hash([]byte(prefixedMessage))
+	if len(signatureBytes) < 65 {
+		return "", fmt.Errorf(
+			"invalid signature length: expected at least 65, got %d",
+			len(signatureBytes),
+		)
+	}
+	// Adjust V value (Ethereum uses 27/28, crypto.Ecrecover expects 0/1)
+	if signatureBytes[64] >= 27 {
+		signatureBytes[64] -= 27
+	}
+	// Recover public key
+	pubKey, err := crypto.SigToPub(messageHash.Bytes(), signatureBytes)
+	if err != nil {
+		return "", fmt.Errorf("failed to recover public key: %w", err)
+	}
+
+	// Get signer address
+	signerAddress := crypto.PubkeyToAddress(*pubKey)
+	if signerAddress != ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress) {
+		return "", fmt.Errorf("invalid signature: signer %s is not authorized", signerAddress.Hex())
+	}
+
 	pendingTx, err := h.storage.GetPendingTransaction(accountAddress)
 	if err != nil {
 		return "", fmt.Errorf("pending transaction not found: %w", err)
 	}
 	// ========== REBUILD TRANSACTION TỪ rawTransactionHex ==========
 	rawTransactionHex := pendingTx.RawTransactionHex
-
 	// Decode hex
 	decodedTxBytes, releaseDecoded, err := utils.DecodeHexPooled(rawTransactionHex)
 	if err != nil {
 		return "", fmt.Errorf("invalid raw transaction hex: %w", err)
 	}
-	defer func() {
+	decodedReleased := false
+	releaseDecodedOnce := func() {
+		if decodedReleased {
+			return
+		}
+		decodedReleased = true
 		if releaseDecoded != nil {
 			releaseDecoded()
 		}
-	}()
-
+	}
 	// Unmarshal Ethereum transaction
 	ethTx := new(types.Transaction)
 	if err := ethTx.UnmarshalBinary(decodedTxBytes); err != nil {
 		return "", fmt.Errorf("failed to unmarshal ethereum transaction: %w", err)
 	}
-
 	// Verify sender
 	signer := types.LatestSignerForChainID(h.appCtx.ClientRpc.ChainId)
 	fromAddress, err := types.Sender(signer, ethTx)
 	if err != nil {
 		return "", fmt.Errorf("failed to derive sender: %w", err)
 	}
-
 	if fromAddress != accountAddress {
 		return "", fmt.Errorf("sender mismatch: expected %s, got %s", accountAddress.Hex(), fromAddress.Hex())
 	}
-
-	// Tạo transaction mới với gas price = 0
-	newTx := types.NewTx(&types.LegacyTx{
-		Nonce:    ethTx.Nonce(),
-		To:       ethTx.To(),
-		Value:    ethTx.Value(),
-		Gas:      ethTx.Gas(),
-		GasPrice: big.NewInt(0), // SET GAS PRICE = 0
-		Data:     ethTx.Data(),
-	})
-
-	// Check private key từ PKS hoặc dùng node's BLS key
 	var (
 		bTx       []byte
 		mtTx      mt_types.Transaction
 		releaseTx func()
 		buildErr  error
 	)
-
 	exists, err := h.appCtx.PKS.HasPrivateKey(fromAddress)
 	if err != nil {
 		return "", fmt.Errorf("error checking private key store: %w", err)
 	}
-
+	logger.Info("Rebuilding transaction for account %s, exists in PKS: %v", fromAddress.Hex(), exists)
 	if !exists {
-		// Dùng device key
-		bTx, mtTx, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTx(newTx)
+		bTx, mtTx, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTx(ethTx)
 	} else {
-		// Dùng BLS private key từ PKS
 		senderPkString, _ := h.appCtx.PKS.GetPrivateKey(fromAddress)
 		keyPair := bls.NewKeyPair(ethCommon.FromHex(senderPkString))
 		bTx, mtTx, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(
-			newTx,
+			ethTx,
 			keyPair.PrivateKey(),
 		)
 	}
-
 	if buildErr != nil {
 		return "", fmt.Errorf("failed to build transaction: %w", buildErr)
 	}
-
-	// Marshal new Ethereum transaction
-	newEthTxBytes, err := newTx.MarshalBinary()
-	if err != nil {
-		if releaseTx != nil {
-			releaseTx()
-		}
-		return "", fmt.Errorf("failed to marshal new transaction: %w", err)
-	}
-
-	// Gửi transaction với SendRawTransactionBinary
 	rs := h.appCtx.ClientRpc.SendRawTransactionBinary(
 		bTx,
 		releaseTx,
-		newEthTxBytes,
-		nil,
+		decodedTxBytes,
+		releaseDecodedOnce,
 		nil,
 	)
-
+	logger.Error("SendRawTransactionBinary result: %+v", rs)
 	if rs.Error != nil {
 		return "", fmt.Errorf("failed to send transaction: %v", rs.Error)
 	}
 
+	metaTxData, _, releaseFunc, err := h.appCtx.ClientRpc.BuildTransferTransaction(ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress), ethCommon.Address(pendingTx.Address), big.NewInt(1000000000000000000))
+	rst := h.appCtx.ClientRpc.SendRawTransactionBinary(
+		metaTxData,
+		releaseFunc,
+		nil,
+		nil,
+		nil,
+	)
+	logger.Error("SendRawTransactionBinary result: %+v", rst)
+	if rs.Error != nil {
+		return "", fmt.Errorf("failed to send transaction: %v", rst.Error)
+	}
 	// Cập nhật trạng thái confirmed
 	if err := h.storage.MarkAccountConfirmed(
 		accountAddress,
@@ -259,22 +303,18 @@ func (h *AccountHandlerNoReceipt) handleConfirmAccount(
 	); err != nil {
 		logger.Error("Failed to mark account as confirmed: %v", err)
 	}
-
 	// Xóa pending transaction
 	if err := h.storage.DeletePendingTransaction(accountAddress); err != nil {
 		logger.Error("Failed to delete pending transaction: %v", err)
 	}
-
 	logger.Info("✅ Đã confirm account %s, tx hash: %v", accountAddress.Hex(), rs.Result)
 	return rs.Result.(string), nil
 }
 
 func (h *AccountHandlerNoReceipt) handleGetAllAccount(
-	tx mt_types.Transaction,
 	method *abi.Method,
 	inputData []byte,
 ) (interface{}, error) {
-	// Signature: getAllAccount(bytes memory _sign, bytes memory _publicKeyBls, uint _time, uint _page, uint _pageSize, bool _isConfirm)
 	args, err := method.Inputs.Unpack(inputData)
 	if err != nil {
 		return nil, fmt.Errorf("lỗi khi unpack input data: %v", err)
@@ -287,10 +327,13 @@ func (h *AccountHandlerNoReceipt) handleGetAllAccount(
 	pageSize, _ := args[4].(*big.Int)
 	isConfirmed, _ := args[5].(bool)
 
-	if !h.verifySignature(signBytes, blsPublicKeyBytes, timestamp.Uint64()) {
+	ok, err := h.verifySignature(signBytes, blsPublicKeyBytes, timestamp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to verify signature: %w", err)
+	}
+	if !ok {
 		return nil, fmt.Errorf("invalid signature")
 	}
-
 	// Parse page và pageSize từ big.Int
 	pageNum := int(page.Int64())
 	pageSizeNum := int(pageSize.Int64())
@@ -303,9 +346,6 @@ func (h *AccountHandlerNoReceipt) handleGetAllAccount(
 		pageSizeNum = 20 // Default size, max 100
 	}
 
-	logger.Info("📋 Lấy danh sách accounts: page=%d, pageSize=%d, confirmed=%v",
-		pageNum, pageSizeNum, isConfirmed)
-
 	// Lấy accounts từ LevelDB (filter by confirmation status)
 	accounts, total, err := h.storage.GetAccountsByBlsPublicKey(
 		blsPublicKeyBytes,
@@ -314,12 +354,33 @@ func (h *AccountHandlerNoReceipt) handleGetAllAccount(
 		isConfirmed,
 	)
 	if err != nil {
+		if errors.Is(err, leveldb.ErrNotFound) {
+			return map[string]interface{}{
+				"accounts":  []map[string]interface{}{},
+				"total":     total,
+				"page":      pageNum,
+				"pageSize":  pageSizeNum,
+				"totalPage": (total + pageSizeNum - 1) / pageSizeNum,
+				"confirmed": isConfirmed,
+			}, nil
+		}
 		return nil, fmt.Errorf("failed to get accounts: %w", err)
 	}
-
+	accountsJSON := make([]map[string]interface{}, 0, len(accounts))
+	for _, acc := range accounts {
+		accountsJSON = append(accountsJSON, map[string]interface{}{
+			"address":        ethCommon.BytesToAddress(acc.Address).Hex(),
+			"blsPublicKey":   "0x" + ethCommon.Bytes2Hex(acc.BlsPublicKey),
+			"registeredAt":   acc.RegisteredAt,
+			"registerTxHash": "0x" + ethCommon.Bytes2Hex(acc.RegisterTxHash),
+			"isConfirmed":    acc.IsConfirmed,
+			"confirmedAt":    acc.ConfirmedAt,
+			"confirmTxHash":  "0x" + ethCommon.Bytes2Hex(acc.ConfirmTxHash),
+		})
+	}
 	// Trả về kết quả
 	result := map[string]interface{}{
-		"accounts":  accounts,
+		"accounts":  accountsJSON,
 		"total":     total,
 		"page":      pageNum,
 		"pageSize":  pageSizeNum,
@@ -331,13 +392,57 @@ func (h *AccountHandlerNoReceipt) handleGetAllAccount(
 	return result, nil
 
 }
-func (h *AccountHandlerNoReceipt) verifySignature(signBytes, blsPublicKeyBytes []byte, timestamp uint64) bool {
-	now := uint64(time.Now().Unix())
-	if now > timestamp+300 || now < timestamp-300 {
-		logger.Warn("Timestamp out of range: %d, now: %d", timestamp, now)
-		return false
+
+func (h *AccountHandlerNoReceipt) verifySignature(
+	signBytes []byte,
+	blsPublicKeyBytes []byte,
+	timestamp *big.Int,
+) (bool, error) {
+	// ✅ 1. Verify timestamp (trong vòng 5 phút)
+	currentTime := time.Now().Unix()
+	if utilsPkg.Abs(currentTime-timestamp.Int64()) > 300 {
+		return false, fmt.Errorf(
+			"timestamp expired (current: %d, provided: %d)",
+			currentTime,
+			timestamp.Int64(),
+		)
+	}
+	// ✅ 2. Check signature length
+	if len(signBytes) < 65 {
+		return false, fmt.Errorf(
+			"invalid signature length: expected at least 65, got %d",
+			len(signBytes),
+		)
+	}
+	// Message structure: [blsPublicKey (48 bytes)] + [timestamp (32 bytes)]
+	message := make([]byte, 0, len(blsPublicKeyBytes)+32)
+	message = append(message, blsPublicKeyBytes...)
+
+	timestampBytes := make([]byte, 32)
+	timestamp.FillBytes(timestampBytes)
+	message = append(message, timestampBytes...)
+
+	prefixedMessage := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", len(message), message)
+	messageHash := crypto.Keccak256Hash([]byte(prefixedMessage))
+	// ✅ 5. Adjust V value (Ethereum uses 27/28, crypto.Ecrecover expects 0/1)
+	signature := make([]byte, 65)
+	copy(signature, signBytes)
+	if signature[64] >= 27 {
+		signature[64] -= 27
+	}
+	pubKey, err := crypto.SigToPub(messageHash.Bytes(), signature)
+	if err != nil {
+		return false, fmt.Errorf("failed to recover public key: %w", err)
 	}
 
-	// TODO: Implement proper BLS verification
-	return len(signBytes) > 0 && len(blsPublicKeyBytes) > 0
+	// ✅ 7. Get signer address
+	signerAddress := crypto.PubkeyToAddress(*pubKey)
+
+	if signerAddress != ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress) {
+		return false, fmt.Errorf(
+			"invalid signature: signer %s is not authorized",
+			signerAddress.Hex(),
+		)
+	}
+	return true, nil
 }

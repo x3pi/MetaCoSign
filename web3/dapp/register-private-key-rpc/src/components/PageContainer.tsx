@@ -22,7 +22,7 @@ export function PageContainer({
   };
 
   return (
-    <div className="min-h-screen bg-linear-to-b from-[var(--color-background-secondary)] via-[var(--color-background-secondary)] to-[var(--color-background-tertiary)] p-4 md:p-8 transition-colors duration-300">
+    <div className="min-h-screen bg-linear-to-b from-(--color-background-secondary) via-(--color-background-secondary) to-(--color-background-tertiary) p-4 md:p-8 transition-colors duration-300">
       <div
         className={cn(
           "mx-auto space-y-6",

@@ -1,7 +1,8 @@
 // src/components/SharedHeader.tsx
-import React, { useState, useEffect, useRef } from "react";
+import React from "react";
 import { Link } from "react-router-dom";
 import { useWallet } from "../contexts/WalletContext";
+import { useMobileMenu } from "../contexts/MobileMenuContext";
 import { chain991 } from "~/constants/customChain";
 import type { PageLink } from "../App";
 import { ThemeToggle } from "./ThemeToggle";
@@ -47,6 +48,30 @@ const CloseIcon = () => (
   </svg>
 );
 
+// Mobile menu button component
+const MobileMenuButton: React.FC = () => {
+  const { isMobileMenuOpen, toggleMobileMenu } = useMobileMenu();
+  
+  return (
+    <button
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log('Mobile menu button clicked, current state:', isMobileMenuOpen);
+        toggleMobileMenu();
+      }}
+      className="md:hidden w-10 h-10 bg-primary hover:bg-primary-hover rounded-lg flex items-center justify-center text-white transition-all duration-150 shadow-md"
+      aria-label="Toggle menu"
+    >
+      <div className="w-5 h-5 flex flex-col justify-center items-center">
+        <span className={`bg-white block transition-all duration-300 ease-out h-0.5 w-4 rounded-sm ${isMobileMenuOpen ? 'rotate-45 translate-y-1' : '-translate-y-0.5'}`}></span>
+        <span className={`bg-white block transition-all duration-300 ease-out h-0.5 w-4 rounded-sm my-0.5 ${isMobileMenuOpen ? 'opacity-0' : 'opacity-100'}`}></span>
+        <span className={`bg-white block transition-all duration-300 ease-out h-0.5 w-4 rounded-sm ${isMobileMenuOpen ? '-rotate-45 -translate-y-1' : 'translate-y-0.5'}`}></span>
+      </div>
+    </button>
+  );
+};
+
 interface SharedHeaderProps {
   pageLinks: PageLink[];
 }
@@ -65,33 +90,9 @@ const SharedHeader: React.FC<SharedHeaderProps> = () => {
     setStatusMessage: setWalletStatusMessage,
   } = useWallet();
 
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const buttonRef = useRef<HTMLButtonElement>(null);
-
   const handleSwitchToChain991 = () => {
     switchNetwork(chain991.id);
-    setIsMobileMenuOpen(false);
   };
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        menuRef.current &&
-        !menuRef.current.contains(event.target as Node) &&
-        buttonRef.current &&
-        !buttonRef.current.contains(event.target as Node)
-      ) {
-        setIsMobileMenuOpen(false);
-      }
-    };
-    if (isMobileMenuOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [isMobileMenuOpen]);
 
   // === 1. ĐỊNH NGHĨA STYLE M3 BẰNG TAILWIND ===
 
@@ -101,15 +102,15 @@ const SharedHeader: React.FC<SharedHeaderProps> = () => {
 
   // Nút Connect: "Filled Button" (M3 Primary)
   const connectWalletButtonStyle =
-    "bg-teal-600 hover:bg-teal-700 text-white ring-teal-500";
+    "bg-primary hover:bg-primary-hover text-white ring-primary";
 
   // Nút Disconnect: "Tonal Button" (M3 Surface-Variant)
   const disconnectWalletButtonStyle =
-    "bg-neutral-800 hover:bg-neutral-700 text-neutral-300 ring-neutral-600";
+    "bg-app-secondary hover:bg-app-tertiary text-app-secondary ring-border";
 
   // Nút Switch Network (M3 Error/Warning Color)
   const switchNetworkButtonStyle =
-    "bg-yellow-500 hover:bg-yellow-600 text-neutral-900 ring-yellow-400";
+    "bg-warning hover:bg-warning text-white ring-warning";
 
   return (
     // === 2. HEADER: M3 "Top App Bar" (Surface + Elevation) ===
@@ -122,7 +123,6 @@ const SharedHeader: React.FC<SharedHeaderProps> = () => {
             <Link
               to="/"
               className="text-xl font-bold text-primary cursor-pointer hover:opacity-80 transition-opacity"
-              onClick={() => setIsMobileMenuOpen(false)}
             >
               Account Manager
             </Link>
@@ -135,8 +135,8 @@ const SharedHeader: React.FC<SharedHeaderProps> = () => {
             {connectedAccount ? (
               <>
                 {/* Pill cho Địa chỉ và Chain ID (M3 Tonal) */}
-                <div className="bg-neutral-800 rounded-full px-4 py-2 text-xs flex items-center space-x-2">
-                  <span className="text-neutral-300">
+                <div className="bg-app-secondary rounded-full px-4 py-2 text-xs flex items-center space-x-2">
+                  <span className="text-app-secondary">
                     {`${connectedAccount.substring(
                       0,
                       6
@@ -147,8 +147,8 @@ const SharedHeader: React.FC<SharedHeaderProps> = () => {
                   <span
                     className={`px-1.5 py-0.5 rounded-full text-white text-[10px] ${
                       currentChainId === chain991.id
-                        ? "bg-green-500"
-                        : "bg-yellow-500 text-neutral-900"
+                        ? "bg-success"
+                        : "bg-warning text-white"
                     }`}
                   >
                     ID: {currentChainId ?? "N/A"}
@@ -186,54 +186,11 @@ const SharedHeader: React.FC<SharedHeaderProps> = () => {
             )}
           </div>
 
-          {/* Nút Hamburger cho Mobile (M3 Icon Button) */}
+          {/* Mobile menu button and theme toggle */}
           <div className="flex items-center ml-2 lg:hidden gap-2">
             <ThemeToggle />
-
-            <button
-              ref={buttonRef}
-              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              type="button"
-              // Style tròn, Tonal
-              className="bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-full w-10 h-10 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-neutral-600"
-              aria-controls="mobile-menu"
-              aria-expanded={isMobileMenuOpen}
-            >
-              <span className="sr-only">Open main menu</span>
-              {isMobileMenuOpen ? (
-                <svg
-                  className="block h-5 w-5"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  aria-hidden="true"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              ) : (
-                <svg
-                  className="block h-5 w-5"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  aria-hidden="true"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M4 6h16M4 12h16M4 18h16"
-                  />
-                </svg>
-              )}
-            </button>
+            {/* Mobile menu button from context */}
+            <MobileMenuButton />
           </div>
         </div>
       </div>

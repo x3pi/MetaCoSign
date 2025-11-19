@@ -12,6 +12,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/holiman/uint256 v1.3.1
+	github.com/joho/godotenv v1.5.1
 	github.com/libp2p/go-libp2p v0.41.0
 	github.com/libp2p/go-libp2p-pubsub v0.13.0
 	github.com/multiformats/go-multiaddr v0.15.0
@@ -22,7 +23,6 @@ require (
 	github.com/stretchr/testify v1.10.0
 	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
 	golang.org/x/sync v0.11.0
-	golang.org/x/time v0.5.0
 	google.golang.org/protobuf v1.36.5
 )
 
@@ -71,7 +71,6 @@ require (
 	github.com/ipfs/go-log/v2 v2.5.1 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect
 	github.com/jbenet/go-temp-err-catcher v0.1.0 // indirect
-	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/koron/go-ssdp v0.0.5 // indirect
 	github.com/libp2p/go-buffer-pool v0.1.0 // indirect

@@ -604,25 +604,24 @@ func (c *ClientRPC) BuildDeployTransaction(callDataT []byte, from common.Address
 	return bTransaction, err
 }
 
-func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTx(
+func (c *ClientRPC) BuildTransactionWithDeviceKey(
 	ethTx *types.Transaction,
-) ([]byte, mt_types.Transaction,func(), error) {
-
+) ([]byte, mt_types.Transaction, func(), error) {
 	sg := types.NewCancunSigner(ethTx.ChainId())
 	fromAddress, err := sg.Sender(ethTx)
 	if err != nil {
-		return nil, nil,nil, fmt.Errorf("lỗi khi get fromAddress : %w", err)
+		return nil, nil, nil, fmt.Errorf("lỗi khi get fromAddress : %w", err)
 	}
 	as, err := c.GetAccountState(fromAddress, rpc.BlockNumberOrHashWithNumber(rpc.LatestBlockNumber))
 	if err != nil {
-		return nil, nil, nil,fmt.Errorf("BuildTransactionWithDeviceKeyFromEthTx lỗi khi get acccount state %v: %v", fromAddress, err)
+		return nil, nil, nil, fmt.Errorf("BuildTransactionWithDeviceKeyFromEthTx lỗi khi get acccount state %v: %v", fromAddress, err)
 	}
 	if ethTx.To() == nil || *ethTx.To() != utils.GetAddressSelector(mt_common.ACCOUNT_SETTING_ADDRESS_SELECT) {
 		if len(as.PublicKeyBls()) == 0 {
-			return nil, nil,nil, fmt.Errorf("lỗi tài khoản chưa đăng ký public key bls trên chain")
+			return nil, nil, nil, fmt.Errorf("lỗi tài khoản chưa đăng ký public key bls trên chain")
 		}
 		if !bytes.Equal(as.PublicKeyBls(), c.KeyPair.BytesPublicKey()) {
-			return nil, nil,nil, fmt.Errorf("lỗi tài khoản chưa đăng ký private key bls với rpc")
+			return nil, nil, nil, fmt.Errorf("lỗi tài khoản chưa đăng ký private key bls với rpc")
 		}
 	}
 
@@ -640,7 +639,7 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTx(
 	bRelatedAddresses := make([][]byte, 0)
 	transaction, err := mt_transaction.NewTransactionFromEth(ethTx)
 	if err != nil {
-		return nil, nil,nil, fmt.Errorf("error buidl  NewTransactionFromEth: %w", err)
+		return nil, nil, nil, fmt.Errorf("error buidl  NewTransactionFromEth: %w", err)
 	}
 	transaction.UpdateRelatedAddresses(bRelatedAddresses)
 	transaction.UpdateDeriver(deviceKey, newDeviceKey)
@@ -654,9 +653,64 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTx(
 
 	data, release, err := marshalProtoMessage(transactionWithDeviceKey)
 	if err != nil {
-		return nil, nil,nil, fmt.Errorf("failed to marshal TransactionWithDeviceKey: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to marshal TransactionWithDeviceKey: %w", err)
 	}
-	return data, transaction,release, err
+	return data, transaction, release, err
+}
+
+func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTx(
+	ethTx *types.Transaction,
+) ([]byte, mt_types.Transaction, func(), error) {
+
+	sg := types.NewCancunSigner(ethTx.ChainId())
+	fromAddress, err := sg.Sender(ethTx)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("lỗi khi get fromAddress : %w", err)
+	}
+	as, err := c.GetAccountState(fromAddress, rpc.BlockNumberOrHashWithNumber(rpc.LatestBlockNumber))
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("BuildTransactionWithDeviceKeyFromEthTx lỗi khi get acccount state %v: %v", fromAddress, err)
+	}
+	if ethTx.To() == nil || *ethTx.To() != utils.GetAddressSelector(mt_common.ACCOUNT_SETTING_ADDRESS_SELECT) {
+		if len(as.PublicKeyBls()) == 0 {
+			return nil, nil, nil, fmt.Errorf("lỗi tài khoản chưa đăng ký public key bls trên chain")
+		}
+		if !bytes.Equal(as.PublicKeyBls(), c.KeyPair.BytesPublicKey()) {
+			return nil, nil, nil, fmt.Errorf("lỗi tài khoản chưa đăng ký private key bls với rpc")
+		}
+	}
+
+	deviceKey, err := c.GetDeviceKey(as.LastHash())
+	if err != nil {
+		logger.Info("lỗi khi get deviceKey", err)
+	}
+
+	rawNewDeviceKeyBytes := []byte(fmt.Sprintf("%s-%d", hex.EncodeToString(as.LastHash().Bytes()), time.Now().Unix()))
+
+	rawNewDeviceKey := crypto.Keccak256(rawNewDeviceKeyBytes)
+
+	newDeviceKey := crypto.Keccak256Hash(rawNewDeviceKey)
+
+	bRelatedAddresses := make([][]byte, 0)
+	transaction, err := mt_transaction.NewTransactionFromEth(ethTx)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("error buidl  NewTransactionFromEth: %w", err)
+	}
+	transaction.UpdateRelatedAddresses(bRelatedAddresses)
+	transaction.UpdateDeriver(deviceKey, newDeviceKey)
+	transaction.SetSign(c.KeyPair.PrivateKey())
+
+	// Create TransactionWithDeviceKey
+	transactionWithDeviceKey := &mt_proto.TransactionWithDeviceKey{
+		Transaction: transaction.Proto().(*mt_proto.Transaction),
+		DeviceKey:   rawNewDeviceKey,
+	}
+
+	data, release, err := marshalProtoMessage(transactionWithDeviceKey)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to marshal TransactionWithDeviceKey: %w", err)
+	}
+	return data, transaction, release, err
 }
 
 func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(
@@ -667,12 +721,12 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(
 	sg := types.NewCancunSigner(ethTx.ChainId())
 	fromAddress, err := sg.Sender(ethTx)
 	if err != nil {
-		return nil, nil,nil, fmt.Errorf("lỗi khi get fromAddress : %w", err) // Cập nhật thông báo lỗi
+		return nil, nil, nil, fmt.Errorf("lỗi khi get fromAddress : %w", err) // Cập nhật thông báo lỗi
 	}
 	as, err := c.GetAccountState(fromAddress, rpc.BlockNumberOrHashWithNumber(rpc.LatestBlockNumber))
 
 	if err != nil {
-		return nil, nil,nil, fmt.Errorf("BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey lỗi khi get acccount state: %v", err) // Cập nhật thông báo lỗi
+		return nil, nil, nil, fmt.Errorf("BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey lỗi khi get acccount state: %v", err) // Cập nhật thông báo lỗi
 	}
 
 	deviceKey, err := c.GetDeviceKey(as.LastHash())
@@ -690,7 +744,7 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(
 
 	transaction, err := mt_transaction.NewTransactionFromEth(ethTx)
 	if err != nil {
-		return nil, nil, nil,fmt.Errorf("error buidl  NewTransactionFromEth: %w", err)
+		return nil, nil, nil, fmt.Errorf("error buidl  NewTransactionFromEth: %w", err)
 	}
 	transaction.UpdateRelatedAddresses(bRelatedAddresses)
 	transaction.UpdateDeriver(deviceKey, newDeviceKey)
@@ -703,10 +757,141 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(
 
 	data, release, err := marshalProtoMessage(transactionWithDeviceKey)
 	if err != nil {
-		return nil, nil,nil, fmt.Errorf("failed to marshal TransactionWithDeviceKey: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to marshal TransactionWithDeviceKey: %w", err)
 	}
-	return data, transaction,release, nil
+	return data, transaction, release, nil
 }
+
+// BuildTransferTransaction tạo giao dịch chuyển tiền
+func (c *ClientRPC) BuildTransferTransaction(
+	fromAddress common.Address,
+	toAddress common.Address,
+	amount *big.Int,
+) ([]byte, mt_types.Transaction, func(), error) {
+	// Lấy account state để có nonce
+	as, err := c.GetAccountState(fromAddress, rpc.BlockNumberOrHashWithNumber(rpc.LatestBlockNumber))
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("BuildTransferTransaction lỗi khi get account state: %v", err)
+	}
+	// Kiểm tra balance có đủ không
+	if as.Balance().Cmp(amount) < 0 {
+		return nil, nil, nil, fmt.Errorf("số dư không đủ: có %s, cần %s", as.Balance().String(), amount.String())
+	}
+	// Kiểm tra BLS key
+	if len(as.PublicKeyBls()) == 0 {
+		return nil, nil, nil, fmt.Errorf("tài khoản chưa đăng ký public key BLS")
+	}
+	if !bytes.Equal(as.PublicKeyBls(), c.KeyPair.BytesPublicKey()) {
+		return nil, nil, nil, fmt.Errorf("private key BLS không khớp với account")
+	}
+	// Tạo device key
+	deviceKey, err := c.GetDeviceKey(as.LastHash())
+	if err != nil {
+		logger.Info("lỗi khi get deviceKey", err)
+	}
+
+	rawNewDeviceKeyBytes := []byte(fmt.Sprintf("%s-%d", hex.EncodeToString(as.LastHash().Bytes()), time.Now().Unix()))
+	rawNewDeviceKey := crypto.Keccak256(rawNewDeviceKeyBytes)
+	newDeviceKey := crypto.Keccak256Hash(rawNewDeviceKey)
+
+	// Cấu hình gas
+	maxGas := uint64(21000) // Gas cho transfer thông thường
+	maxGasPrice := uint64(mt_common.MINIMUM_BASE_FEE)
+
+	bRelatedAddresses := make([][]byte, 0)
+
+	// Tạo transaction với data rỗng (transfer thuần túy)
+	var bData []byte
+
+	txx := mt_transaction.NewTransaction(
+		fromAddress,
+		toAddress,
+		amount,
+		maxGas,
+		maxGasPrice,
+		600, // timeout
+		bData,
+		bRelatedAddresses,
+		deviceKey,
+		newDeviceKey,
+		as.Nonce(),
+		c.ChainId.Uint64(),
+	)
+
+	// Ký transaction
+	txx.SetSign(c.KeyPair.PrivateKey())
+
+	// Tạo TransactionWithDeviceKey
+	transactionWithDeviceKey := &mt_proto.TransactionWithDeviceKey{
+		Transaction: txx.Proto().(*mt_proto.Transaction),
+		DeviceKey:   rawNewDeviceKey,
+	}
+
+	data, release, err := marshalProtoMessage(transactionWithDeviceKey)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to marshal TransactionWithDeviceKey: %w", err)
+	}
+
+	return data, txx, release, nil
+}
+
+// // SendTransferTransaction gửi giao dịch chuyển tiền
+// func (c *ClientRPC) SendTransferTransaction(
+// 	fromAddress common.Address,
+// 	toAddress common.Address,
+// 	amount *big.Int,
+// ) (string, error) {
+// 	// Build transaction
+// 	metaTxData, _, releaseFunc, err := c.BuildTransferTransaction(fromAddress, toAddress, amount)
+// 	if err != nil {
+// 		return "", fmt.Errorf("lỗi build transaction: %w", err)
+// 	}
+// 	defer releaseFunc()
+
+// 	// Tạo Ethereum transaction tương ứng (để có thể dùng binary endpoint)
+// 	ethTx := types.NewTx(&types.LegacyTx{
+// 		To:       &toAddress,
+// 		Value:    amount,
+// 		Gas:      21000,
+// 		GasPrice: big.NewInt(int64(mt_common.MINIMUM_BASE_FEE)),
+// 		Data:     []byte{},
+// 	})
+
+// 	// Sign eth transaction
+// 	signer := types.NewCancunSigner(c.ChainId)
+// 	// Tạo một private key tạm từ BLS private key để sign eth tx
+// 	ethPrivKey, err := crypto.GenerateKey()
+// 	if err != nil {
+// 		return "", fmt.Errorf("lỗi tạo eth private key: %w", err)
+// 	}
+// 	signedEthTx, err := types.SignTx(ethTx, signer, ethPrivKey)
+// 	if err != nil {
+// 		return "", fmt.Errorf("lỗi sign eth transaction: %w", err)
+// 	}
+
+// 	ethTxData, err := signedEthTx.MarshalBinary()
+// 	if err != nil {
+// 		return "", fmt.Errorf("lỗi marshal eth transaction: %w", err)
+// 	}
+
+// 	// Send using binary endpoint
+// 	response := c.SendRawTransactionBinary(
+// 		metaTxData, releaseFunc,
+// 		ethTxData, nil,
+// 		c.KeyPair.BytesPublicKey(),
+// 	)
+
+// 	if response.Error != nil {
+// 		return "", fmt.Errorf("lỗi send transaction: %s", response.Error.Message)
+// 	}
+
+// 	txHash, ok := response.Result.(string)
+// 	if !ok {
+// 		return "", fmt.Errorf("response result không phải string: %v", response.Result)
+// 	}
+
+// 	return txHash, nil
+// }
 
 func marshalProtoMessage(msg proto.Message) ([]byte, func(), error) {
 	bufPtr := protoBytesPool.Get().(*[]byte)

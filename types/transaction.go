@@ -52,6 +52,7 @@ type Transaction interface {
 	SetSign(privateKey common.PrivateKey)
 	SetSignBytes(bytes []byte)
 	SetNonce(uint64)
+	SetMaxGasPrice(gasPrice uint64)
 	SetFromAddress(address e_common.Address)
 	SetToAddress(address e_common.Address)
 	CopyTransaction() Transaction

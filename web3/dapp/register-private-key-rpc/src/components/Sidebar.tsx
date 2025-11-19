@@ -1,6 +1,7 @@
 // src/components/Sidebar.tsx
 import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
+import { useMobileMenu } from '../contexts/MobileMenuContext';
 import type { PageLink } from '../App';
 
 interface SidebarProps {
@@ -9,86 +10,167 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ pageLinks }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const { isMobileMenuOpen, closeMobileMenu } = useMobileMenu();
+  // Desktop sidebar
+  const DesktopSidebar = () => (
+    <aside
+      className={`hidden md:flex h-screen bg-app-secondary border-r border-border transition-all duration-300 flex-col ${
+        isCollapsed ? 'w-16' : 'w-64'
+      }`}
+    >
+      <SidebarContent 
+        isCollapsed={isCollapsed} 
+        pageLinks={pageLinks} 
+        showToggleButton={true} 
+        onToggle={() => setIsCollapsed(!isCollapsed)} 
+      />
+    </aside>
+  );
+
+  // Mobile sidebar overlay  
+  const MobileSidebar = () => (
+    <>
+      {isMobileMenuOpen && (
+        <div
+          className="md:hidden fixed inset-0 bg-app/80 backdrop-blur-sm z-40"
+          onClick={() => closeMobileMenu()}
+        />
+      )}
+
+      <aside
+        id="mobile-sidebar"
+        className={`md:hidden fixed left-0 top-0 h-screen w-64 bg-app-secondary border-r border-border transition-all duration-300 ease-in-out shadow-lg z-50 transform ${
+          isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        <SidebarContent 
+          isCollapsed={false} 
+          pageLinks={pageLinks} 
+          onLinkClick={() => closeMobileMenu()} 
+          showCloseButton={false}
+        />
+      </aside>
+    </>
+  );
 
   return (
     <>
-      {/* Sidebar */}
-      <aside
-        className={`fixed left-0 top-16 h-[calc(100vh-4rem)] bg-app-secondary border-r border-app-border shadow-xl z-40 transition-all duration-300 flex flex-col ${
-          isCollapsed ? 'w-16' : 'w-64'
-        }`}
-      >
-        {/* Toggle Button */}
-        <button
-          onClick={() => setIsCollapsed(!isCollapsed)}
-          className="absolute -right-3 top-6 w-6 h-6 bg-teal-600 hover:bg-teal-700 rounded-full flex items-center justify-center text-white shadow-lg transition-all duration-150 z-50"
-          title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          <span className="text-xs">{isCollapsed ? '→' : '←'}</span>
-        </button>
-
-        {/* Navigation Links */}
-        <nav className="flex-1 px-3 py-6 space-y-1 overflow-y-auto">
-          {!isCollapsed && (
-            <div className="px-3 mb-4">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-app-muted">
-                Navigation
-              </h2>
-            </div>
-          )}
-
-          {pageLinks.map((link) => (
-            <NavLink
-              key={link.path}
-              to={link.path}
-              title={isCollapsed ? link.label : undefined}
-              className={({ isActive }) => {
-                const baseClass = `flex items-center px-4 py-3 rounded-lg text-sm font-medium transition-all duration-150 ease-in-out ${
-                  isCollapsed ? 'justify-center' : ''
-                }`;
-                if (isActive) {
-                  return `${baseClass} bg-teal-600/20 text-teal-300 border-l-4 border-teal-500`;
-                }
-                return `${baseClass} text-app hover:bg-neutral-800/50`;
-              }}
-            >
-              {({ isActive }) => (
-                <>
-                  {!isCollapsed && (
-                    <>
-                      {isActive && (
-                        <div className="w-1 h-1 rounded-full mr-3 bg-teal-400" />
-                      )}
-                      {link.label}
-                    </>
-                  )}
-                  {isCollapsed && (
-                    <span className="text-lg">
-                      {link.path === '/' && '🏠'}
-                      {link.path === '/bls' && '🔐'}
-                      {link.path === '/account-type' && '⚙️'}
-                      {link.path === '/register-rpc' && '📝'}
-                    </span>
-                  )}
-                </>
-              )}
-            </NavLink>
-          ))}
-        </nav>
-
-        {/* Divider */}
-        <div className="border-t border-app-border" />
-
-        {/* Selected Account Info */}
-    
-      </aside>
-
-      {/* Spacer để content không bị sidebar che */}
-      <div
-        className={`transition-all duration-300 ${
-          isCollapsed ? 'w-16' : 'w-64'
-        }`}
-      />
+      <DesktopSidebar />
+      <MobileSidebar />
     </>
   );
 };
+
+// Sidebar content component
+const SidebarContent: React.FC<{
+  isCollapsed: boolean;
+  pageLinks: PageLink[];
+  onLinkClick?: () => void;
+  showToggleButton?: boolean;
+  onToggle?: () => void;
+  showCloseButton?: boolean;
+  onClose?: () => void;
+}> = ({ isCollapsed, pageLinks, onLinkClick, showToggleButton, onToggle, showCloseButton, onClose }) => (
+  <div className="flex flex-col h-full">
+    {/* Header */}
+    {(showToggleButton || showCloseButton) && (
+      <div className="p-4 border-b border-border flex items-center justify-between">
+        {showCloseButton ? (
+          <>
+            <h2 className="text-lg font-bold text-primary">Menu</h2>
+            <button
+              onClick={onClose}
+              className="w-8 h-8 flex items-center justify-center text-primary hover:text-primary-hover hover:bg-primary/10 rounded-lg transition-colors"
+              aria-label="Close menu"
+            >
+              ✕
+            </button>
+          </>
+        ) : showToggleButton && !isCollapsed ? (
+          <>
+            <h2 className="text-sm font-bold text-primary">Navigation</h2>
+            <button
+              onClick={onToggle}
+              className="w-8 h-8 bg-primary hover:bg-primary-hover rounded-lg flex items-center justify-center text-white transition-all duration-150"
+              title="Collapse sidebar"
+            >
+              <span className="text-xs">←</span>
+            </button>
+          </>
+        ) : null}
+        
+        {/* Toggle for collapsed */}
+        {showToggleButton && isCollapsed && (
+          <div className="w-full flex justify-center">
+            <button
+              onClick={onToggle}
+              className="w-8 h-8 bg-primary hover:bg-primary-hover rounded-lg flex items-center justify-center text-white transition-all duration-150"
+              title="Expand sidebar"
+            >
+              <span className="text-xs">→</span>
+            </button>
+          </div>
+        )}
+      </div>
+    )}
+
+    {/* Mobile header without close button */}
+    {!showToggleButton && !showCloseButton && (
+      <div className="p-4 border-b border-border">
+        <h2 className="text-lg font-bold text-primary">Menu</h2>
+        <p className="text-xs text-app-muted mt-1">Tap outside to close</p>
+      </div>
+    )}
+
+    {/* Navigation */}
+    <nav className="flex-1 px-3 py-6 space-y-1 overflow-y-auto">
+      {!isCollapsed && !showCloseButton && (
+        <div className="px-3 mb-4">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-app-muted">
+            Navigation
+          </h2>
+        </div>
+      )}
+
+      {pageLinks.map((link) => (
+        <NavLink
+          key={link.path}
+          to={link.path}
+          onClick={onLinkClick}
+          title={isCollapsed ? link.label : undefined}
+          className={({ isActive }) => {
+            const baseClass = `flex items-center px-4 py-3 rounded-lg text-sm font-medium transition-all duration-150 ease-in-out ${
+              isCollapsed ? 'justify-center' : ''
+            }`;
+            if (isActive) {
+              return `${baseClass} bg-primary/20 text-primary border-l-4 border-primary`;
+            }
+            return `${baseClass} text-app hover:bg-primary/10 hover:text-primary`;
+          }}
+        >
+          {({ isActive }) => (
+            <>
+              {!isCollapsed && (
+                <>
+                  {isActive && (
+                    <div className="w-1 h-1 rounded-full mr-3 bg-primary" />
+                  )}
+                  {link.label}
+                </>
+              )}
+              {isCollapsed && (
+                <span className="text-lg">
+                  {link.path === '/' && '🏠'}
+                  {link.path === '/bls' && '🔐'}
+                  {link.path === '/account-type' && '⚙️'}
+                  {link.path === '/register-rpc' && '📝'}
+                  {link.path === '/accounts' && '📋'}
+                </span>
+              )}
+            </>
+          )}
+        </NavLink>
+      ))}
+    </nav>
+  </div>
+);

@@ -72,7 +72,6 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
                 });
                 setPublicClient(newPublicClient);
                 setIsOnCorrectChain(true);
-                setStatus(`Wallet connected to ${account.substring(0, 6)}...${account.substring(account.length - 4)} on ${chain991.name}.`); //
             } else {
                  const currentActiveWalletClient = createWalletClient({
                     chain: {id: chainId, name: "Current Network", rpcUrls: {default: {http:[""]}}, nativeCurrency: {name: "ETH", symbol:"ETH", decimals:18}},
@@ -82,7 +81,6 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
                 setWalletClient(currentActiveWalletClient);
                 setPublicClient(null);
                 setIsOnCorrectChain(false);
-                setStatus(`Wallet connected to ${account.substring(0, 6)}...${account.substring(account.length - 4)}. Please switch to ${chain991.name} (ID: ${chain991.id}) if needed.`); //
             }
             setError(null);
         } catch (e: any) {
@@ -180,7 +178,6 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
 
                 try {
                     const accounts = await window.ethereum.request({ method: 'eth_accounts' }) as string[];
-                    console.log("WalletContext: Initial accounts check", accounts);
                     if (accounts && accounts.length > 0 && isAddress(accounts[0])) {
                         const initialAccount = accounts[0] as `0x${string}`;
                         setConnectedAccount(initialAccount);

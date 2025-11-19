@@ -87,10 +87,7 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 	}
 
 	if tx != nil {
-		logger.Info("2.Có tx: %v", tx)
-		logger.Info("To address: %s, commpart %s", tx.ToAddress().Hex(), utilsPkg.GetAddressSelector(common.ACCOUNT_SETTING_ADDRESS_SELECT))
 		if tx.ToAddress() == utilsPkg.GetAddressSelector(common.ACCOUNT_SETTING_ADDRESS_SELECT) {
-			logger.Info("__Processing account setting transaction___ %v", tx)
 			accountHandler, err := account_handler.GetAccountHandler(appCtx)
 			if err != nil {
 				return utils.MakeInternalError(id, "Failed to get account: "+err.Error())
@@ -106,7 +103,14 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 					releaseTx()
 				}
 				if err != nil {
-					return utils.MakeInternalError(id, "Account handler error: "+err.Error())
+					logger.Error("Account handler transaction error: %v", err)
+					return rpc_client.JSONRPCResponse{
+						Jsonrpc: "2.0",
+						Error: &rpc_client.JSONRPCError{
+							Code:    -1,
+							Message: err.Error(),
+						},
+					}
 				}
 				if result != nil {
 					return rpc_client.JSONRPCResponse{
@@ -127,6 +131,7 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 		fileAbi, _ := file_handler.GetFileAbi()
 		name, _ := fileAbi.ParseMethodName(tx)
 		if !(tx.ToAddress() == file_handler.PredictContractAddress(ethCommon.HexToAddress(appCtx.ClientTcp.GetClientContext().Config.OwnerFileStorageAddress)) && name == "uploadChunk") {
+			logger.Info("2.Sending transaction to RPC server___ chain: %s", rawTransactionHex)
 			rs := appCtx.ClientRpc.SendRawTransactionBinary(bTx, releaseTx, decodedTxBytes, releaseDecodedOnce, nil)
 			releaseDecodedOnce()
 			rs.Id = id
@@ -141,7 +146,6 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 				return utils.MakeInternalError(id, "Failed to build transaction: "+err.Error())
 			}
 			if isPrevent {
-
 				releaseDecodedOnce()
 				releaseTx()
 				return rpc_client.JSONRPCResponse{

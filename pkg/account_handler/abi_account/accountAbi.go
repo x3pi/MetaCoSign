@@ -7,6 +7,16 @@ const AccountABI = `[
 				"internalType": "address",
 				"name": "_account",
 				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "time",
+				"type": "uint256"
+			},
+			{
+				"internalType": "bytes",
+				"name": "_sign",
+				"type": "bytes"
 			}
 		],
 		"name": "confirmAccount",

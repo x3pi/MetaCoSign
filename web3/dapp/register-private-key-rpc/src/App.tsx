@@ -8,6 +8,8 @@ import MetaMaskSigner from "./pages/MetaMaskSigner/MetaMaskSigner";
 import HomePage from "./pages/Home/HomePage";
 import AccountTypeManagerPage from "./pages/SetAccountType/AccountTypeManagerPage";
 import BlsAccountListPage from "./pages/BlsAccountList/BlsAccountListPage";
+import { MobileMenuProvider } from "./contexts/MobileMenuContext";
+import { ThemeProvider } from "./contexts/ThemeContext";
 
 export interface PageLink {
   path: string;
@@ -24,28 +26,35 @@ function App() {
   ];
 
   return (
-    <div className="bg-app text-app min-h-screen flex flex-col transition-colors duration-300">
-      <SharedHeader pageLinks={pageLinks} />
-      
-      <div className="flex flex-1">
-        <Sidebar pageLinks={pageLinks} />
-        
-        <main className="flex-1 container mx-auto px-2 sm:px-4">
-          <Routes>
-            <Route path="/" element={<HomePage />} />
-            <Route path="bls" element={<BlsManagerPage />} />
-            <Route path="account-type" element={<AccountTypeManagerPage />} />
-            <Route path="register-rpc" element={<MetaMaskSigner />} />
-            <Route path="accounts" element={<BlsAccountListPage />} />
-            <Route path="*" element={<h1>Not found</h1>} />
-          </Routes>
-        </main>
-      </div>
+    <ThemeProvider>
+      <MobileMenuProvider>
+        <div className="bg-app text-app min-h-screen flex flex-col transition-colors duration-300">
+          {/* Header */}
+          <SharedHeader pageLinks={pageLinks} />
+          
+          {/* Main layout */}
+          <div className="flex flex-1 relative">
+            {/* Sidebar component */}
+            <Sidebar pageLinks={pageLinks} />
+            
+            {/* Main content - responsive margin/padding */}
+            <main className="flex-1 w-full md:w-auto px-2 sm:px-4 pt-4 md:pt-0">
+              <div className="container mx-auto">
+                <Routes>
+                  <Route path="/" element={<HomePage />} />
+                  <Route path="bls" element={<BlsManagerPage />} />
+                  <Route path="account-type" element={<AccountTypeManagerPage />} />
+                  <Route path="register-rpc" element={<MetaMaskSigner />} />
+                  <Route path="accounts" element={<BlsAccountListPage />} />
+                  <Route path="*" element={<h1>Not found</h1>} />
+                </Routes>
+              </div>
+            </main>
+          </div>
 
-      <footer className="text-center py-6 text-xs text-app-muted bg-app-secondary mt-auto transition-colors duration-300">
-        <p>An account management application.</p>
-      </footer>
-    </div>
+        </div>
+      </MobileMenuProvider>
+    </ThemeProvider>
   );
 }
 
