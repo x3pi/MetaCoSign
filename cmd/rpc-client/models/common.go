@@ -1,6 +1,8 @@
 package models
 
-import "encoding/json"
+import (
+	"encoding/json"
+)
 
 type JSONRPCRequestRaw struct {
 	Jsonrpc string          `json:"jsonrpc"`

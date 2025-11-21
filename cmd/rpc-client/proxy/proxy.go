@@ -16,6 +16,7 @@ type RpcReverseProxy struct {
 	ReadonlyReverseProxy *httputil.ReverseProxy
 	ReadonlyWSSServerURL string
 	AppCtx               *app.Context
+	SubInterceptor       *SubscriptionInterceptor
 }
 
 // New tạo RpcReverseProxy instance
@@ -47,6 +48,7 @@ func New(appCtx *app.Context) (*RpcReverseProxy, error) {
 		ReadonlyReverseProxy: readonlyProxy,
 		ReadonlyWSSServerURL: cfg.ReadonlyWSSServerURL,
 		AppCtx:               appCtx,
+		SubInterceptor:       NewSubscriptionInterceptor(appCtx),
 	}
 
 	// Set error handlers

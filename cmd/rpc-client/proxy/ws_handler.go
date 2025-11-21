@@ -27,17 +27,18 @@ func (p *RpcReverseProxy) ServeWebSocket(w http.ResponseWriter, r *http.Request,
 		logger.Error("WebSocket upgrade failed for %s: %v", r.RemoteAddr, err)
 		return
 	}
-	defer clientConn.Close()
+	defer func() {
+		p.SubInterceptor.RemoveByConnection(clientConn)
+		clientConn.Close()
+	}()
 
 	clientWriter := NewWebSocketWriter(clientConn)
-
 	// Validate target URL
 	if targetURL == "" {
 		logger.Error("Target WebSocket URL not configured for client %s", clientConn.RemoteAddr())
 		_ = clientWriter.WriteCloseMessage(websocket.CloseInternalServerErr, "Target WebSocket URL not configured")
 		return
 	}
-
 	// Connect to upstream WebSocket server
 	targetConn, err := p.dialUpstreamWebSocket(targetURL, r, clientConn.RemoteAddr().String())
 	if err != nil {
@@ -48,7 +49,7 @@ func (p *RpcReverseProxy) ServeWebSocket(w http.ResponseWriter, r *http.Request,
 	defer targetConn.Close()
 
 	targetWriter := NewWebSocketWriter(targetConn)
-
+	logger.Info("8.WebSocket connection established between client %s and upstream %s", clientConn.RemoteAddr(), targetURL)
 	// Proxy bidirectional traffic
 	p.proxyWebSocketTraffic(clientConn, targetConn, clientWriter, targetWriter, r)
 }
@@ -110,6 +111,7 @@ func (p *RpcReverseProxy) handleDialError(err error, resp *http.Response, target
 
 // proxyWebSocketTraffic handles bidirectional message forwarding
 func (p *RpcReverseProxy) proxyWebSocketTraffic(
+
 	clientConn, targetConn *websocket.Conn,
 	clientWriter, targetWriter *WebSocketWriter,
 	r *http.Request,
@@ -186,7 +188,6 @@ func (p *RpcReverseProxy) proxyClientToUpstream(
 			return
 		default:
 		}
-
 		// Read JSON-RPC request from client
 		var req models.JSONRPCRequestRaw
 		if err := clientConn.SetReadDeadline(time.Now().Add(180 * time.Second)); err != nil {
@@ -205,7 +206,20 @@ func (p *RpcReverseProxy) proxyClientToUpstream(
 			}
 			return
 		}
-
+		if req.Method == "eth_subscribe" {
+			if err := p.HandleSubscribeRequest(req, clientConn, targetConn, clientWriter, targetWriter, errChan, quit); err != nil {
+				errorResp := map[string]interface{}{
+					"jsonrpc": "2.0",
+					"id":      req.Id,
+					"error": map[string]interface{}{
+						"code":    -32602,
+						"message": err.Error(),
+					},
+				}
+				clientWriter.WriteJSON(errorResp)
+			}
+			continue
+		}
 		// Try to handle RPC method locally
 		rpcResp, handled := p.RouteWebSocketMessage(req)
 		if handled && rpcResp != nil {
@@ -219,7 +233,7 @@ func (p *RpcReverseProxy) proxyClientToUpstream(
 				return
 			}
 		} else {
-			// Forward to upstream server
+			// logger.Info("Forwarding to Upstream -> Method: %s | Params: %s | ID: %s", req.Method, string(req.Params), req.Id)
 			if err := targetWriter.WriteJSON(req); err != nil {
 				logger.Error("Error writing to upstream for client %s: %v", clientConn.RemoteAddr(), err)
 				select {
@@ -245,14 +259,12 @@ func (p *RpcReverseProxy) proxyUpstreamToClient(
 			return
 		default:
 		}
-
 		// Read message from upstream
 		if err := targetConn.SetReadDeadline(time.Now().Add(180 * time.Second)); err != nil {
 			logger.Warn("Error setting read deadline: %v", err)
 		}
 		messageType, message, readErr := targetConn.ReadMessage()
 		_ = targetConn.SetReadDeadline(time.Time{})
-
 		if readErr != nil {
 			if !isExpectedCloseError(readErr) {
 				logger.Error("Error reading from upstream: %v", readErr)
@@ -274,6 +286,48 @@ func (p *RpcReverseProxy) proxyUpstreamToClient(
 			return
 		}
 	}
+}
+
+func (p *RpcReverseProxy) HandleTriggerEvent(w http.ResponseWriter, r *http.Request) {
+	idStr := r.URL.Query().Get("id")
+	msg := r.URL.Query().Get("msg")
+	contractAddr := r.URL.Query().Get("contract")
+	if contractAddr == "" {
+		contractAddr = p.AppCtx.Cfg.ContractsInterceptor[0] // 0x2ea1b43129C47Ab568F88FE5A76AF0DfD65B3D3a
+	}
+	if idStr == "" {
+		idStr = "123"
+	}
+	if msg == "" {
+		msg = "Test event from RPC Proxy"
+	}
+
+	// Parse ID
+	var idNum uint64
+	if _, err := fmt.Sscanf(idStr, "%d", &idNum); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid id parameter: %v", err), http.StatusBadRequest)
+		return
+	}
+	isMonitored := false
+	for _, monitored := range p.AppCtx.Cfg.ContractsInterceptor {
+		if strings.EqualFold(contractAddr, monitored) {
+			isMonitored = true
+			break
+		}
+	}
+
+	if !isMonitored {
+		http.Error(w, fmt.Sprintf("Contract %s is not in monitored list", contractAddr), http.StatusBadRequest)
+		return
+	}
+	logger.Info("🌐 HTTP Trigger: contract=%s, id=%d, msg=%s", contractAddr, idNum, msg)
+	if err := p.TriggerFakePingEvent(contractAddr, idNum, msg); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to trigger event: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Event triggered successfully!"))
 }
 
 // isExpectedCloseError checks if error is an expected close error

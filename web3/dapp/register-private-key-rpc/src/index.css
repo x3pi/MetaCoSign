@@ -35,6 +35,18 @@
   --color-error: #dc2626; /* red-600 */
   --color-info: #3b82f6; /* blue-600 */
 
+  /* Accent Colors cho các page khác nhau */
+  --color-purple: #9333ea; /* purple-600 */
+  --color-purple-light: #c084fc; /* purple-400 */
+  --color-purple-hover: #7c3aed; /* purple-700 */
+  
+  --color-teal: #0d9488; /* teal-600 */
+  --color-teal-light: #2dd4bf; /* teal-400 */
+  --color-teal-hover: #0f766e; /* teal-700 */
+  
+  --color-cyan: #0891b2; /* cyan-600 */
+  --color-cyan-light: #22d3ee; /* cyan-400 */
+
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
   --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1);
@@ -70,6 +82,18 @@
   --color-warning: #eab308; /* yellow-500 */
   --color-error: #ef4444; /* red-500 */
   --color-info: #60a5fa; /* blue-400 */
+
+  /* Accent Colors - Dark mode (sáng hơn để nổi bật) */
+  --color-purple: #c084fc; /* purple-400 */
+  --color-purple-light: #e9d5ff; /* purple-200 */
+  --color-purple-hover: #a855f7; /* purple-500 */
+  
+  --color-teal: #2dd4bf; /* teal-400 */
+  --color-teal-light: #5eead4; /* teal-300 */
+  --color-teal-hover: #14b8a6; /* teal-500 */
+  
+  --color-cyan: #22d3ee; /* cyan-400 */
+  --color-cyan-light: #67e8f9; /* cyan-300 */
 
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.8);
   --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.8);
@@ -129,6 +153,17 @@
   color: var(--color-error);
 }
 
+/* Accent Text Colors */
+.text-purple {
+  color: var(--color-purple);
+}
+.text-teal {
+  color: var(--color-teal);
+}
+.text-cyan {
+  color: var(--color-cyan);
+}
+
 .text-app {
   color: var(--color-foreground);
 }
@@ -154,6 +189,28 @@
 }
 .border-border-secondary {
   border-color: var(--color-border-secondary);
+}
+
+/* Accent Border Colors */
+.border-purple {
+  border-color: var(--color-purple);
+}
+.border-teal {
+  border-color: var(--color-teal);
+}
+
+/* Accent Background Colors */
+.bg-purple {
+  background-color: var(--color-purple);
+}
+.bg-purple-hover:hover {
+  background-color: var(--color-purple-hover);
+}
+.bg-teal {
+  background-color: var(--color-teal);
+}
+.bg-teal-hover:hover {
+  background-color: var(--color-teal-hover);
 }
 
 /* Hover Effects cho Background */

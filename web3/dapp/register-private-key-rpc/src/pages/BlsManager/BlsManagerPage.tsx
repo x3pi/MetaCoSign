@@ -157,11 +157,11 @@ function BlsManagerPage() {
 
   return (
     <div className="min-h-screen bg-app p-4 md:p-8">
-      <div className="max-w-2xl mx-auto space-y-6">
-        <Card className="border-teal-500/20">
+      <div className="max-w-2xl mx-auto space-y-6 ">
+        <Card className="border-teal/20">
           <CardHeader className="space-y-3">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-3xl font-bold text-teal-400 flex items-center gap-2">
+              <CardTitle className="text-3xl font-bold text-teal flex items-center gap-2">
                 <Key className="h-7 w-7" />
                 Create BLS Public Key
               </CardTitle>
@@ -175,10 +175,10 @@ function BlsManagerPage() {
             </CardDescription>
             {connectedAccount && isOnCorrectChain && (
               <div className="pt-2">
-                <Label className="text-xs text-neutral-400">
+                <Label className="text-xs text-app-muted">
                   Contract Address
                 </Label>
-                <code className="block mt-1 text-xs text-green-400 font-mono bg-neutral-700/50 p-2 rounded">
+                <code className="block mt-1 text-xs text-success font-mono bg-card-secondary p-2 rounded">
                   {PREDEFINED_CONTRACT_ADDRESS}
                 </code>
               </div>
@@ -195,7 +195,7 @@ function BlsManagerPage() {
                 className="space-y-6"
               >
                 <div className="space-y-2">
-                  <Label htmlFor="blsPublicKey" className="text-teal-400">
+                  <Label htmlFor="blsPublicKey" className="text-teal">
                     BLS Public Key (Hex)
                   </Label>
                   <Input
@@ -207,7 +207,7 @@ function BlsManagerPage() {
                     disabled={isProcessing || !isOnCorrectChain}
                     className="font-mono"
                   />
-                  <p className="text-xs text-neutral-500">
+                  <p className="text-xs text-app-muted">
                     Enter the BLS public key as a hex string with "0x" prefix
                   </p>
                 </div>
@@ -221,7 +221,7 @@ function BlsManagerPage() {
                     !isAddress(PREDEFINED_CONTRACT_ADDRESS)
                   }
                   size="lg"
-                  className="w-full bg-teal-500 hover:bg-teal-600"
+                  className="w-full bg-teal hover:bg-teal-hover text-white"
                 >
                   {isProcessing ? (
                     <>
@@ -271,7 +271,7 @@ function BlsManagerPage() {
           </CardContent>
         </Card>
 
-        <footer className="text-center text-xs text-neutral-500 py-4">
+        <footer className="text-center text-xs text-app-muted py-4">
           <p>
             Interface to interact with the AccountManager smart contract on the{" "}
             {chain991.name} network.

@@ -62,7 +62,7 @@ export function PageCard({
         {contractAddress && isConnected && (
           <div className="pt-2">
             <Label className="text-xs text-app-muted">Contract Address</Label>
-            <code className="block mt-1 text-xs text-success font-mono bg-[var(--color-background-secondary)] p-2 rounded">
+            <code className="block mt-1 text-xs text-success font-mono bg-app-secondary p-2 rounded">
               {contractAddress}
             </code>
           </div>

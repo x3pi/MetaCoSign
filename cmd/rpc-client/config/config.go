@@ -25,6 +25,7 @@ type Config struct {
 	AppPepper            string   `json:"app_pepper"`
 	LdbBlsWalletsPath    string   `json:"ldb_bls_wallet_path"`
 	OwnerRpcAddress      string   `json:"owner_rpc_address"`
+	ContractsInterceptor []string `json:"contracts_interceptor"` // Địa chỉ contract dùng để intercept
 }
 
 func Load(path string, tcpCfgPath string) (*Config, *tcp_config.ClientConfig, error) {
@@ -77,7 +78,6 @@ func Load(path string, tcpCfgPath string) (*Config, *tcp_config.ClientConfig, er
 	if err := config.Validate(); err != nil {
 		return nil, nil, err
 	}
-
 	return config, clientTcpCfg, nil
 }
 

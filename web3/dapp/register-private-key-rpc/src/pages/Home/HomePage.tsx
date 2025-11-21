@@ -195,7 +195,6 @@ function HomePage() {
           </>
         )}
       </PageCard>
-
       <footer className="text-center text-xs text-neutral-500 dark:text-neutral-600 py-4">
         <p>Account state information retrieved via custom RPC method.</p>
       </footer>

@@ -245,7 +245,7 @@ function AccountTypeManagerPage() {
                 className="space-y-6"
               >
                 <div className="space-y-2">
-                  <Label htmlFor="accountType" className="text-purple-400">
+                  <Label htmlFor="accountType" className="text-purple">
                     Account Type
                   </Label>
                   <div className="relative">
@@ -254,7 +254,7 @@ function AccountTypeManagerPage() {
                       value={accountTypeInput}
                       onChange={(e) => setAccountTypeInput(e.target.value)}
                       disabled={isProcessing || !isOnCorrectChain}
-                      className="w-full h-10 rounded-lg border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-700/60 px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-neutral-800 disabled:cursor-not-allowed disabled:opacity-50 appearance-none cursor-pointer transition-colors"
+                      className="w-full h-10 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 appearance-none cursor-pointer transition-colors"
                     >
                       {accountTypes.map((type) => (
                         <option key={type.value} value={type.value}>
@@ -262,10 +262,10 @@ function AccountTypeManagerPage() {
                         </option>
                       ))}
                     </select>
-                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400 pointer-events-none" />
+                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-app-muted pointer-events-none" />
                   </div>
-                  <div className="mt-3 p-3 bg-neutral-100 dark:bg-neutral-700/30 rounded-lg">
-                    <p className="text-xs text-neutral-600 dark:text-neutral-400">
+                  <div className="mt-3 p-3 bg-card-secondary rounded-lg">
+                    <p className="text-xs text-app-muted">
                       {
                         accountTypes.find((t) => t.value === accountTypeInput)
                           ?.description
@@ -283,7 +283,7 @@ function AccountTypeManagerPage() {
                     !isAddress(PREDEFINED_CONTRACT_ADDRESS)
                   }
                   size="lg"
-                  className="w-full bg-purple-600 hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-600"
+                  className="w-full bg-purple hover:bg-purple-hover text-white"
                 >
                   {isProcessing ? (
                     <>

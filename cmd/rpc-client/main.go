@@ -137,13 +137,16 @@ func setupHTTPServer(rpcProxy *proxy.RpcReverseProxy, cfg *config.Config, logsDi
 
 	mux.HandleFunc("/debug/logs/list", setup.HandleRPCLogList(logsDir))
 	mux.HandleFunc("/debug/logs/content", setup.HandleRPCLogContent(logsDir))
+	mux.HandleFunc("/trigger-event", rpcProxy.HandleTriggerEvent)
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		logger.Info("1. Received %s request for %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
 		// WebSocket upgrade handling
 		if websocket.IsWebSocketUpgrade(r) {
 			var finalTargetURL string
 			// Readonly WebSocket endpoint
 			if strings.HasPrefix(r.URL.Path, "/readonly") {
+				logger.Info("2. WebSocket upgrade requested for %s, routing to READONLY target", r.URL.Path)
 				if rpcProxy.ReadonlyWSSServerURL != "" {
 					targetBaseURL, _ := url.Parse(rpcProxy.ReadonlyWSSServerURL)
 					targetHost := targetBaseURL.Scheme + "://" + targetBaseURL.Host
@@ -156,6 +159,7 @@ func setupHTTPServer(rpcProxy *proxy.RpcReverseProxy, cfg *config.Config, logsDi
 					return
 				}
 			} else {
+				logger.Info("2. WebSocket upgrade requested for %s, routing to DEFAULT target", r.URL.Path)
 				// Default WebSocket endpoint
 				finalTargetURL = rpcProxy.AppCtx.ClientRpc.UrlWS
 				logger.Debug("Routing WebSocket upgrade for %s to DEFAULT target %s", r.URL.Path, finalTargetURL)
@@ -166,7 +170,7 @@ func setupHTTPServer(rpcProxy *proxy.RpcReverseProxy, cfg *config.Config, logsDi
 				http.Error(w, "Target WebSocket endpoint is not configured", http.StatusServiceUnavailable)
 				return
 			}
-
+			logger.Info("3. WebSocket upgrade requested for %s, routing to target %s", r.URL.Path, finalTargetURL)
 			rpcProxy.ServeWebSocket(w, r, finalTargetURL)
 			return
 		}

@@ -2,6 +2,25 @@ package abi_account
 
 const AccountABI = `[
 	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "account",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "time",
+				"type": "uint256"
+			}
+		],
+		"name": "AccountConfirmed",
+		"type": "event"
+	},
+	{
 		"inputs": [
 			{
 				"internalType": "address",
