@@ -34,7 +34,7 @@ func processEthCallParams(appCtx *app.Context, id interface{}, callObjectRaw jso
 		return utils.MakeInvalidParamError(id, "Invalid eth_call parameter")
 	}
 	if hasTo && toAddress == utilsPkg.GetAddressSelector(common.ACCOUNT_SETTING_ADDRESS_SELECT) {
-
+		logger.Info("Handling eth_call for Account contract at address %s", toAddress.Hex())
 		accountHandler, err := account_handler.GetAccountHandler(appCtx)
 		if err != nil {
 			logger.Error("Failed to get account handler: %v", err)
@@ -44,7 +44,7 @@ func processEthCallParams(appCtx *app.Context, id interface{}, callObjectRaw jso
 		// Handle eth_call cho account operations
 		result, err := accountHandler.HandleEthCall(context.Background(), payload)
 		if err != nil {
-			logger.Error("Account handler eth_call error: %v", err)
+			// logger.Error("Account handler eth_call error: %v", err)
 			return utils.MakeInternalError(id, "Account handler error: "+err.Error())
 		}
 

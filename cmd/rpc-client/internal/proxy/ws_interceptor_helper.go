@@ -6,6 +6,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/gorilla/websocket"
+	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/internal/ws_writer"
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/models"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 )
@@ -13,7 +14,7 @@ import (
 // handleSubscribeRequest xử lý logic phức tạp cho eth_subscribe
 func (p *RpcReverseProxy) HandleSubscribeRequest(req models.JSONRPCRequestRaw,
 	clientConn, targetConn *websocket.Conn,
-	clientWriter, targetWriter *WebSocketWriter,
+	clientWriter, targetWriter *ws_writer.WebSocketWriter,
 	errChan chan<- error,
 	quit <-chan struct{}) error {
 	var params []interface{}
@@ -44,7 +45,7 @@ func (p *RpcReverseProxy) HandleSubscribeRequest(req models.JSONRPCRequestRaw,
 		logger.Info("No address filter, forwarding to chain")
 		return p.forwardToUpstream(req, targetWriter, errChan, quit)
 	}
-	shouldIntercept, err := p.SubInterceptor.ValidateSubscriptionAddresses(contractAddrs)
+	shouldIntercept, err := p.AppCtx.SubInterceptor.ValidateSubscriptionAddresses(contractAddrs)
 	if err != nil {
 		logger.Error("Subscription validation failed: %v", err)
 		return err
@@ -65,7 +66,7 @@ func (p *RpcReverseProxy) HandleSubscribeRequest(req models.JSONRPCRequestRaw,
 		}
 		// Tạo subscription (lưu tất cả addresses)
 		// Note: Bạn cần cập nhật SubManager để hỗ trợ nhiều addresses
-		subID := p.SubInterceptor.CreateSubscription(clientConn, clientWriter, contractAddrs, topics)
+		subID := p.AppCtx.SubInterceptor.CreateSubscription(clientConn, clientWriter, contractAddrs, topics)
 		response := map[string]interface{}{
 			"jsonrpc": "2.0",
 			"id":      req.Id,
@@ -104,7 +105,7 @@ func (p *RpcReverseProxy) TriggerFakePingEvent(contractAddr string, id uint64, m
 
 	// Gửi tới tất cả subscribers
 	topics := []string{PingEventHash}
-	p.SubInterceptor.BroadcastEventToContract(contractAddr, topics, eventData)
+	p.AppCtx.SubInterceptor.BroadcastEventToContract(contractAddr, topics, eventData)
 	logger.Info("🔥 Triggered fake Ping event: contract=%s, id=%d, message=%s", contractAddr, id, message)
 	return nil
 }
@@ -112,7 +113,7 @@ func (p *RpcReverseProxy) TriggerFakePingEvent(contractAddr string, id uint64, m
 // forwardToUpstream helper function để gửi request lên chain
 func (p *RpcReverseProxy) forwardToUpstream(
 	req models.JSONRPCRequestRaw,
-	targetWriter *WebSocketWriter,
+	targetWriter *ws_writer.WebSocketWriter,
 	errChan chan<- error,
 	quit <-chan struct{},
 ) error {

@@ -11,12 +11,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	ethCommon "github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/app"
-	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/utils"
 	"github.com/meta-node-blockchain/meta-node/pkg/account_handler/abi_account"
-	"github.com/meta-node-blockchain/meta-node/pkg/bls"
 	"github.com/meta-node-blockchain/meta-node/pkg/common"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	pb "github.com/meta-node-blockchain/meta-node/pkg/proto"
@@ -82,15 +79,11 @@ func (h *AccountHandlerNoReceipt) HandleAccountTransaction(
 	case "setBlsPublicKey":
 		err = h.handleSetBlsPublicKey(tx, method, inputData[4:], rawTransactionHex)
 		return true, nil, err
-
 	case "confirmAccount":
 		result, err = h.handleConfirmAccount(tx, method, inputData[4:])
 		return true, result, err
-
-	// case "getAllAccount":
-	// 	result, err = h.handleGetAllAccount(method, inputData[4:])
-	// 	return true, result, err
-
+	case "setAccountType":
+		return false, nil, nil
 	default:
 		return false, nil, nil
 	}
@@ -104,13 +97,12 @@ func (h *AccountHandlerNoReceipt) HandleEthCall(ctx context.Context, data []byte
 	if err != nil {
 		return nil, fmt.Errorf("method not found: %w", err)
 	}
-
-	logger.Info("🔍 HandleEthCall method: %s", method.Name)
-
 	// Chỉ handle getAllAccount cho eth_call
 	switch method.Name {
 	case "getAllAccount":
 		return h.handleGetAllAccount(method, data[4:])
+	case "getNotifications": // ✅ THÊM
+		return h.handleGetNotifications(method, data[4:])
 
 	default:
 		return nil, fmt.Errorf("unsupported eth_call method: %s", method.Name)
@@ -123,6 +115,7 @@ func (h *AccountHandlerNoReceipt) handleSetBlsPublicKey(
 	inputData []byte,
 	rawTransactionHex string,
 ) error {
+	logger.Info("Handling setBlsPublicKey for tx %s", tx.Hash().Hex())
 	// Unpack input data
 	args, err := method.Inputs.Unpack(inputData)
 	if err != nil {
@@ -134,6 +127,7 @@ func (h *AccountHandlerNoReceipt) handleSetBlsPublicKey(
 		return fmt.Errorf("invalid BLS public key format")
 	}
 	fromAddress := tx.FromAddress()
+	currentTime := time.Now().Unix()
 
 	accountData := &pb.BlsAccountData{
 		Address:        fromAddress.Bytes(),
@@ -161,7 +155,24 @@ func (h *AccountHandlerNoReceipt) handleSetBlsPublicKey(
 	if err := h.storage.SavePendingTransaction(pendingTx); err != nil {
 		return fmt.Errorf("failed to save pending transaction: %w", err)
 	}
-
+	msgNoti := fmt.Sprintf("BLS registered for account %s", fromAddress.Hex())
+	notification := &pb.Notification{
+		AccountAddress: ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress).Bytes(),
+		Message:        msgNoti,
+		CreatedAt:      currentTime,
+	}
+	if err := h.appCtx.LdbNotification.SaveNotification(notification); err != nil {
+		logger.Error("Failed to save notification: %v", err)
+		return fmt.Errorf("Failed to save notification: %v", err)
+	}
+	logger.Info("✅ BLS public key set for account %s", fromAddress.Hex())
+	h.broadcastEvent(
+		"RegisterBls",
+		fromAddress,
+		big.NewInt(currentTime),
+		blsPublicKeyBytes,
+		msgNoti,
+	)
 	return nil
 }
 
@@ -212,105 +223,176 @@ func (h *AccountHandlerNoReceipt) handleConfirmAccount(
 		return "", fmt.Errorf("invalid signature: signer %s is not authorized", signerAddress.Hex())
 	}
 
-	pendingTx, err := h.storage.GetPendingTransaction(accountAddress)
-	if err != nil {
-		return "", fmt.Errorf("pending transaction not found: %w", err)
-	}
+	// pendingTx, err := h.storage.GetPendingTransaction(accountAddress)
+	// if err != nil {
+	// 	return "", fmt.Errorf("pending transaction not found: %w", err)
+	// }
 	// ========== REBUILD TRANSACTION TỪ rawTransactionHex ==========
-	rawTransactionHex := pendingTx.RawTransactionHex
-	// Decode hex
-	decodedTxBytes, releaseDecoded, err := utils.DecodeHexPooled(rawTransactionHex)
-	if err != nil {
-		return "", fmt.Errorf("invalid raw transaction hex: %w", err)
-	}
-	decodedReleased := false
-	releaseDecodedOnce := func() {
-		if decodedReleased {
-			return
-		}
-		decodedReleased = true
-		if releaseDecoded != nil {
-			releaseDecoded()
-		}
-	}
-	// Unmarshal Ethereum transaction
-	ethTx := new(types.Transaction)
-	if err := ethTx.UnmarshalBinary(decodedTxBytes); err != nil {
-		return "", fmt.Errorf("failed to unmarshal ethereum transaction: %w", err)
-	}
-	// Verify sender
-	signer := types.LatestSignerForChainID(h.appCtx.ClientRpc.ChainId)
-	fromAddress, err := types.Sender(signer, ethTx)
-	if err != nil {
-		return "", fmt.Errorf("failed to derive sender: %w", err)
-	}
-	if fromAddress != accountAddress {
-		return "", fmt.Errorf("sender mismatch: expected %s, got %s", accountAddress.Hex(), fromAddress.Hex())
-	}
-	var (
-		bTx       []byte
-		mtTx      mt_types.Transaction
-		releaseTx func()
-		buildErr  error
-	)
-	exists, err := h.appCtx.PKS.HasPrivateKey(fromAddress)
-	if err != nil {
-		return "", fmt.Errorf("error checking private key store: %w", err)
-	}
-	logger.Info("Rebuilding transaction for account %s, exists in PKS: %v", fromAddress.Hex(), exists)
-	if !exists {
-		bTx, mtTx, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTx(ethTx)
-	} else {
-		senderPkString, _ := h.appCtx.PKS.GetPrivateKey(fromAddress)
-		keyPair := bls.NewKeyPair(ethCommon.FromHex(senderPkString))
-		bTx, mtTx, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(
-			ethTx,
-			keyPair.PrivateKey(),
-		)
-	}
-	if buildErr != nil {
-		return "", fmt.Errorf("failed to build transaction: %w", buildErr)
-	}
-	rs := h.appCtx.ClientRpc.SendRawTransactionBinary(
-		bTx,
-		releaseTx,
-		decodedTxBytes,
-		releaseDecodedOnce,
-		nil,
-	)
-	logger.Error("SendRawTransactionBinary result: %+v", rs)
-	if rs.Error != nil {
-		return "", fmt.Errorf("failed to send transaction: %v", rs.Error)
-	}
+	// rawTransactionHex := pendingTx.RawTransactionHex
+	// // Decode hex
+	// decodedTxBytes, releaseDecoded, err := utils.DecodeHexPooled(rawTransactionHex)
+	// if err != nil {
+	// 	return "", fmt.Errorf("invalid raw transaction hex: %w", err)
+	// }
+	// decodedReleased := false
+	// releaseDecodedOnce := func() {
+	// 	if decodedReleased {
+	// 		return
+	// 	}
+	// 	decodedReleased = true
+	// 	if releaseDecoded != nil {
+	// 		releaseDecoded()
+	// 	}
+	// }
+	// // Unmarshal Ethereum transaction
+	// ethTx := new(types.Transaction)
+	// if err := ethTx.UnmarshalBinary(decodedTxBytes); err != nil {
+	// 	return "", fmt.Errorf("failed to unmarshal ethereum transaction: %w", err)
+	// }
+	// // Verify sender
+	// signer := types.LatestSignerForChainID(h.appCtx.ClientRpc.ChainId)
+	// fromAddress, err := types.Sender(signer, ethTx)
+	// if err != nil {
+	// 	return "", fmt.Errorf("failed to derive sender: %w", err)
+	// }
+	// if fromAddress != accountAddress {
+	// 	return "", fmt.Errorf("sender mismatch: expected %s, got %s", accountAddress.Hex(), fromAddress.Hex())
+	// }
+	// var (
+	// 	bTx       []byte
+	// 	mtTx      mt_types.Transaction
+	// 	releaseTx func()
+	// 	buildErr  error
+	// )
+	// exists, err := h.appCtx.PKS.HasPrivateKey(fromAddress)
+	// if err != nil {
+	// 	return "", fmt.Errorf("error checking private key store: %w", err)
+	// }
+	// logger.Info("Rebuilding transaction for account %s, exists in PKS: %v", fromAddress.Hex(), exists)
+	// if !exists {
+	// 	bTx, mtTx, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTx(ethTx)
+	// } else {
+	// 	senderPkString, _ := h.appCtx.PKS.GetPrivateKey(fromAddress)
+	// 	keyPair := bls.NewKeyPair(ethCommon.FromHex(senderPkString))
+	// 	bTx, mtTx, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(
+	// 		ethTx,
+	// 		keyPair.PrivateKey(),
+	// 	)
+	// }
+	// if buildErr != nil {
+	// 	return "", fmt.Errorf("failed to build transaction: %w", buildErr)
+	// }
+	// rs := h.appCtx.ClientRpc.SendRawTransactionBinary(
+	// 	bTx,
+	// 	releaseTx,
+	// 	decodedTxBytes,
+	// 	releaseDecodedOnce,
+	// 	nil,
+	// )
+	// if rs.Error != nil {
+	// 	return "", fmt.Errorf("failed to send transaction: %v", rs.Error)
+	// }
 
-	metaTxData, _, releaseFunc, err := h.appCtx.ClientRpc.BuildTransferTransaction(ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress), ethCommon.Address(pendingTx.Address), big.NewInt(1000000000000000000))
-	rst := h.appCtx.ClientRpc.SendRawTransactionBinary(
-		metaTxData,
-		releaseFunc,
-		nil,
-		nil,
-		nil,
-	)
-	logger.Error("SendRawTransactionBinary result: %+v", rst)
-	if rs.Error != nil {
-		return "", fmt.Errorf("failed to send transaction: %v", rst.Error)
+	// metaTxData, _, releaseFunc, err := h.appCtx.ClientRpc.BuildTransferTransaction(ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress), ethCommon.Address(pendingTx.Address), big.NewInt(1000000000000000000))
+	// rst := h.appCtx.ClientRpc.SendRawTransactionBinary(
+	// 	metaTxData,
+	// 	releaseFunc,
+	// 	nil,
+	// 	nil,
+	// 	nil,
+	// )
+	// if rs.Error != nil {
+	// 	return "", fmt.Errorf("failed to send transaction: %v", rst.Error)
+	// }
+	// // Cập nhật trạng thái confirmed
+	// if err := h.storage.MarkAccountConfirmed(
+	// 	accountAddress,
+	// 	mtTx.Hash().Bytes(),
+	// 	pendingTx.BlsPublicKey,
+	// ); err != nil {
+	// 	logger.Error("Failed to mark account as confirmed: %v", err)
+	// }
+	// // Xóa pending transaction
+	// if err := h.storage.DeletePendingTransaction(accountAddress); err != nil {
+	// 	logger.Error("Failed to delete pending transaction: %v", err)
+	// }
+	// ✅ TẠO NOTIFICATION VÀ BROADCAST EVENT
+	msgNoti := fmt.Sprintf("Your account %s has been successfully confirmed!", accountAddress.Hex())
+
+	notification := &pb.Notification{
+		AccountAddress: accountAddress.Bytes(),
+		Message:        msgNoti,
+		CreatedAt:      currentTime,
 	}
-	// Cập nhật trạng thái confirmed
-	if err := h.storage.MarkAccountConfirmed(
-		accountAddress,
-		mtTx.Hash().Bytes(),
-		pendingTx.BlsPublicKey,
-	); err != nil {
-		logger.Error("Failed to mark account as confirmed: %v", err)
+	if err := h.appCtx.LdbNotification.SaveNotification(notification); err != nil {
+		logger.Error("Failed to save notification: %v", err)
+		return "", fmt.Errorf("Failed to save notification: %v", err)
 	}
-	// Xóa pending transaction
-	if err := h.storage.DeletePendingTransaction(accountAddress); err != nil {
-		logger.Error("Failed to delete pending transaction: %v", err)
-	}
-	logger.Info("✅ Đã confirm account %s, tx hash: %v", accountAddress.Hex(), rs.Result)
-	return rs.Result.(string), nil
+	h.broadcastEvent("AccountConfirmed", accountAddress, big.NewInt(currentTime), msgNoti)
+
+	// logger.Info("✅ Đã confirm account %s, tx hash: %v", accountAddress.Hex(), rs.Result)
+	// return rs.Result.(string), nil
+	return "hihi", nil
 }
 
+func (h *AccountHandlerNoReceipt) broadcastEvent(
+	eventName string,
+	eventArgs ...interface{},
+) error {
+	addressContract := utilsPkg.GetAddressSelector(common.ACCOUNT_SETTING_ADDRESS_SELECT)
+	event, ok := h.abi.Events[eventName]
+	if !ok {
+		return fmt.Errorf("event %s not found in ABI", eventName)
+	}
+	eventHash := event.ID
+	argIndex := 0
+	eventTopics := []string{eventHash.Hex()}
+	nonIndexedArgs := make([]interface{}, 0)
+	for _, input := range event.Inputs {
+		if argIndex >= len(eventArgs) {
+			break
+		}
+		logger.Info("Processing event arg %d: input %v \n indexed=%v, type=%v", argIndex, input, input.Indexed, input.Type.String())
+		if input.Indexed {
+			topicValue, err := utilsPkg.EncodeIndexedTopic(eventArgs[argIndex], input.Type)
+			if err != nil {
+				logger.Error("Failed to encode indexed topic: %v", err)
+				return err
+			}
+			eventTopics = append(eventTopics, topicValue)
+		} else {
+			nonIndexedArgs = append(nonIndexedArgs, eventArgs[argIndex])
+		}
+		argIndex++
+	}
+	// Pack event data
+	eventData, err := event.Inputs.NonIndexed().Pack(eventArgs...)
+	if err != nil {
+		logger.Error("Failed to pack %s event data: %v", eventName, err)
+		return fmt.Errorf("failed to pack %s event data: %w", eventName, err)
+	}
+	eventLogData := map[string]interface{}{
+		"address": addressContract,
+		"topics": []string{
+			eventHash.Hex(), // topics[0]: Event signature
+		},
+		"data":             fmt.Sprintf("0x%x", eventData),
+		"blockNumber":      fmt.Sprintf("0x%x", 1),
+		"transactionHash":  fmt.Sprintf("0x%064x", time.Now().UnixNano()),
+		"blockHash":        "0xa08082c7663f884e3c4d325ad1de149f6e167a84556be205103c16b1595d22cc",
+		"logIndex":         "0x0",
+		"transactionIndex": "0x0",
+		"removed":          false,
+	}
+
+	h.appCtx.SubInterceptor.BroadcastEventToContract(
+		addressContract.Hex(),
+		[]string{eventHash.Hex()},
+		eventLogData,
+	)
+	logger.Info("✅ Broadcasted %s event", eventName)
+	return nil
+}
 func (h *AccountHandlerNoReceipt) handleGetAllAccount(
 	method *abi.Method,
 	inputData []byte,
@@ -392,7 +474,50 @@ func (h *AccountHandlerNoReceipt) handleGetAllAccount(
 	return result, nil
 
 }
+func (h *AccountHandlerNoReceipt) handleGetNotifications(
+	method *abi.Method,
+	inputData []byte,
+) (interface{}, error) {
+	logger.Info("🔍 Handling getNotifications...")
+	args, err := method.Inputs.Unpack(inputData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unpack input: %w", err)
+	}
 
+	accountAddress := args[0].(ethCommon.Address)
+	page := int(args[1].(*big.Int).Int64())
+	pageSize := int(args[2].(*big.Int).Int64())
+
+	notifications, total, err := h.appCtx.LdbNotification.GetNotifications(
+		accountAddress,
+		page,
+		pageSize,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get notifications: %w", err)
+	}
+	// ✅ Convert notifications to JSON-serializable format
+	notifList := make([]map[string]interface{}, len(notifications))
+	for i, notif := range notifications {
+		notifList[i] = map[string]interface{}{
+			"id":        notif.Id,
+			"message":   notif.Message,
+			"createdAt": notif.CreatedAt,
+		}
+	}
+	totalPage := (total + pageSize - 1) / pageSize
+	if totalPage == 0 {
+		totalPage = 1
+	}
+	result := map[string]interface{}{
+		"notifications": notifList,
+		"total":         total,
+		"page":          page,
+		"pageSize":      pageSize,
+		"totalPages":    totalPage, // ✅ Đổi từ totalPage thành totalPages để match với TypeScript
+	}
+	return result, nil
+}
 func (h *AccountHandlerNoReceipt) verifySignature(
 	signBytes []byte,
 	blsPublicKeyBytes []byte,

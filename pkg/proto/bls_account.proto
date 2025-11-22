@@ -21,20 +21,19 @@ message PendingTransaction {
     uint64 nonce = 5;
     uint64 original_gas_price = 6;
 }
-// NEW: Tách danh sách confirmed và unconfirmed
-message BlsAccountList {
-    message AccountEntry {
-        bytes address = 1;
-        bool is_confirmed = 2;
-    }
-    repeated AccountEntry accounts = 1;
+
+
+message Notification {
+    string id = 1;                    // Auto-increment ID (per user)
+    bytes account_address = 2;        // Địa chỉ account nhận notification
+    string message = 3;                 // Tiêu đề
+    int64 created_at = 4;             // Unix timestamp
 }
 
-// NEW: Batch transaction data
-message BatchBlsAccountData {
-    repeated BlsAccountData accounts = 1;
-}
-
-message BatchPendingTransaction {
-    repeated PendingTransaction transactions = 1;
+message NotificationList {
+    repeated Notification notifications = 1;
+    int32 total = 2;
+    int32 page = 3;
+    int32 page_size = 4;
+    int32 total_pages = 5;
 }

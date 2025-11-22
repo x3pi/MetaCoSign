@@ -1,4 +1,4 @@
-package proxy
+package ws_interceptor
 
 import (
 	"crypto/rand"
@@ -9,7 +9,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/app"
+	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/config"
+	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/internal/ws_writer"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 )
 
@@ -17,33 +18,33 @@ type SubscriptionInterceptor struct {
 	mu            sync.RWMutex
 	subscriptions map[string]*ClientSubscription // Key: Subscription ID
 	connections   map[*websocket.Conn][]*ClientSubscription
-	AppCtx        *app.Context
+	Cfg           *config.Config
 }
 
 // ClientSubscription lưu thông tin subscription của 1 client
 type ClientSubscription struct {
-	ID                string                 // Subscription ID (0xabc...)
-	ClientConn        *websocket.Conn        // WebSocket connection tới client
-	ClientWriter      *WebSocketWriter       // Writer để gửi data về client
-	ContractAddresses []string               // Địa chỉ contract đang subscribe
-	Topics            []string               // Topics filter
-	CreatedAt         time.Time              // Thời gian tạo
-	Metadata          map[string]interface{} // Dữ liệu bổ sung
+	ID                string                     // Subscription ID (0xabc...)
+	ClientConn        *websocket.Conn            // WebSocket connection tới client
+	ClientWriter      *ws_writer.WebSocketWriter // Writer để gửi data về client
+	ContractAddresses []string                   // Địa chỉ contract đang subscribe
+	Topics            []string                   // Topics filter
+	CreatedAt         time.Time                  // Thời gian tạo
+	Metadata          map[string]interface{}     // Dữ liệu bổ sung
 }
 
 // NewSubscriptionInterceptor tạo manager mới
-func NewSubscriptionInterceptor(appCtx *app.Context) *SubscriptionInterceptor {
+func NewSubscriptionInterceptor(cfg *config.Config) *SubscriptionInterceptor {
 	return &SubscriptionInterceptor{
 		subscriptions: make(map[string]*ClientSubscription),
 		connections:   make(map[*websocket.Conn][]*ClientSubscription),
-		AppCtx:        appCtx,
+		Cfg:           cfg,
 	}
 }
 
 // CreateSubscription tạo một subscription mới cho client
 func (sm *SubscriptionInterceptor) CreateSubscription(
 	conn *websocket.Conn,
-	writer *WebSocketWriter,
+	writer *ws_writer.WebSocketWriter,
 	contractAddrs []string,
 	topics []string,
 ) string {
@@ -62,7 +63,6 @@ func (sm *SubscriptionInterceptor) CreateSubscription(
 	}
 	// Lưu vào map
 	sm.subscriptions[subID] = sub
-
 	// Lưu theo connection (để cleanup khi disconnect)
 	sm.connections[conn] = append(sm.connections[conn], sub)
 
@@ -85,7 +85,7 @@ func (sm *SubscriptionInterceptor) RemoveByConnection(conn *websocket.Conn) {
 	// Xóa từng subscription
 	for _, sub := range subs {
 		delete(sm.subscriptions, sub.ID)
-		logger.Info("🗑️  Removed Subscription ID: %s", sub.ID)
+		logger.Info("🗑️ UNSUBCRIBE Removed Subscription ID: %s", sub.ID)
 	}
 
 	delete(sm.connections, conn)
@@ -211,7 +211,7 @@ func (sm *SubscriptionInterceptor) addressMatch(addr1, addr2 string) bool {
 
 // isMonitoredContract kiểm tra xem 1 address có trong danh sách theo dõi không
 func (sm *SubscriptionInterceptor) IsMonitoredContract(addr string) bool {
-	for _, monitored := range sm.AppCtx.Cfg.ContractsInterceptor {
+	for _, monitored := range sm.Cfg.ContractsInterceptor {
 		if strings.EqualFold(addr, monitored) {
 			return true
 		}

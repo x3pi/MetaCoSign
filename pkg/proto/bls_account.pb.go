@@ -199,28 +199,30 @@ func (x *PendingTransaction) GetOriginalGasPrice() uint64 {
 	return 0
 }
 
-// NEW: Tách danh sách confirmed và unconfirmed
-type BlsAccountList struct {
-	state         protoimpl.MessageState         `protogen:"open.v1"`
-	Accounts      []*BlsAccountList_AccountEntry `protobuf:"bytes,1,rep,name=accounts,proto3" json:"accounts,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+type Notification struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                               // Auto-increment ID (per user)
+	AccountAddress []byte                 `protobuf:"bytes,2,opt,name=account_address,json=accountAddress,proto3" json:"account_address,omitempty"` // Địa chỉ account nhận notification
+	Message        string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`                                     // Tiêu đề
+	CreatedAt      int64                  `protobuf:"varint,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`               // Unix timestamp
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
-func (x *BlsAccountList) Reset() {
-	*x = BlsAccountList{}
+func (x *Notification) Reset() {
+	*x = Notification{}
 	mi := &file_bls_account_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *BlsAccountList) String() string {
+func (x *Notification) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*BlsAccountList) ProtoMessage() {}
+func (*Notification) ProtoMessage() {}
 
-func (x *BlsAccountList) ProtoReflect() protoreflect.Message {
+func (x *Notification) ProtoReflect() protoreflect.Message {
 	mi := &file_bls_account_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -232,40 +234,64 @@ func (x *BlsAccountList) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use BlsAccountList.ProtoReflect.Descriptor instead.
-func (*BlsAccountList) Descriptor() ([]byte, []int) {
+// Deprecated: Use Notification.ProtoReflect.Descriptor instead.
+func (*Notification) Descriptor() ([]byte, []int) {
 	return file_bls_account_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *BlsAccountList) GetAccounts() []*BlsAccountList_AccountEntry {
+func (x *Notification) GetId() string {
 	if x != nil {
-		return x.Accounts
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Notification) GetAccountAddress() []byte {
+	if x != nil {
+		return x.AccountAddress
 	}
 	return nil
 }
 
-// NEW: Batch transaction data
-type BatchBlsAccountData struct {
+func (x *Notification) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *Notification) GetCreatedAt() int64 {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return 0
+}
+
+type NotificationList struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Accounts      []*BlsAccountData      `protobuf:"bytes,1,rep,name=accounts,proto3" json:"accounts,omitempty"`
+	Notifications []*Notification        `protobuf:"bytes,1,rep,name=notifications,proto3" json:"notifications,omitempty"`
+	Total         int32                  `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"`
+	Page          int32                  `protobuf:"varint,3,opt,name=page,proto3" json:"page,omitempty"`
+	PageSize      int32                  `protobuf:"varint,4,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	TotalPages    int32                  `protobuf:"varint,5,opt,name=total_pages,json=totalPages,proto3" json:"total_pages,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *BatchBlsAccountData) Reset() {
-	*x = BatchBlsAccountData{}
+func (x *NotificationList) Reset() {
+	*x = NotificationList{}
 	mi := &file_bls_account_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *BatchBlsAccountData) String() string {
+func (x *NotificationList) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*BatchBlsAccountData) ProtoMessage() {}
+func (*NotificationList) ProtoMessage() {}
 
-func (x *BatchBlsAccountData) ProtoReflect() protoreflect.Message {
+func (x *NotificationList) ProtoReflect() protoreflect.Message {
 	mi := &file_bls_account_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -277,112 +303,44 @@ func (x *BatchBlsAccountData) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use BatchBlsAccountData.ProtoReflect.Descriptor instead.
-func (*BatchBlsAccountData) Descriptor() ([]byte, []int) {
+// Deprecated: Use NotificationList.ProtoReflect.Descriptor instead.
+func (*NotificationList) Descriptor() ([]byte, []int) {
 	return file_bls_account_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *BatchBlsAccountData) GetAccounts() []*BlsAccountData {
+func (x *NotificationList) GetNotifications() []*Notification {
 	if x != nil {
-		return x.Accounts
+		return x.Notifications
 	}
 	return nil
 }
 
-type BatchPendingTransaction struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Transactions  []*PendingTransaction  `protobuf:"bytes,1,rep,name=transactions,proto3" json:"transactions,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *BatchPendingTransaction) Reset() {
-	*x = BatchPendingTransaction{}
-	mi := &file_bls_account_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *BatchPendingTransaction) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*BatchPendingTransaction) ProtoMessage() {}
-
-func (x *BatchPendingTransaction) ProtoReflect() protoreflect.Message {
-	mi := &file_bls_account_proto_msgTypes[4]
+func (x *NotificationList) GetTotal() int32 {
 	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
+		return x.Total
 	}
-	return mi.MessageOf(x)
+	return 0
 }
 
-// Deprecated: Use BatchPendingTransaction.ProtoReflect.Descriptor instead.
-func (*BatchPendingTransaction) Descriptor() ([]byte, []int) {
-	return file_bls_account_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *BatchPendingTransaction) GetTransactions() []*PendingTransaction {
+func (x *NotificationList) GetPage() int32 {
 	if x != nil {
-		return x.Transactions
+		return x.Page
 	}
-	return nil
+	return 0
 }
 
-type BlsAccountList_AccountEntry struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Address       []byte                 `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
-	IsConfirmed   bool                   `protobuf:"varint,2,opt,name=is_confirmed,json=isConfirmed,proto3" json:"is_confirmed,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *BlsAccountList_AccountEntry) Reset() {
-	*x = BlsAccountList_AccountEntry{}
-	mi := &file_bls_account_proto_msgTypes[5]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *BlsAccountList_AccountEntry) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*BlsAccountList_AccountEntry) ProtoMessage() {}
-
-func (x *BlsAccountList_AccountEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_bls_account_proto_msgTypes[5]
+func (x *NotificationList) GetPageSize() int32 {
 	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
+		return x.PageSize
 	}
-	return mi.MessageOf(x)
+	return 0
 }
 
-// Deprecated: Use BlsAccountList_AccountEntry.ProtoReflect.Descriptor instead.
-func (*BlsAccountList_AccountEntry) Descriptor() ([]byte, []int) {
-	return file_bls_account_proto_rawDescGZIP(), []int{2, 0}
-}
-
-func (x *BlsAccountList_AccountEntry) GetAddress() []byte {
+func (x *NotificationList) GetTotalPages() int32 {
 	if x != nil {
-		return x.Address
+		return x.TotalPages
 	}
-	return nil
-}
-
-func (x *BlsAccountList_AccountEntry) GetIsConfirmed() bool {
-	if x != nil {
-		return x.IsConfirmed
-	}
-	return false
+	return 0
 }
 
 var File_bls_account_proto protoreflect.FileDescriptor
@@ -405,16 +363,20 @@ const file_bls_account_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x04 \x01(\x03R\tcreatedAt\x12\x14\n" +
 	"\x05nonce\x18\x05 \x01(\x04R\x05nonce\x12,\n" +
-	"\x12original_gas_price\x18\x06 \x01(\x04R\x10originalGasPrice\"\x9d\x01\n" +
-	"\x0eBlsAccountList\x12>\n" +
-	"\baccounts\x18\x01 \x03(\v2\".proto.BlsAccountList.AccountEntryR\baccounts\x1aK\n" +
-	"\fAccountEntry\x12\x18\n" +
-	"\aaddress\x18\x01 \x01(\fR\aaddress\x12!\n" +
-	"\fis_confirmed\x18\x02 \x01(\bR\visConfirmed\"H\n" +
-	"\x13BatchBlsAccountData\x121\n" +
-	"\baccounts\x18\x01 \x03(\v2\x15.proto.BlsAccountDataR\baccounts\"X\n" +
-	"\x17BatchPendingTransaction\x12=\n" +
-	"\ftransactions\x18\x01 \x03(\v2\x19.proto.PendingTransactionR\ftransactionsB5Z3github.com/meta-node-blockchain/meta-node/pkg/protob\x06proto3"
+	"\x12original_gas_price\x18\x06 \x01(\x04R\x10originalGasPrice\"\x80\x01\n" +
+	"\fNotification\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12'\n" +
+	"\x0faccount_address\x18\x02 \x01(\fR\x0eaccountAddress\x12\x18\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\x04 \x01(\x03R\tcreatedAt\"\xb5\x01\n" +
+	"\x10NotificationList\x129\n" +
+	"\rnotifications\x18\x01 \x03(\v2\x13.proto.NotificationR\rnotifications\x12\x14\n" +
+	"\x05total\x18\x02 \x01(\x05R\x05total\x12\x12\n" +
+	"\x04page\x18\x03 \x01(\x05R\x04page\x12\x1b\n" +
+	"\tpage_size\x18\x04 \x01(\x05R\bpageSize\x12\x1f\n" +
+	"\vtotal_pages\x18\x05 \x01(\x05R\n" +
+	"totalPagesB5Z3github.com/meta-node-blockchain/meta-node/pkg/protob\x06proto3"
 
 var (
 	file_bls_account_proto_rawDescOnce sync.Once
@@ -428,24 +390,20 @@ func file_bls_account_proto_rawDescGZIP() []byte {
 	return file_bls_account_proto_rawDescData
 }
 
-var file_bls_account_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_bls_account_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_bls_account_proto_goTypes = []any{
-	(*BlsAccountData)(nil),              // 0: proto.BlsAccountData
-	(*PendingTransaction)(nil),          // 1: proto.PendingTransaction
-	(*BlsAccountList)(nil),              // 2: proto.BlsAccountList
-	(*BatchBlsAccountData)(nil),         // 3: proto.BatchBlsAccountData
-	(*BatchPendingTransaction)(nil),     // 4: proto.BatchPendingTransaction
-	(*BlsAccountList_AccountEntry)(nil), // 5: proto.BlsAccountList.AccountEntry
+	(*BlsAccountData)(nil),     // 0: proto.BlsAccountData
+	(*PendingTransaction)(nil), // 1: proto.PendingTransaction
+	(*Notification)(nil),       // 2: proto.Notification
+	(*NotificationList)(nil),   // 3: proto.NotificationList
 }
 var file_bls_account_proto_depIdxs = []int32{
-	5, // 0: proto.BlsAccountList.accounts:type_name -> proto.BlsAccountList.AccountEntry
-	0, // 1: proto.BatchBlsAccountData.accounts:type_name -> proto.BlsAccountData
-	1, // 2: proto.BatchPendingTransaction.transactions:type_name -> proto.PendingTransaction
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	2, // 0: proto.NotificationList.notifications:type_name -> proto.Notification
+	1, // [1:1] is the sub-list for method output_type
+	1, // [1:1] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_bls_account_proto_init() }
@@ -459,7 +417,7 @@ func file_bls_account_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_bls_account_proto_rawDesc), len(file_bls_account_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

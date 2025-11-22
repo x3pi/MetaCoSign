@@ -15,6 +15,8 @@ export const chain991 = {
   rpcUrls: {
     default: { http: [GO_BACKEND_RPC_URL] },
     public: { http: [GO_BACKEND_RPC_URL] },
+   
+
   },
   // Optional: Add block explorer if you have one
   // blockExplorers: {

@@ -10,6 +10,8 @@ import AccountTypeManagerPage from "./pages/SetAccountType/AccountTypeManagerPag
 import BlsAccountListPage from "./pages/BlsAccountList/BlsAccountListPage";
 import { MobileMenuProvider } from "./contexts/MobileMenuContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
+// import { WebSocketProvider } from "./contexts/WebSocketContext";
+import { NotificationProvider } from "./contexts/NotificationContext";
 
 export interface PageLink {
   path: string;
@@ -25,35 +27,42 @@ function App() {
     { path: "/accounts", label: "Account List" },
   ];
 
+  // WebSocket URL - có thể đưa vào env file
+  // const wsUrl = "ws://192.168.1.234:8545";
+
   return (
     <ThemeProvider>
-      <MobileMenuProvider>
-        <div className="bg-app text-app min-h-screen flex flex-col transition-colors duration-300">
-          {/* Header */}
-          <SharedHeader pageLinks={pageLinks} />
-          
-          {/* Main layout */}
-          <div className="flex flex-1 relative">
-            {/* Sidebar component */}
-            <Sidebar pageLinks={pageLinks} />
+      {/* <WebSocketProvider url={wsUrl}> */}
+        <NotificationProvider>
+          <MobileMenuProvider>
+            <div className="bg-app text-app min-h-screen flex flex-col transition-colors duration-300">
+              {/* Header */}
+              <SharedHeader pageLinks={pageLinks} />
             
-            {/* Main content - responsive margin/padding */}
-            <main className="flex-1 w-full md:w-auto px-2 sm:px-4 pt-4 md:pt-0">
-              <div className="container mx-auto">
-                <Routes>
-                  <Route path="/" element={<HomePage />} />
-                  <Route path="bls" element={<BlsManagerPage />} />
-                  <Route path="account-type" element={<AccountTypeManagerPage />} />
-                  <Route path="register-rpc" element={<MetaMaskSigner />} />
-                  <Route path="accounts" element={<BlsAccountListPage />} />
-                  <Route path="*" element={<h1>Not found</h1>} />
-                </Routes>
-              </div>
-            </main>
-          </div>
+            {/* Main layout */}
+            <div className="flex flex-1 relative">
+              {/* Sidebar component */}
+              <Sidebar pageLinks={pageLinks} />
+              
+              {/* Main content - responsive margin/padding */}
+              <main className="flex-1 w-full md:w-auto px-2 sm:px-4 pt-4 md:pt-0">
+                <div className="container mx-auto">
+                  <Routes>
+                    <Route path="/" element={<HomePage />} />
+                    <Route path="bls" element={<BlsManagerPage />} />
+                    <Route path="account-type" element={<AccountTypeManagerPage />} />
+                    <Route path="register-rpc" element={<MetaMaskSigner />} />
+                    <Route path="accounts" element={<BlsAccountListPage />} />
+                    <Route path="*" element={<h1>Not found</h1>} />
+                  </Routes>
+                </div>
+              </main>
+            </div>
 
-        </div>
-      </MobileMenuProvider>
+          </div>
+        </MobileMenuProvider>
+      </NotificationProvider>
+      {/* </WebSocketProvider> */}
     </ThemeProvider>
   );
 }

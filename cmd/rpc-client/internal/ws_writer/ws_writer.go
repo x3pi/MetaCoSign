@@ -1,4 +1,4 @@
-package proxy
+package ws_writer
 
 import (
 	"sync"

@@ -17,7 +17,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/app"
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/config"
-	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/proxy"
+	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/internal/proxy"
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/setup"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 )
@@ -140,7 +140,6 @@ func setupHTTPServer(rpcProxy *proxy.RpcReverseProxy, cfg *config.Config, logsDi
 	mux.HandleFunc("/trigger-event", rpcProxy.HandleTriggerEvent)
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		logger.Info("1. Received %s request for %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
 		// WebSocket upgrade handling
 		if websocket.IsWebSocketUpgrade(r) {
 			var finalTargetURL string

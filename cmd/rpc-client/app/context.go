@@ -7,12 +7,16 @@ import (
 	client_tcp "github.com/meta-node-blockchain/meta-node/cmd/rpc-client/client-tcp"
 	tcp_config "github.com/meta-node-blockchain/meta-node/cmd/rpc-client/client-tcp/config"
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/config"
+	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/internal/ws_interceptor"
+	"github.com/syndtr/goleveldb/leveldb"
+
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/store"
 	"github.com/meta-node-blockchain/meta-node/pkg/bls"
 	"github.com/meta-node-blockchain/meta-node/pkg/common"
 	"github.com/meta-node-blockchain/meta-node/pkg/ldb_storage"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	"github.com/meta-node-blockchain/meta-node/pkg/rpc_client"
+	"github.com/meta-node-blockchain/meta-node/pkg/storage"
 )
 
 type Context struct {
@@ -30,11 +34,14 @@ type Context struct {
 	TcpCfg *tcp_config.ClientConfig
 
 	// LevelDB Storage for BLS wallets
-	LdbBlsWallet *ldb_storage.LevelDBStorage
+	LdbBlsWallet    *ldb_storage.LevelDBStorage
+	LdbNotification *storage.NotificationStorage
 
 	// Node BLS keys
 	NodeBlsPrivateKey common.PrivateKey
 	NodeBlsPublicKey  common.PublicKey
+
+	SubInterceptor *ws_interceptor.SubscriptionInterceptor
 }
 
 // New tạo Application Context với tất cả dependencies
@@ -68,7 +75,13 @@ func New(cfg *config.Config, tcpCfg *tcp_config.ClientConfig) (*Context, error) 
 		pkStore.Close()
 		return nil, fmt.Errorf("failed to initialize LevelDB: %w", err)
 	}
+	db, err := leveldb.OpenFile(cfg.LdbNotificationPath, nil)
+	if err != nil {
+		return nil, fmt.Errorf("lỗi mở LevelDB tại '%s': %w", cfg.LdbNotificationPath, err)
+	}
+	ldbNotification := storage.NewNotificationStorage(db)
 
+	subInterceptor := ws_interceptor.NewSubscriptionInterceptor(cfg)
 	ctx := &Context{
 		ClientRpc:         clientRpc,
 		PKS:               pkStore,
@@ -76,8 +89,10 @@ func New(cfg *config.Config, tcpCfg *tcp_config.ClientConfig) (*Context, error) 
 		Cfg:               cfg,
 		TcpCfg:            tcpCfg,
 		LdbBlsWallet:      ldbBlsWallets,
+		LdbNotification:   ldbNotification,
 		NodeBlsPrivateKey: keyPair.PrivateKey(),
 		NodeBlsPublicKey:  keyPair.PublicKey(),
+		SubInterceptor:    subInterceptor,
 	}
 	return ctx, nil
 }

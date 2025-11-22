@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/internal/ws_writer"
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/models"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 )
@@ -28,11 +29,11 @@ func (p *RpcReverseProxy) ServeWebSocket(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	defer func() {
-		p.SubInterceptor.RemoveByConnection(clientConn)
+		p.AppCtx.SubInterceptor.RemoveByConnection(clientConn)
 		clientConn.Close()
 	}()
 
-	clientWriter := NewWebSocketWriter(clientConn)
+	clientWriter := ws_writer.NewWebSocketWriter(clientConn)
 	// Validate target URL
 	if targetURL == "" {
 		logger.Error("Target WebSocket URL not configured for client %s", clientConn.RemoteAddr())
@@ -48,7 +49,7 @@ func (p *RpcReverseProxy) ServeWebSocket(w http.ResponseWriter, r *http.Request,
 	}
 	defer targetConn.Close()
 
-	targetWriter := NewWebSocketWriter(targetConn)
+	targetWriter := ws_writer.NewWebSocketWriter(targetConn)
 	logger.Info("8.WebSocket connection established between client %s and upstream %s", clientConn.RemoteAddr(), targetURL)
 	// Proxy bidirectional traffic
 	p.proxyWebSocketTraffic(clientConn, targetConn, clientWriter, targetWriter, r)
@@ -113,7 +114,7 @@ func (p *RpcReverseProxy) handleDialError(err error, resp *http.Response, target
 func (p *RpcReverseProxy) proxyWebSocketTraffic(
 
 	clientConn, targetConn *websocket.Conn,
-	clientWriter, targetWriter *WebSocketWriter,
+	clientWriter, targetWriter *ws_writer.WebSocketWriter,
 	r *http.Request,
 ) {
 	ctx := r.Context()
@@ -178,7 +179,7 @@ func (p *RpcReverseProxy) proxyWebSocketTraffic(
 // proxyClientToUpstream handles Client → Upstream traffic with RPC routing
 func (p *RpcReverseProxy) proxyClientToUpstream(
 	clientConn, targetConn *websocket.Conn,
-	clientWriter, targetWriter *WebSocketWriter,
+	clientWriter, targetWriter *ws_writer.WebSocketWriter,
 	errChan chan<- error,
 	quit <-chan struct{},
 ) {
@@ -206,6 +207,7 @@ func (p *RpcReverseProxy) proxyClientToUpstream(
 			}
 			return
 		}
+		logger.Info("Received RPC from client %s: Method=%s, ID=%v", clientConn.RemoteAddr(), req.Method, req.Id)
 		if req.Method == "eth_subscribe" {
 			if err := p.HandleSubscribeRequest(req, clientConn, targetConn, clientWriter, targetWriter, errChan, quit); err != nil {
 				errorResp := map[string]interface{}{
@@ -219,6 +221,9 @@ func (p *RpcReverseProxy) proxyClientToUpstream(
 				clientWriter.WriteJSON(errorResp)
 			}
 			continue
+		} else if req.Method == "eth_unsubscribe" {
+			logger.Info(")_)_)_)_Processing eth_unsubscribe for client %s", clientConn.RemoteAddr())
+			p.AppCtx.SubInterceptor.RemoveByConnection(clientConn)
 		}
 		// Try to handle RPC method locally
 		rpcResp, handled := p.RouteWebSocketMessage(req)
@@ -249,7 +254,7 @@ func (p *RpcReverseProxy) proxyClientToUpstream(
 // proxyUpstreamToClient handles Upstream → Client traffic (passthrough)
 func (p *RpcReverseProxy) proxyUpstreamToClient(
 	targetConn *websocket.Conn,
-	clientWriter *WebSocketWriter,
+	clientWriter *ws_writer.WebSocketWriter,
 	errChan chan<- error,
 	quit <-chan struct{},
 ) {

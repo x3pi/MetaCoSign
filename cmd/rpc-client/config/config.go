@@ -24,6 +24,7 @@ type Config struct {
 	MasterPassword       string   `json:"master_password"`
 	AppPepper            string   `json:"app_pepper"`
 	LdbBlsWalletsPath    string   `json:"ldb_bls_wallet_path"`
+	LdbNotificationPath  string   `json:"ldb_bls_account_noti"`
 	OwnerRpcAddress      string   `json:"owner_rpc_address"`
 	ContractsInterceptor []string `json:"contracts_interceptor"` // Địa chỉ contract dùng để intercept
 }

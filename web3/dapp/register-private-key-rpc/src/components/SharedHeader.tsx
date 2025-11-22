@@ -6,6 +6,7 @@ import { useMobileMenu } from "../contexts/MobileMenuContext";
 import { chain991 } from "~/constants/customChain";
 import type { PageLink } from "../App";
 import { ThemeToggle } from "./ThemeToggle";
+import { NotificationBell } from "./NotificationBell";
 
 const LoadingSpinnerIcon = () => (
   <svg
@@ -131,6 +132,7 @@ const SharedHeader: React.FC<SharedHeaderProps> = () => {
           {/* === 3. CỤM VÍ PHIÊN BẢN DESKTOP (M3 Shape: rounded-full) === */}
           <div className="hidden lg:flex lg:ml-auto lg:items-center lg:space-x-2">
             <ThemeToggle />
+            <NotificationBell />
 
             {connectedAccount ? (
               <>
@@ -189,6 +191,7 @@ const SharedHeader: React.FC<SharedHeaderProps> = () => {
           {/* Mobile menu button and theme toggle */}
           <div className="flex items-center ml-2 lg:hidden gap-2">
             <ThemeToggle />
+            <NotificationBell />
             {/* Mobile menu button from context */}
             <MobileMenuButton />
           </div>

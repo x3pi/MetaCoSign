@@ -29,7 +29,6 @@ func HandleSendRawTransaction(appCtx *app.Context, req models.JSONRPCRequestRaw)
 }
 
 func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id interface{}) rpc_client.JSONRPCResponse {
-	logger.Info("1.Processing sendRawTransaction: %s", rawTransactionHex)
 	decodedTxBytes, releaseDecoded, err := utils.DecodeHexPooled(rawTransactionHex)
 	if err != nil {
 		return utils.MakeInvalidParamError(id, "Invalid raw transaction hex data")
@@ -124,6 +123,12 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 					Result:  tx.Hash().Hex(),
 					Id:      id,
 				}
+			} else if !handled && err == nil {
+				logger.Info("1.Sending to chain:")
+				rs := appCtx.ClientRpc.SendRawTransactionBinary(bTx, releaseTx, decodedTxBytes, releaseDecodedOnce, nil)
+				releaseDecodedOnce()
+				rs.Id = id
+				return rs
 			}
 			return utils.MakeInternalError(id, "method notfound in abi")
 
