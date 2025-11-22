@@ -1,7 +1,25 @@
 # Hướng dẫn chạy ứng dụng (How to Run App)
 
 ## 1.1. Cấu hình RPC
-Tạo file `config-rpc.json` tại `cmd/rpc-client` (hoặc cập nhật cấu hình tương ứng) với nội dung sau:
+file `config-client-tcp.json` 
+
+```json
+{
+  "version": "0.0.1.0",
+  "private_key": "2b3aa0f620d2d73c046cd93eb64f2eb687a95b22e278500aa251c8c9dda1203b",
+  "parent_connection_address": "0.0.0.0:4200",
+  "parent_address": "0x7d03201fee4675987894617138e5ee7e038a6b39",
+  "chain_id": 991,
+  "parent_connection_type:": "client",
+  "owner_file_storage_address":"0x7d03201fee4675987894617138e5ee7e038a6b39",
+  "pk_admin_file_storage":"87d931eaa2f76709f2615586e0d560ca9b80f247c9cc431e197ba3e7167db623",
+  "bls_admin_storage":"2b3aa0f620d2d73c046cd93eb64f2eb687a95b22e278500aa251c8c9dda1203b"
+}
+```
+### Giải thích các trường quan trọng:
+- **`parent_connection_address`**: Ip đến chain .
+
+file `config-rpc.json` tại `cmd/rpc-client` (hoặc cập nhật cấu hình tương ứng) với nội dung sau:
 
 ```json
 {
@@ -47,7 +65,7 @@ abi được đặt cấu hình ở `metaCoSign/web3/dapp/register-private-key-r
 
 ### Bước 1: Chạy RPC Client (Backend)
 
-Di chuyển vào thư mục `rpc-client` và chạy lệnh:
+Di chuyển vào thư mục `rpc-client` và chạy lệnh, logs nằm ở `cmd/rpc-client/logs` log theo ngày:
 
 ```bash
 cd cmd/rpc-client
