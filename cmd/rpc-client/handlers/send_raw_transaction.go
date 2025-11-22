@@ -10,11 +10,9 @@ import (
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/utils"
 	"github.com/meta-node-blockchain/meta-node/pkg/account_handler"
 	"github.com/meta-node-blockchain/meta-node/pkg/bls"
-	"github.com/meta-node-blockchain/meta-node/pkg/common"
 	"github.com/meta-node-blockchain/meta-node/pkg/file_handler"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	"github.com/meta-node-blockchain/meta-node/pkg/rpc_client"
-	utilsPkg "github.com/meta-node-blockchain/meta-node/pkg/utils"
 	mt_types "github.com/meta-node-blockchain/meta-node/types"
 	"github.com/tidwall/gjson"
 )
@@ -86,7 +84,7 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 	}
 
 	if tx != nil {
-		if tx.ToAddress() == utilsPkg.GetAddressSelector(common.ACCOUNT_SETTING_ADDRESS_SELECT) {
+		if tx.ToAddress() == ethCommon.HexToAddress(appCtx.Cfg.ContractsInterceptor[0]) {
 			accountHandler, err := account_handler.GetAccountHandler(appCtx)
 			if err != nil {
 				return utils.MakeInternalError(id, "Failed to get account: "+err.Error())
@@ -124,7 +122,6 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 					Id:      id,
 				}
 			} else if !handled && err == nil {
-				logger.Info("1.Sending to chain:")
 				rs := appCtx.ClientRpc.SendRawTransactionBinary(bTx, releaseTx, decodedTxBytes, releaseDecodedOnce, nil)
 				releaseDecodedOnce()
 				rs.Id = id

@@ -18,6 +18,7 @@ import {
   type Hex,
 } from "viem";
 import type { Notification, NotificationResponse } from "~/types/notification";
+import { WSS_RPC } from "~/constants/customChain";
 
 interface NotificationContextType {
   notifications: Notification[];
@@ -135,7 +136,6 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const wsUrl = "ws://192.168.1.234:8545";
     const connectWebSocket = () => {
       const oldWs = wsRef.current;
       if (oldWs && oldWs.readyState === WebSocket.OPEN) {
@@ -144,7 +144,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         wsRef.current = null;
       }
       try {
-        const ws = new WebSocket(wsUrl);
+        const ws = new WebSocket(WSS_RPC);
         wsRef.current = ws;
         ws.onopen = () => {
           console.log("✅ WebSocket connected");

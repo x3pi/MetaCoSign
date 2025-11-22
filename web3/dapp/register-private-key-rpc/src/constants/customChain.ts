@@ -1,8 +1,8 @@
 // src/customChain.ts
 import { type Chain } from 'viem';
 // const GO_BACKEND_RPC_URL =  window.location.origin;
+export const WSS_RPC = "ws://192.168.1.234:8545";
 const GO_BACKEND_RPC_URL =  "http://192.168.1.234:8545";
-
 // Replace with your actual Chain ID 991 details
 export const chain991 = {
   id: 991,

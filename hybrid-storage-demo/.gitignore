@@ -1,6 +1,0 @@
-/client_go_rpc/file_to_upload/*
-/client_go_rpc/download
-/client_go_rpc/log
-!/client_go_rpc/file_to_upload/create_file.sh
-./downloaded_output.txt
-target

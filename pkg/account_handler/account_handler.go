@@ -17,7 +17,6 @@ import (
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/utils"
 	"github.com/meta-node-blockchain/meta-node/pkg/account_handler/abi_account"
 	"github.com/meta-node-blockchain/meta-node/pkg/bls"
-	"github.com/meta-node-blockchain/meta-node/pkg/common"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	pb "github.com/meta-node-blockchain/meta-node/pkg/proto"
 	"github.com/meta-node-blockchain/meta-node/pkg/storage"
@@ -64,9 +63,6 @@ func (h *AccountHandlerNoReceipt) HandleAccountTransaction(
 	rawTransactionHex string,
 ) (handled bool, result interface{}, err error) {
 	// Kiểm tra địa chỉ đích
-	if tx.ToAddress() != utilsPkg.GetAddressSelector(common.ACCOUNT_SETTING_ADDRESS_SELECT) {
-		return false, nil, nil
-	}
 
 	inputData := tx.CallData().Input()
 	if len(inputData) < 4 {
@@ -331,16 +327,15 @@ func (h *AccountHandlerNoReceipt) handleConfirmAccount(
 	}
 	h.broadcastEvent("AccountConfirmed", accountAddress, big.NewInt(currentTime), msgNoti)
 
-	// logger.Info("✅ Đã confirm account %s, tx hash: %v", accountAddress.Hex(), rs.Result)
-	// return rs.Result.(string), nil
-	return "hihi", nil
+	logger.Info("✅ Đã confirm account %s, tx hash: %v", accountAddress.Hex(), rs.Result)
+	return rs.Result.(string), nil
 }
 
 func (h *AccountHandlerNoReceipt) broadcastEvent(
 	eventName string,
 	eventArgs ...interface{},
 ) error {
-	addressContract := utilsPkg.GetAddressSelector(common.ACCOUNT_SETTING_ADDRESS_SELECT)
+	addressContract := ethCommon.HexToAddress(h.appCtx.Cfg.ContractsInterceptor[0])
 	event, ok := h.abi.Events[eventName]
 	if !ok {
 		return fmt.Errorf("event %s not found in ABI", eventName)

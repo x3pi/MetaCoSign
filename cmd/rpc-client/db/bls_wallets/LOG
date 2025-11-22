@@ -23,3 +23,31 @@
 08:13:22.786867 version@stat F·[1] S·791B[791B] Sc·[0.25]
 08:13:22.789669 db@janitor F·3 G·0
 08:13:22.789758 db@open done T·15.344216ms
+=============== Nov 22, 2025 (UTC) ===============
+08:37:00.957797 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+08:37:00.958823 version@stat F·[1] S·791B[791B] Sc·[0.25]
+08:37:00.958881 db@open opening
+08:37:00.959005 journal@recovery F·1
+08:37:00.959181 journal@recovery recovering @5
+08:37:00.961461 version@stat F·[1] S·791B[791B] Sc·[0.25]
+08:37:00.965237 db@janitor F·3 G·0
+08:37:00.965319 db@open done T·6.423395ms
+=============== Nov 22, 2025 (UTC) ===============
+08:39:19.508084 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+08:39:19.508395 version@stat F·[1] S·791B[791B] Sc·[0.25]
+08:39:19.508430 db@open opening
+08:39:19.508528 journal@recovery F·1
+08:39:19.508695 journal@recovery recovering @7
+08:39:19.509697 memdb@flush created L0@9 N·11 S·795B "ba:..184,v21":"pt:..b8c,v16"
+08:39:19.511051 version@stat F·[2] S·1KiB[1KiB] Sc·[0.50]
+08:39:19.514530 db@janitor F·4 G·0
+08:39:19.514618 db@open done T·6.173111ms
+=============== Nov 22, 2025 (UTC) ===============
+08:59:11.811676 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+08:59:11.811978 version@stat F·[2] S·1KiB[1KiB] Sc·[0.50]
+08:59:11.812052 db@open opening
+08:59:11.812126 journal@recovery F·1
+08:59:11.812263 journal@recovery recovering @10
+08:59:11.819173 version@stat F·[2] S·1KiB[1KiB] Sc·[0.50]
+08:59:11.821387 db@janitor F·4 G·0
+08:59:11.821473 db@open done T·9.409393ms

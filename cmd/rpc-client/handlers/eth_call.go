@@ -9,10 +9,8 @@ import (
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/models"
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/utils"
 	"github.com/meta-node-blockchain/meta-node/pkg/account_handler"
-	"github.com/meta-node-blockchain/meta-node/pkg/common"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	"github.com/meta-node-blockchain/meta-node/pkg/rpc_client"
-	utilsPkg "github.com/meta-node-blockchain/meta-node/pkg/utils"
 )
 
 func HandleEthCall(appCtx *app.Context, req models.JSONRPCRequestRaw) rpc_client.JSONRPCResponse {
@@ -33,7 +31,7 @@ func processEthCallParams(appCtx *app.Context, id interface{}, callObjectRaw jso
 	if err != nil {
 		return utils.MakeInvalidParamError(id, "Invalid eth_call parameter")
 	}
-	if hasTo && toAddress == utilsPkg.GetAddressSelector(common.ACCOUNT_SETTING_ADDRESS_SELECT) {
+	if hasTo && toAddress == ethCommon.HexToAddress(appCtx.Cfg.ContractsInterceptor[0]) {
 		logger.Info("Handling eth_call for Account contract at address %s", toAddress.Hex())
 		accountHandler, err := account_handler.GetAccountHandler(appCtx)
 		if err != nil {
