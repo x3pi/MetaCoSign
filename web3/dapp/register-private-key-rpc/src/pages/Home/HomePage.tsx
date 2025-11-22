@@ -102,7 +102,7 @@ function HomePage() {
   };
 
   return (
-    <PageContainer maxWidth="4xl">
+    <PageContainer maxWidth="full">
       <PageCard
         title="Account State"
         description={

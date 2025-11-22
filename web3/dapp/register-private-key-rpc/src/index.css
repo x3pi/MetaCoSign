@@ -3,101 +3,116 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* CSS Variables cho Dark/Light Mode - Đổi màu ở đây sẽ ảnh hưởng toàn bộ app */
+/* Material 3 Color System - Đơn giản, dễ đọc */
 :root {
-  /* Light Mode Colors - MÀU SÁNG THỰC SỰ */
+  /* Light Mode - Surface Colors */
   --color-background: #ffffff;
-  --color-background-secondary: #f9fafb; /* gray-50 */
-  --color-background-tertiary: #f3f4f6; /* gray-100 */
+  --color-background-secondary: #f5f5f5; /* Đơn giản hơn */
+  --color-background-tertiary: #eeeeee;
 
-  --color-foreground: #111827; /* gray-900 - text tối rõ */
-  --color-foreground-secondary: #374151; /* gray-700 */
-  --color-foreground-muted: #6b7280; /* gray-500 */
+  /* Text Colors - Tăng contrast để dễ đọc */
+  --color-foreground: #000000; /* Đen rõ ràng */
+  --color-foreground-secondary: #333333; /* Xám đậm */
+  --color-foreground-muted: #666666; /* Xám vừa */
 
-  --color-border: #d1d5db; /* gray-300 - border rõ hơn */
-  --color-border-secondary: #e5e7eb; /* gray-200 */
+  --color-border: #e0e0e0; /* Border rõ ràng */
+  --color-border-secondary: #f0f0f0;
 
   --color-card: #ffffff;
-  --color-card-secondary: #f9fafb; /* gray-50 */
-  --color-card-hover: #f3f4f6; /* gray-100 */
+  --color-card-secondary: #f5f5f5;
+  --color-card-hover: #eeeeee;
 
-  /* Brand Colors - Đổi màu brand ở đây */
-  --color-primary: #3b82f6; /* blue-600 */
-  --color-primary-hover: #2563eb; /* blue-700 */
-  --color-primary-light: #93c5fd; /* blue-300 */
+  /* Primary Color - Đậm hơn để nổi bật trên background trắng */
+  --color-primary: #1565C0; /* Blue 700 - Đậm hơn để contrast tốt */
+  --color-primary-hover: #0D47A1; /* Blue 800 - Đậm hơn khi hover */
+  --color-primary-light: #E3F2FD; /* Blue 50 */
+  --color-primary-on: #ffffff; /* Text trắng trên primary - contrast cao */
 
-  --color-accent: #0ea5e9; /* sky-600 */
-  --color-accent-hover: #0284c7; /* sky-700 */
+  /* Secondary - Đậm hơn để contrast tốt */
+  --color-secondary: #212121; /* Gray 900 - Đậm hơn */
+  --color-secondary-hover: #000000; /* Black - Đậm nhất */
+  --color-secondary-light: #f5f5f5; /* Gray 100 */
 
-  /* Status Colors */
-  --color-success: #16a34a; /* green-600 */
-  --color-warning: #eab308; /* yellow-500 */
-  --color-error: #dc2626; /* red-600 */
-  --color-info: #3b82f6; /* blue-600 */
+  /* Status Colors - Đậm hơn để contrast tốt */
+  --color-success: #2E7D32; /* Green 700 - Đậm hơn */
+  --color-success-container: #C8E6C9; /* Green 100 */
+  --color-warning: #F57C00; /* Orange 700 - Đậm hơn */
+  --color-warning-container: #FFE0B2; /* Orange 100 */
+  --color-error: #C62828; /* Red 700 - Đậm hơn */
+  --color-error-container: #FFCDD2; /* Red 100 */
+  --color-info: #1565C0; /* Blue 700 - Dùng primary */
+  --color-info-container: #E3F2FD; /* Blue 50 */
 
-  /* Accent Colors cho các page khác nhau */
-  --color-purple: #9333ea; /* purple-600 */
-  --color-purple-light: #c084fc; /* purple-400 */
-  --color-purple-hover: #7c3aed; /* purple-700 */
-  
-  --color-teal: #0d9488; /* teal-600 */
-  --color-teal-light: #2dd4bf; /* teal-400 */
-  --color-teal-hover: #0f766e; /* teal-700 */
-  
-  --color-cyan: #0891b2; /* cyan-600 */
-  --color-cyan-light: #22d3ee; /* cyan-400 */
+  /* Accent Colors - Đậm để contrast tốt */
+  --color-teal: #00695C; /* Teal 700 - Đậm hơn */
+  --color-teal-hover: #004D40; /* Teal 800 - Đậm hơn khi hover */
+  --color-purple: #6A1B9A; /* Purple 700 - Đậm hơn */
+  --color-purple-hover: #4A148C; /* Purple 800 - Đậm hơn khi hover */
+  --color-indigo: #283593; /* Indigo 700 - Đậm hơn */
+  --color-indigo-hover: #1A237E; /* Indigo 800 - Đậm hơn khi hover */
 
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1);
+  /* Material 3 Elevation Shadows */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05), 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
 }
 
 .dark {
-  /* Dark Mode Colors - MÀU TỐI THỰC SỰ */
-  --color-background: #0a0a0a; /* Đen thực sự */
-  --color-background-secondary: #141414; /* gray-950 */
-  --color-background-tertiary: #1f1f1f; /* Tối hơn */
+  /* Dark Mode - Thiết kế theo Dashboard: Dark gray, red accents, clean & professional */
+  /* Background - Dark gray như dashboard */
+  --color-background: #1a1a1f; /* Dark gray đậm */
+  --color-background-secondary: #242429; /* Dark gray */
+  --color-background-tertiary: #2d2d33; /* Dark gray nhạt hơn */
 
-  --color-foreground: #fafafa; /* Trắng sáng */
-  --color-foreground-secondary: #d4d4d4; /* gray-300 */
-  --color-foreground-muted: #a3a3a3; /* gray-400 */
+  /* Text Colors - Trắng rõ ràng, không có glow */
+  --color-foreground: #ffffff; /* Trắng rõ ràng */
+  --color-foreground-secondary: #d1d1d1; /* Gray nhạt cho text phụ */
+  --color-foreground-muted: #9a9a9a; /* Gray mờ */
 
-  --color-border: #404040; /* gray-700 - tối hơn */
-  --color-border-secondary: #262626; /* gray-800 */
+  /* Border - Gray đậm */
+  --color-border: #3a3a3f; /* Border gray đậm */
+  --color-border-secondary: #2d2d33;
 
-  --color-card: #141414; /* Tối thực sự */
-  --color-card-secondary: #1f1f1f;
-  --color-card-hover: #262626; /* gray-800 */
+  /* Card - Dark gray solid, không transparency */
+  --color-card: #242429; /* Surface dark gray */
+  --color-card-secondary: #2d2d33; /* Surface variant */
+  --color-card-hover: #2f2f35; /* Sáng hơn khi hover */
 
-  /* Brand Colors - Dark mode */
-  --color-primary: #60a5fa; /* blue-400 */
-  --color-primary-hover: #3b82f6; /* blue-500 */
-  --color-primary-light: #93c5fd; /* blue-300 */
+  /* Primary Color - Red sáng hơn để nổi bật trên dark background */
+  --color-primary: #f87171; /* Red 400 - Sáng hơn để contrast tốt */
+  --color-primary-hover: #ef4444; /* Red 500 - Sáng hơn khi hover */
+  --color-primary-light: #fee2e2; /* Red 100 - Container */
+  --color-primary-on: #ffffff; /* Text trắng trên primary - contrast cao */
 
-  --color-accent: #0ea5e9; /* sky-500 */
-  --color-accent-hover: #0284c7; /* sky-600 */
+  /* Secondary - Gray */
+  --color-secondary: #6b7280; /* Gray 500 */
+  --color-secondary-hover: #4b5563; /* Gray 600 */
+  --color-secondary-light: #2d2d33; /* Dark gray */
 
-  /* Status Colors - Dark mode */
-  --color-success: #22c55e; /* green-500 */
-  --color-warning: #eab308; /* yellow-500 */
-  --color-error: #ef4444; /* red-500 */
-  --color-info: #60a5fa; /* blue-400 */
+  /* Status Colors - Sáng hơn để contrast tốt trên dark background */
+  --color-success: #4ade80; /* Green 400 - Sáng hơn */
+  --color-success-container: #14532d; /* Green 900 */
+  --color-warning: #fbbf24; /* Amber 400 - Sáng hơn */
+  --color-warning-container: #78350f; /* Amber 900 */
+  --color-error: #f87171; /* Red 400 - Sáng hơn */
+  --color-error-container: #7f1d1d; /* Red 900 */
+  --color-info: #60a5fa; /* Blue 400 - Sáng hơn */
+  --color-info-container: #1e3a8a; /* Blue 900 */
 
-  /* Accent Colors - Dark mode (sáng hơn để nổi bật) */
-  --color-purple: #c084fc; /* purple-400 */
-  --color-purple-light: #e9d5ff; /* purple-200 */
-  --color-purple-hover: #a855f7; /* purple-500 */
-  
-  --color-teal: #2dd4bf; /* teal-400 */
-  --color-teal-light: #5eead4; /* teal-300 */
-  --color-teal-hover: #14b8a6; /* teal-500 */
-  
-  --color-cyan: #22d3ee; /* cyan-400 */
-  --color-cyan-light: #67e8f9; /* cyan-300 */
+  /* Accent Colors - Sáng hơn để contrast tốt trên dark background */
+  --color-teal: #26A69A; /* Teal 400 - Sáng hơn */
+  --color-teal-hover: #00897B; /* Teal 500 - Sáng hơn khi hover */
+  --color-purple: #AB47BC; /* Purple 400 - Sáng hơn */
+  --color-purple-hover: #9C27B0; /* Purple 500 - Sáng hơn khi hover */
+  --color-indigo: #5C6BC0; /* Indigo 400 - Sáng hơn */
+  --color-indigo-hover: #3F51B5; /* Indigo 500 - Sáng hơn khi hover */
 
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.8);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.8);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.8);
+  /* Shadows - Clean, không có glow */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3), 0 1px 3px 0 rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.2);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
 }
 
 /* Utility classes để tái sử dụng - THAY THẾ HOÀN TOÀN TAILWIND COLORS */
@@ -117,6 +132,33 @@
 }
 .bg-error {
   background-color: var(--color-error);
+}
+.bg-error-container {
+  background-color: var(--color-error-container);
+}
+.bg-success-container {
+  background-color: var(--color-success-container);
+}
+.bg-warning-container {
+  background-color: var(--color-warning-container);
+}
+.bg-info-container {
+  background-color: var(--color-info-container);
+}
+.text-error {
+  color: var(--color-error);
+}
+.text-success {
+  color: var(--color-success);
+}
+.text-warning {
+  color: var(--color-warning);
+}
+.text-info {
+  color: var(--color-info);
+}
+.text-foreground-muted {
+  color: var(--color-foreground-muted);
 }
 
 .bg-app {
@@ -153,31 +195,27 @@
   color: var(--color-error);
 }
 
-/* Accent Text Colors */
-.text-purple {
-  color: var(--color-purple);
-}
-.text-teal {
-  color: var(--color-teal);
-}
-.text-cyan {
-  color: var(--color-cyan);
-}
+/* Accent Text Colors - Đã đơn giản hóa, chỉ giữ lại nếu cần */
 
 .text-app {
   color: var(--color-foreground);
+  font-weight: 500; /* Đậm hơn để dễ đọc */
 }
 .text-foreground {
   color: var(--color-foreground);
+  font-weight: 500; /* Đậm hơn để dễ đọc */
 }
 .text-foreground-secondary {
   color: var(--color-foreground-secondary);
+  font-weight: 500; /* Đậm hơn để dễ đọc */
 }
 .text-app-secondary {
   color: var(--color-foreground-secondary);
+  font-weight: 500; /* Đậm hơn để dễ đọc */
 }
 .text-app-muted {
   color: var(--color-foreground-muted);
+  font-weight: 400; /* Giữ bình thường cho text phụ */
 }
 
 /* Border Colors */
@@ -191,26 +229,24 @@
   border-color: var(--color-border-secondary);
 }
 
-/* Accent Border Colors */
-.border-purple {
-  border-color: var(--color-purple);
+/* Accent Colors - Teal, Purple, Indigo */
+.bg-teal {
+  background-color: var(--color-teal);
 }
-.border-teal {
-  border-color: var(--color-teal);
+.bg-teal-hover:hover {
+  background-color: var(--color-teal-hover);
 }
-
-/* Accent Background Colors */
 .bg-purple {
   background-color: var(--color-purple);
 }
 .bg-purple-hover:hover {
   background-color: var(--color-purple-hover);
 }
-.bg-teal {
-  background-color: var(--color-teal);
+.bg-indigo {
+  background-color: var(--color-indigo);
 }
-.bg-teal-hover:hover {
-  background-color: var(--color-teal-hover);
+.bg-indigo-hover:hover {
+  background-color: var(--color-indigo-hover);
 }
 
 /* Hover Effects cho Background */
@@ -254,13 +290,26 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-body {
+html, body {
+  width: 100%;
   margin: 0;
+  padding: 0;
+  overflow-x: hidden; /* Ngăn horizontal scroll */
+}
+
+body {
   min-width: 320px;
   min-height: 100vh;
   /* Let CSS variables handle background color */
   background-color: var(--color-background);
   color: var(--color-foreground);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Dark mode background - Solid dark gray như dashboard */
+.dark body {
+  background: #1a1a1f;
+  background-attachment: fixed;
 }
 
 a {
@@ -275,4 +324,39 @@ a:hover {
 /* Reset button styles to prevent conflicts with Tailwind */
 button {
   font-family: inherit;
+}
+
+/* Dark mode enhancements - Clean, không có glow */
+.dark {
+  /* Bỏ tất cả glow effects */
+}
+
+/* Card hover effect - Clean, không glow */
+.dark .bg-card-hover:hover {
+  box-shadow: var(--shadow-md);
+}
+
+/* Primary button - Clean shadow, không glow */
+.dark .bg-primary {
+  box-shadow: var(--shadow-md);
+}
+
+.dark .bg-primary:hover {
+  box-shadow: var(--shadow-lg);
+}
+
+/* Border - Clean, không glow */
+.dark .border-primary {
+  border-color: var(--color-primary);
+}
+
+/* Typography - Text rõ ràng, không glow */
+.dark .text-primary {
+  text-shadow: none;
+}
+
+/* Input focus - Clean border, không glow */
+.dark input:focus-visible,
+.dark textarea:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-primary);
 }

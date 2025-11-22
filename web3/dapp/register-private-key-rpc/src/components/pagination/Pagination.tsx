@@ -19,8 +19,8 @@ const Pagination: React.FC<PaginationProps> = ({ siblingCount = 1, totalPageCoun
         className={`w-10 h-10 flex items-center justify-center rounded-lg border transition-all
           ${
             currentPage === 1
-              ? 'cursor-not-allowed bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-600 border-gray-200 dark:border-gray-700'
-              : 'bg-white dark:bg-card text-gray-700 dark:text-gray-300 border-gray-300 dark:border-border hover:bg-blue-50 dark:hover:bg-gray-700 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-300 dark:hover:border-blue-600'
+              ? 'cursor-not-allowed bg-app-secondary dark:bg-app-secondary text-foreground-muted dark:text-foreground-muted border-border opacity-50'
+              : 'bg-card dark:bg-card text-foreground dark:text-foreground border-border dark:border-border hover:bg-primary/10 dark:hover:bg-primary/20 hover:text-primary dark:hover:text-primary hover:border-primary dark:hover:border-primary font-semibold'
           }`}
         onClick={() => onPageChange(currentPage - 1)}
       >
@@ -43,8 +43,8 @@ const Pagination: React.FC<PaginationProps> = ({ siblingCount = 1, totalPageCoun
             className={`w-10 h-10 flex items-center justify-center rounded-lg border transition-all font-medium
               ${
                 isActive
-                  ? 'bg-blue-600 dark:bg-blue-600 text-white border-blue-600 dark:border-blue-600 shadow-md'
-                  : 'bg-white dark:bg-card text-gray-700 dark:text-gray-300 border-gray-300 dark:border-border hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-300 dark:hover:border-blue-600'
+                  ? 'bg-primary dark:bg-primary text-white dark:text-white border-primary dark:border-primary shadow-md font-semibold'
+                  : 'bg-card dark:bg-card text-foreground dark:text-foreground border-border dark:border-border hover:bg-primary/10 dark:hover:bg-primary/20 hover:text-primary dark:hover:text-primary hover:border-primary dark:hover:border-primary font-semibold'
               }`}
             onClick={() => onPageChange(el as number)}
           >
@@ -59,8 +59,8 @@ const Pagination: React.FC<PaginationProps> = ({ siblingCount = 1, totalPageCoun
         className={`w-10 h-10 flex items-center justify-center rounded-lg border transition-all
           ${
             currentPage === totalPageCount
-              ? 'cursor-not-allowed bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-600 border-gray-200 dark:border-gray-700'
-              : 'bg-white dark:bg-card text-gray-700 dark:text-gray-300 border-gray-300 dark:border-border hover:bg-blue-50 dark:hover:bg-gray-700 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-300 dark:hover:border-blue-600'
+              ? 'cursor-not-allowed bg-app-secondary dark:bg-app-secondary text-foreground-muted dark:text-foreground-muted border-border opacity-50'
+              : 'bg-card dark:bg-card text-foreground dark:text-foreground border-border dark:border-border hover:bg-primary/10 dark:hover:bg-primary/20 hover:text-primary dark:hover:text-primary hover:border-primary dark:hover:border-primary font-semibold'
           }`}
         onClick={() => onPageChange(currentPage + 1)}
       >

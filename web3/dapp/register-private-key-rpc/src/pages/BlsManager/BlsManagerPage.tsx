@@ -34,7 +34,7 @@ function BlsManagerPage() {
     setStatusMessage: setWalletStatusMessage,
   } = useWallet();
 
-  const [publicKeyInput, setPublicKeyInput] = useState<string>("");
+  const [publicKeyInput, setPublicKeyInput] = useState<string>("0x86d5de6f7c9c13cc0d959a553cc0e4853ba5faae45a28da9bddc8ef8e104eb5d3dece8dfaa24f11b4243ec27537e3184");
   const [pageStatus, setPageStatus] = useState<string>("");
   const [pageError, setPageError] = useState<string>("");
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
@@ -156,8 +156,8 @@ function BlsManagerPage() {
   };
 
   return (
-    <div className="min-h-screen bg-app p-4 md:p-8">
-      <div className="max-w-2xl mx-auto space-y-6 ">
+    <div className="min-h-screen bg-app w-full p-4 md:p-8">
+      <div className="w-full space-y-6">
         <Card className="border-teal/20">
           <CardHeader className="space-y-3">
             <div className="flex items-center justify-between">
@@ -204,6 +204,7 @@ function BlsManagerPage() {
                     value={publicKeyInput}
                     onChange={(e) => setPublicKeyInput(e.target.value)}
                     placeholder="0xabcdef1234..."
+                    defaultValue="0x86d5de6f7c9c13cc0d959a553cc0e4853ba5faae45a28da9bddc8ef8e104eb5d3dece8dfaa24f11b4243ec27537e3184"
                     disabled={isProcessing || !isOnCorrectChain}
                     className="font-mono"
                   />
@@ -221,7 +222,7 @@ function BlsManagerPage() {
                     !isAddress(PREDEFINED_CONTRACT_ADDRESS)
                   }
                   size="lg"
-                  className="w-full bg-teal hover:bg-teal-hover text-white"
+                  className="w-full bg-teal hover:bg-teal-hover text-white hover:text-white font-bold shadow-md hover:shadow-lg dark:bg-teal dark:text-white dark:hover:text-white"
                 >
                   {isProcessing ? (
                     <>

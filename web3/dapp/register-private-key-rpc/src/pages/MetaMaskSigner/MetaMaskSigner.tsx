@@ -154,7 +154,7 @@ function MetaMaskSigner() {
   };
 
   return (
-    <PageContainer maxWidth="2xl">
+    <PageContainer maxWidth="full">
       <PageCard
         title="Register BLS Key (RPC)"
         description="Use MetaMask to sign and send BLS key information to the RPC backend."
@@ -185,7 +185,7 @@ function MetaMaskSigner() {
               type="submit"
               disabled={isSigning || !blsInput.trim() || !connectedAccount}
               size="lg"
-              className="w-full bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600"
+              className="w-full bg-indigo hover:bg-indigo-hover text-white hover:text-white font-bold shadow-md hover:shadow-lg dark:bg-indigo dark:text-white dark:hover:text-white"
             >
               {isSigning ? (
                 <>

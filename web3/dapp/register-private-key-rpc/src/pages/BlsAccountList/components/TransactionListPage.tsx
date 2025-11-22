@@ -106,7 +106,7 @@ export function TransactionListPage({
   const totalPages = Math.ceil(total / pageSize);
 
   return (
-    <PageContainer maxWidth="2xl" className="mt-20">
+    <PageContainer maxWidth="full" className="mt-20">
       <PageCard
         title="Transaction History"
         description={`Transactions from ${formatAddress(address)}`}

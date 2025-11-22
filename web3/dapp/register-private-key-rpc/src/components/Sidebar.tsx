@@ -11,10 +11,10 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ pageLinks }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const { isMobileMenuOpen, closeMobileMenu } = useMobileMenu();
-  // Desktop sidebar
+  // Desktop sidebar - Material 3 Navigation Drawer
   const DesktopSidebar = () => (
     <aside
-      className={`hidden md:flex h-screen bg-app-secondary border-r border-border transition-all duration-300 flex-col ${
+      className={`hidden md:flex h-[calc(100vh-4rem)] bg-card border-r border-border shadow-md transition-all duration-300 flex-col flex-shrink-0 dark:bg-card dark:border-border ${
         isCollapsed ? 'w-16' : 'w-64'
       }`}
     >
@@ -39,7 +39,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ pageLinks }) => {
 
       <aside
         id="mobile-sidebar"
-        className={`md:hidden fixed left-0 top-0 h-screen w-64 bg-app-secondary border-r border-border transition-all duration-300 ease-in-out shadow-lg z-50 transform ${
+        className={`md:hidden fixed left-0 top-16 h-[calc(100vh-4rem)] w-64 bg-card border-r border-border transition-all duration-300 ease-in-out shadow-xl z-50 transform ${
           isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -80,7 +80,7 @@ const SidebarContent: React.FC<{
             <h2 className="text-lg font-bold text-primary">Menu</h2>
             <button
               onClick={onClose}
-              className="w-8 h-8 flex items-center justify-center text-primary hover:text-primary-hover hover:bg-primary/10 rounded-lg transition-colors"
+              className="w-8 h-8 flex items-center justify-center text-primary hover:text-primary-hover hover:bg-primary/10 rounded-full transition-all duration-200 active:scale-[0.95]"
               aria-label="Close menu"
             >
               ✕
@@ -91,10 +91,10 @@ const SidebarContent: React.FC<{
             <h2 className="text-sm font-bold text-primary">Navigation</h2>
             <button
               onClick={onToggle}
-              className="w-8 h-8 bg-primary hover:bg-primary-hover rounded-lg flex items-center justify-center text-white transition-all duration-150"
+              className="w-8 h-8 bg-primary hover:bg-primary-hover rounded-full flex items-center justify-center text-white shadow-md hover:shadow-lg transition-all duration-200 active:scale-[0.95] font-bold dark:bg-primary dark:text-white"
               title="Collapse sidebar"
             >
-              <span className="text-xs">←</span>
+              <span className="text-xs font-bold">←</span>
             </button>
           </>
         ) : null}
@@ -104,10 +104,10 @@ const SidebarContent: React.FC<{
           <div className="w-full flex justify-center">
             <button
               onClick={onToggle}
-              className="w-8 h-8 bg-primary hover:bg-primary-hover rounded-lg flex items-center justify-center text-white transition-all duration-150"
+              className="w-8 h-8 bg-primary hover:bg-primary-hover rounded-full flex items-center justify-center text-white shadow-md hover:shadow-lg transition-all duration-200 active:scale-[0.95] font-bold dark:bg-primary dark:text-white"
               title="Expand sidebar"
             >
-              <span className="text-xs">→</span>
+              <span className="text-xs font-bold">→</span>
             </button>
           </div>
         )}
@@ -139,13 +139,13 @@ const SidebarContent: React.FC<{
           onClick={onLinkClick}
           title={isCollapsed ? link.label : undefined}
           className={({ isActive }) => {
-            const baseClass = `flex items-center px-4 py-3 rounded-lg text-sm font-medium transition-all duration-150 ease-in-out ${
+            const baseClass = `flex items-center px-4 py-3 rounded-2xl text-sm font-medium transition-all duration-200 ease-in-out ${
               isCollapsed ? 'justify-center' : ''
             }`;
             if (isActive) {
-              return `${baseClass} bg-primary/20 text-primary border-l-4 border-primary`;
+              return `${baseClass} bg-primary/20 text-primary shadow-sm border-l-4 border-primary font-bold dark:bg-primary/30 dark:text-primary`;
             }
-            return `${baseClass} text-app hover:bg-primary/10 hover:text-primary`;
+            return `${baseClass} text-foreground hover:bg-primary/15 hover:text-primary font-semibold dark:text-foreground dark:hover:bg-primary/25`;
           }}
         >
           {({ isActive }) => (

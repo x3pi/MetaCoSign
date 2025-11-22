@@ -4,13 +4,13 @@ import { cn } from "~/lib/utils";
 interface PageContainerProps {
   children: React.ReactNode;
   className?: string;
-  maxWidth?: "sm" | "md" | "lg" | "xl" | "2xl" | "4xl";
+  maxWidth?: "sm" | "md" | "lg" | "xl" | "2xl" | "4xl" | "full";
 }
 
 export function PageContainer({
   children,
   className,
-  maxWidth = "4xl",
+  maxWidth = "full",
 }: PageContainerProps) {
   const maxWidthClasses = {
     sm: "max-w-sm",
@@ -19,14 +19,15 @@ export function PageContainer({
     xl: "max-w-xl",
     "2xl": "max-w-2xl",
     "4xl": "max-w-4xl",
+    full: "max-w-full", // Full width option
   };
 
   return (
-    <div className="min-h-screen bg-linear-to-b from-(--color-background-secondary) via-(--color-background-secondary) to-(--color-background-tertiary) p-4 md:p-8 transition-colors duration-300">
+    <div className="w-full transition-colors duration-300">
       <div
         className={cn(
-          "mx-auto space-y-6",
-          maxWidthClasses[maxWidth],
+          "w-full space-y-4 sm:space-y-6",
+          maxWidth !== "full" && maxWidthClasses[maxWidth] && "mx-auto",
           className
         )}
       >

@@ -4,7 +4,7 @@ import SharedHeader from "./components/SharedHeader";
 import { Sidebar } from "./components/Sidebar";
 import { Route, Routes } from "react-router-dom";
 import BlsManagerPage from "./pages/BlsManager/BlsManagerPage";
-import MetaMaskSigner from "./pages/MetaMaskSigner/MetaMaskSigner";
+// import MetaMaskSigner from "./pages/MetaMaskSigner/MetaMaskSigner";
 import HomePage from "./pages/Home/HomePage";
 import AccountTypeManagerPage from "./pages/SetAccountType/AccountTypeManagerPage";
 import BlsAccountListPage from "./pages/BlsAccountList/BlsAccountListPage";
@@ -20,10 +20,10 @@ export interface PageLink {
 
 function App() {
   const pageLinks: PageLink[] = [
-    { path: "/", label: "Home" },
+    { path: "/", label: "Account" },
     { path: "/bls", label: "Publickey BLS" },
     { path: "/account-type", label: "AccountType" },
-    { path: "/register-rpc", label: "Register BLS Rpc" },
+    // { path: "/register-rpc", label: "Register BLS Rpc" },
     { path: "/accounts", label: "Account List" },
   ];
 
@@ -35,27 +35,25 @@ function App() {
       {/* <WebSocketProvider url={wsUrl}> */}
         <NotificationProvider>
           <MobileMenuProvider>
-            <div className="bg-app text-app min-h-screen flex flex-col transition-colors duration-300">
+            <div className="bg-app text-app min-h-screen w-full flex flex-col transition-colors duration-300">
               {/* Header */}
               <SharedHeader pageLinks={pageLinks} />
             
-            {/* Main layout */}
-            <div className="flex flex-1 relative">
+            {/* Main layout - Full width */}
+            <div className="flex flex-1 relative w-full">
               {/* Sidebar component */}
               <Sidebar pageLinks={pageLinks} />
               
-              {/* Main content - responsive margin/padding */}
-              <main className="flex-1 w-full md:w-auto px-2 sm:px-4 pt-4 md:pt-0">
-                <div className="container mx-auto">
-                  <Routes>
-                    <Route path="/" element={<HomePage />} />
-                    <Route path="bls" element={<BlsManagerPage />} />
-                    <Route path="account-type" element={<AccountTypeManagerPage />} />
-                    <Route path="register-rpc" element={<MetaMaskSigner />} />
-                    <Route path="accounts" element={<BlsAccountListPage />} />
-                    <Route path="*" element={<h1>Not found</h1>} />
-                  </Routes>
-                </div>
+              {/* Main content - Full width, responsive padding */}
+              <main className="flex-1 w-full min-w-0 pt-4 md:pt-6 px-4 sm:px-6 lg:px-8">
+                <Routes>
+                  <Route path="/" element={<HomePage />} />
+                  <Route path="bls" element={<BlsManagerPage />} />
+                  <Route path="account-type" element={<AccountTypeManagerPage />} />
+                  {/* <Route path="register-rpc" element={<MetaMaskSigner />} /> */}
+                  <Route path="accounts" element={<BlsAccountListPage />} />
+                  <Route path="*" element={<h1>Not found</h1>} />
+                </Routes>
               </main>
             </div>
 

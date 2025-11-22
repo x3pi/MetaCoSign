@@ -4,19 +4,24 @@ import { cn } from "~/lib/utils";
 import { AlertCircle, CheckCircle2, Info, XCircle } from "lucide-react";
 
 const alertVariants = cva(
-  "relative w-full rounded-lg border p-4 [&>svg~*]:pl-7 [&>svg+div]:translate-y-[-3px] [&>svg]:absolute [&>svg]:left-4 [&>svg]:top-4 [&>svg]:text-neutral-900 dark:[&>svg]:text-neutral-100",
+  "relative w-full rounded-2xl border-2 p-4 shadow-sm [&>svg~*]:pl-7 [&>svg+div]:translate-y-[-3px] [&>svg]:absolute [&>svg]:left-4 [&>svg]:top-4 transition-all duration-200",
   {
     variants: {
       variant: {
+        // Material 3 Surface Variant
         default:
-          "bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 border-neutral-300 dark:border-neutral-600",
+          "bg-card text-foreground border-border shadow-md",
+        // Material 3 Error Container - Text đậm để dễ đọc
         destructive:
-          "border-red-300 dark:border-red-700/60 bg-red-50 dark:bg-red-800/40 text-red-900 dark:text-red-300 [&>svg]:text-red-600 dark:[&>svg]:text-red-400",
+          "border-error bg-error-container text-error font-medium [&>svg]:text-error shadow-md",
+        // Material 3 Success Container - Text đậm để dễ đọc
         success:
-          "border-green-300 dark:border-green-700/60 bg-green-50 dark:bg-green-800/40 text-green-900 dark:text-green-300 [&>svg]:text-green-600 dark:[&>svg]:text-green-400",
+          "border-success bg-success-container text-success font-medium [&>svg]:text-success shadow-md",
+        // Material 3 Warning Container - Text đậm, contrast cao để dễ đọc
         warning:
-          "border-yellow-300 dark:border-yellow-700/60 bg-yellow-50 dark:bg-yellow-800/40 text-yellow-900 dark:text-yellow-300 [&>svg]:text-yellow-600 dark:[&>svg]:text-yellow-400",
-        info: "border-sky-300 dark:border-sky-700/60 bg-sky-50 dark:bg-sky-800/40 text-sky-900 dark:text-sky-300 [&>svg]:text-sky-600 dark:[&>svg]:text-sky-400",
+          "border-warning bg-warning-container text-warning font-semibold [&>svg]:text-warning shadow-md dark:text-warning dark:font-bold",
+        // Material 3 Info Container - Text đậm để dễ đọc
+        info: "border-info bg-info-container text-info font-medium [&>svg]:text-info shadow-md",
       },
     },
     defaultVariants: {
@@ -73,7 +78,7 @@ const AlertDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn("text-sm [&_p]:leading-relaxed", className)}
+    className={cn("text-sm font-medium [&_p]:leading-relaxed", className)}
     {...props}
   />
 ));

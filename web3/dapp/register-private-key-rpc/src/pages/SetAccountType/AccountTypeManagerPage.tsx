@@ -227,7 +227,7 @@ function AccountTypeManagerPage() {
   ];
 
   return (
-    <PageContainer maxWidth="2xl">
+    <PageContainer maxWidth="full">
       <PageCard
         title="Set Account Type"
         description={`Select the account type for your address on the ${chain991.name} chain.`}
@@ -283,7 +283,7 @@ function AccountTypeManagerPage() {
                     !isAddress(PREDEFINED_CONTRACT_ADDRESS)
                   }
                   size="lg"
-                  className="w-full bg-purple hover:bg-purple-hover text-white"
+                  className="w-full bg-purple hover:bg-purple-hover text-white hover:text-white font-bold shadow-md hover:shadow-lg dark:bg-purple dark:text-white dark:hover:text-white"
                 >
                   {isProcessing ? (
                     <>

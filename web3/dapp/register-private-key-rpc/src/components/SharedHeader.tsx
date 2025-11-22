@@ -61,7 +61,7 @@ const MobileMenuButton: React.FC = () => {
         console.log('Mobile menu button clicked, current state:', isMobileMenuOpen);
         toggleMobileMenu();
       }}
-      className="md:hidden w-10 h-10 bg-primary hover:bg-primary-hover rounded-lg flex items-center justify-center text-white transition-all duration-150 shadow-md"
+      className="md:hidden w-10 h-10 bg-primary hover:bg-primary-hover rounded-full flex items-center justify-center text-white transition-all duration-200 shadow-md hover:shadow-lg active:scale-[0.98] font-bold dark:bg-primary dark:text-white"
       aria-label="Toggle menu"
     >
       <div className="w-5 h-5 flex flex-col justify-center items-center">
@@ -85,10 +85,10 @@ const SharedHeader: React.FC<SharedHeaderProps> = () => {
     connectWallet,
     disconnectWallet,
     switchNetwork,
-    error: walletError,
-    status: walletStatus,
-    clearError: clearWalletError,
-    setStatusMessage: setWalletStatusMessage,
+    // error: walletError,
+    // status: walletStatus,
+    // clearError: clearWalletError,
+    // setStatusMessage: setWalletStatusMessage,
   } = useWallet();
 
   const handleSwitchToChain991 = () => {
@@ -97,33 +97,32 @@ const SharedHeader: React.FC<SharedHeaderProps> = () => {
 
   // === 1. ĐỊNH NGHĨA STYLE M3 BẰNG TAILWIND ===
 
-  // Style chung cho các nút/pills bên phải: bo tròn `rounded-full`
+  // Material 3 Button Styles - rounded-full với elevation
   const walletPillBaseStyle =
-    "px-4 py-2 rounded-full text-xs font-medium shadow-sm transition-all duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-opacity-75 flex items-center justify-center";
+    "px-4 py-2 rounded-full text-xs font-medium shadow-sm hover:shadow-md transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 flex items-center justify-center active:scale-[0.98]";
 
-  // Nút Connect: "Filled Button" (M3 Primary)
+  // Material 3 Filled Button - Text trắng, luôn rõ khi hover
   const connectWalletButtonStyle =
-    "bg-primary hover:bg-primary-hover text-white ring-primary";
+    "bg-primary hover:bg-primary-hover text-white hover:text-white ring-primary font-bold dark:bg-primary dark:text-white dark:hover:text-white";
 
-  // Nút Disconnect: "Tonal Button" (M3 Surface-Variant)
+  // Material 3 Tonal Button - Text trắng, luôn rõ khi hover
   const disconnectWalletButtonStyle =
-    "bg-app-secondary hover:bg-app-tertiary text-app-secondary ring-border";
+    "bg-gray-800 hover:bg-gray-900 text-white hover:text-white ring-border font-bold shadow-md hover:shadow-lg dark:bg-gray-600 dark:text-white dark:hover:bg-gray-500 dark:hover:text-white";
 
-  // Nút Switch Network (M3 Error/Warning Color)
+  // Material 3 Warning Button - Text trắng, luôn rõ khi hover
   const switchNetworkButtonStyle =
-    "bg-warning hover:bg-warning text-white ring-warning";
+    "bg-warning hover:bg-warning text-white hover:text-white ring-warning font-bold dark:bg-warning dark:text-white dark:hover:text-white";
 
   return (
-    // === 2. HEADER: M3 "Top App Bar" (Surface + Elevation) ===
-    // Bỏ border-b, dùng shadow-lg để tạo độ cao
-    <header className="bg-app shadow-lg sticky top-0 z-50 transition-colors duration-300">
-      <div className="container mx-auto px-2 sm:px-4">
+    // === 2. HEADER: Material 3 "Top App Bar" - Full width ===
+    <header className="bg-card shadow-md border-b border-border sticky top-0 z-50 transition-all duration-300 w-full dark:bg-card dark:border-border">
+      <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="relative flex items-center justify-between h-16">
-          {/* Logo (M3 Primary Color) */}
+          {/* Logo (Material 3 Primary Color) */}
           <div className="shrink-0">
             <Link
               to="/"
-              className="text-xl font-bold text-primary cursor-pointer hover:opacity-80 transition-opacity"
+              className="text-xl font-bold text-primary cursor-pointer hover:text-primary-hover transition-colors duration-200"
             >
               Account Manager
             </Link>
@@ -136,9 +135,9 @@ const SharedHeader: React.FC<SharedHeaderProps> = () => {
 
             {connectedAccount ? (
               <>
-                {/* Pill cho Địa chỉ và Chain ID (M3 Tonal) */}
-                <div className="bg-app-secondary rounded-full px-4 py-2 text-xs flex items-center space-x-2">
-                  <span className="text-app-secondary">
+                {/* Material 3 Chip cho Địa chỉ và Chain ID */}
+                <div className="bg-app-secondary rounded-full px-4 py-2 text-xs flex items-center space-x-2 shadow-sm border border-border">
+                  <span className="text-foreground font-medium">
                     {`${connectedAccount.substring(
                       0,
                       6
@@ -147,10 +146,10 @@ const SharedHeader: React.FC<SharedHeaderProps> = () => {
                     )}`}
                   </span>
                   <span
-                    className={`px-1.5 py-0.5 rounded-full text-white text-[10px] ${
+                    className={`px-2 py-0.5 rounded-full text-white text-[10px] font-medium shadow-sm ${
                       currentChainId === chain991.id
                         ? "bg-success"
-                        : "bg-warning text-white"
+                        : "bg-warning"
                     }`}
                   >
                     ID: {currentChainId ?? "N/A"}
@@ -199,15 +198,14 @@ const SharedHeader: React.FC<SharedHeaderProps> = () => {
       </div>
 
       {/* === 5. THANH STATUS (M3 "Snackbar" Component) === */}
-      {/* Giao diện này vốn đã rất M3, giữ nguyên */}
-      {(walletStatus || walletError) && (
-        <div className="container mx-auto px-2 sm:px-4 pb-1">
+      {/* {(walletStatus || walletError) && (
+        <div className="w-full px-4 sm:px-6 lg:px-8 pb-1">
           {walletStatus && (
-            <div className="relative mt-1 flex items-center justify-between text-xs p-2.5 bg-sky-800/90 border border-sky-700/90 text-sky-200 rounded-md shadow-lg">
-              <span>{walletStatus}</span>
+            <div className="relative mt-1 flex items-center justify-between text-xs p-3 bg-info-container border-2 border-info/30 text-info rounded-2xl shadow-md">
+              <span className="font-medium">{walletStatus}</span>
               <button
                 onClick={() => setWalletStatusMessage(null)}
-                className="ml-3 shrink-0 bg-black/20 hover:bg-black/40 rounded-full p-1 -mr-1 -my-1"
+                className="ml-3 shrink-0 hover:bg-info/20 rounded-full p-1 -mr-1 -my-1 transition-colors"
               >
                 <span className="sr-only">Close</span>
                 <CloseIcon />
@@ -215,11 +213,11 @@ const SharedHeader: React.FC<SharedHeaderProps> = () => {
             </div>
           )}
           {walletError && (
-            <div className="relative mt-1 flex items-center justify-between text-xs p-2.5 bg-red-800/90 border border-red-700/90 text-red-200 rounded-md shadow-lg">
-              <span>{walletError}</span>
+            <div className="relative mt-1 flex items-center justify-between text-xs p-3 bg-error-container border-2 border-error/30 text-error rounded-2xl shadow-md">
+              <span className="font-medium">{walletError}</span>
               <button
                 onClick={clearWalletError}
-                className="ml-3 shrink-0 bg-black/20 hover:bg-black/40 rounded-full p-1 -mr-1 -my-1"
+                className="ml-3 shrink-0 hover:bg-error/20 rounded-full p-1 -mr-1 -my-1 transition-colors"
               >
                 <span className="sr-only">Close</span>
                 <CloseIcon />
@@ -227,7 +225,7 @@ const SharedHeader: React.FC<SharedHeaderProps> = () => {
             </div>
           )}
         </div>
-      )}
+      )} */}
     </header>
   );
 };

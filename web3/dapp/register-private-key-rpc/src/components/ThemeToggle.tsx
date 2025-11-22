@@ -10,7 +10,7 @@ export function ThemeToggle() {
       variant="outline"
       size="sm"
       onClick={toggleTheme}
-      className="h-9 px-3 gap-2 border-[var(--color-border)] hover:bg-[var(--color-background-secondary)]"
+      className="h-9 px-3 gap-2 border-(--color-border) hover:bg-(--color-background-secondary)"
       aria-label="Toggle theme"
     >
       {theme === "light" ? (

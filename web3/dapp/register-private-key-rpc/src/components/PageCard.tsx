@@ -42,14 +42,14 @@ export function PageCard({
   return (
     <Card className={cn(colorClasses[colorScheme], className)}>
       <CardHeader className="space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <CardTitle
             className={cn(
-              "text-3xl font-bold flex items-center gap-2",
+              "text-2xl sm:text-3xl font-bold flex items-center gap-2",
               colorClasses[colorScheme].split(" ")[1]
             )}
           >
-            {Icon && <Icon className="h-7 w-7" />}
+            {Icon && <Icon className="h-6 w-6 sm:h-7 sm:w-7" />}
             {title}
           </CardTitle>
           {isConnected !== undefined && (

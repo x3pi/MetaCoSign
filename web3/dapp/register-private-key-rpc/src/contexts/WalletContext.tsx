@@ -274,11 +274,6 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
         setCurrentChainId(null);
         setStatus('Wallet disconnected by user from app.');
         setError(null);
-        console.log("WalletContext: State after disconnect:", {
-            connectedAccount: '',
-            currentChainId: null,
-            status: 'Wallet disconnected by user from app.'
-        });
     };
 
     const switchNetwork = async (targetChainId: number) => {

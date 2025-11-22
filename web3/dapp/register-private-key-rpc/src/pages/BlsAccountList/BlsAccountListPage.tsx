@@ -297,7 +297,7 @@ function BlsAccountListPage() {
   };
 
   return (
-    <PageContainer>
+    <PageContainer maxWidth="full">
       <PageCard
         title="BLS Account Management"
         description={`Manage accounts registered with BLS Public Key: ${BLS_PUBLIC_KEY.slice(
