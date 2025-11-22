@@ -11,9 +11,12 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	ethCommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/app"
+	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/utils"
 	"github.com/meta-node-blockchain/meta-node/pkg/account_handler/abi_account"
+	"github.com/meta-node-blockchain/meta-node/pkg/bls"
 	"github.com/meta-node-blockchain/meta-node/pkg/common"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	pb "github.com/meta-node-blockchain/meta-node/pkg/proto"
@@ -128,7 +131,7 @@ func (h *AccountHandlerNoReceipt) handleSetBlsPublicKey(
 	}
 	fromAddress := tx.FromAddress()
 	currentTime := time.Now().Unix()
-
+	adminAddress := ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress)
 	accountData := &pb.BlsAccountData{
 		Address:        fromAddress.Bytes(),
 		BlsPublicKey:   blsPublicKeyBytes,
@@ -157,7 +160,7 @@ func (h *AccountHandlerNoReceipt) handleSetBlsPublicKey(
 	}
 	msgNoti := fmt.Sprintf("BLS registered for account %s", fromAddress.Hex())
 	notification := &pb.Notification{
-		AccountAddress: ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress).Bytes(),
+		AccountAddress: adminAddress.Bytes(),
 		Message:        msgNoti,
 		CreatedAt:      currentTime,
 	}
@@ -165,10 +168,9 @@ func (h *AccountHandlerNoReceipt) handleSetBlsPublicKey(
 		logger.Error("Failed to save notification: %v", err)
 		return fmt.Errorf("Failed to save notification: %v", err)
 	}
-	logger.Info("✅ BLS public key set for account %s", fromAddress.Hex())
 	h.broadcastEvent(
 		"RegisterBls",
-		fromAddress,
+		adminAddress,
 		big.NewInt(currentTime),
 		blsPublicKeyBytes,
 		msgNoti,
@@ -223,99 +225,98 @@ func (h *AccountHandlerNoReceipt) handleConfirmAccount(
 		return "", fmt.Errorf("invalid signature: signer %s is not authorized", signerAddress.Hex())
 	}
 
-	// pendingTx, err := h.storage.GetPendingTransaction(accountAddress)
-	// if err != nil {
-	// 	return "", fmt.Errorf("pending transaction not found: %w", err)
-	// }
+	pendingTx, err := h.storage.GetPendingTransaction(accountAddress)
+	if err != nil {
+		return "", fmt.Errorf("pending transaction not found: %w", err)
+	}
 	// ========== REBUILD TRANSACTION TỪ rawTransactionHex ==========
-	// rawTransactionHex := pendingTx.RawTransactionHex
-	// // Decode hex
-	// decodedTxBytes, releaseDecoded, err := utils.DecodeHexPooled(rawTransactionHex)
-	// if err != nil {
-	// 	return "", fmt.Errorf("invalid raw transaction hex: %w", err)
-	// }
-	// decodedReleased := false
-	// releaseDecodedOnce := func() {
-	// 	if decodedReleased {
-	// 		return
-	// 	}
-	// 	decodedReleased = true
-	// 	if releaseDecoded != nil {
-	// 		releaseDecoded()
-	// 	}
-	// }
-	// // Unmarshal Ethereum transaction
-	// ethTx := new(types.Transaction)
-	// if err := ethTx.UnmarshalBinary(decodedTxBytes); err != nil {
-	// 	return "", fmt.Errorf("failed to unmarshal ethereum transaction: %w", err)
-	// }
-	// // Verify sender
-	// signer := types.LatestSignerForChainID(h.appCtx.ClientRpc.ChainId)
-	// fromAddress, err := types.Sender(signer, ethTx)
-	// if err != nil {
-	// 	return "", fmt.Errorf("failed to derive sender: %w", err)
-	// }
-	// if fromAddress != accountAddress {
-	// 	return "", fmt.Errorf("sender mismatch: expected %s, got %s", accountAddress.Hex(), fromAddress.Hex())
-	// }
-	// var (
-	// 	bTx       []byte
-	// 	mtTx      mt_types.Transaction
-	// 	releaseTx func()
-	// 	buildErr  error
-	// )
-	// exists, err := h.appCtx.PKS.HasPrivateKey(fromAddress)
-	// if err != nil {
-	// 	return "", fmt.Errorf("error checking private key store: %w", err)
-	// }
-	// logger.Info("Rebuilding transaction for account %s, exists in PKS: %v", fromAddress.Hex(), exists)
-	// if !exists {
-	// 	bTx, mtTx, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTx(ethTx)
-	// } else {
-	// 	senderPkString, _ := h.appCtx.PKS.GetPrivateKey(fromAddress)
-	// 	keyPair := bls.NewKeyPair(ethCommon.FromHex(senderPkString))
-	// 	bTx, mtTx, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(
-	// 		ethTx,
-	// 		keyPair.PrivateKey(),
-	// 	)
-	// }
-	// if buildErr != nil {
-	// 	return "", fmt.Errorf("failed to build transaction: %w", buildErr)
-	// }
-	// rs := h.appCtx.ClientRpc.SendRawTransactionBinary(
-	// 	bTx,
-	// 	releaseTx,
-	// 	decodedTxBytes,
-	// 	releaseDecodedOnce,
-	// 	nil,
-	// )
-	// if rs.Error != nil {
-	// 	return "", fmt.Errorf("failed to send transaction: %v", rs.Error)
-	// }
-
-	// metaTxData, _, releaseFunc, err := h.appCtx.ClientRpc.BuildTransferTransaction(ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress), ethCommon.Address(pendingTx.Address), big.NewInt(1000000000000000000))
-	// rst := h.appCtx.ClientRpc.SendRawTransactionBinary(
-	// 	metaTxData,
-	// 	releaseFunc,
-	// 	nil,
-	// 	nil,
-	// 	nil,
-	// )
-	// if rs.Error != nil {
-	// 	return "", fmt.Errorf("failed to send transaction: %v", rst.Error)
-	// }
-	// // Cập nhật trạng thái confirmed
-	// if err := h.storage.MarkAccountConfirmed(
-	// 	accountAddress,
-	// 	mtTx.Hash().Bytes(),
-	// 	pendingTx.BlsPublicKey,
-	// ); err != nil {
-	// 	logger.Error("Failed to mark account as confirmed: %v", err)
-	// }
-	// // Xóa pending transaction
-	// if err := h.storage.DeletePendingTransaction(accountAddress); err != nil {
-	// 	logger.Error("Failed to delete pending transaction: %v", err)
-	// }
+	rawTransactionHex := pendingTx.RawTransactionHex
+	// Decode hex
+	decodedTxBytes, releaseDecoded, err := utils.DecodeHexPooled(rawTransactionHex)
+	if err != nil {
+		return "", fmt.Errorf("invalid raw transaction hex: %w", err)
+	}
+	decodedReleased := false
+	releaseDecodedOnce := func() {
+		if decodedReleased {
+			return
+		}
+		decodedReleased = true
+		if releaseDecoded != nil {
+			releaseDecoded()
+		}
+	}
+	// Unmarshal Ethereum transaction
+	ethTx := new(types.Transaction)
+	if err := ethTx.UnmarshalBinary(decodedTxBytes); err != nil {
+		return "", fmt.Errorf("failed to unmarshal ethereum transaction: %w", err)
+	}
+	// Verify sender
+	signer := types.LatestSignerForChainID(h.appCtx.ClientRpc.ChainId)
+	fromAddress, err := types.Sender(signer, ethTx)
+	if err != nil {
+		return "", fmt.Errorf("failed to derive sender: %w", err)
+	}
+	if fromAddress != accountAddress {
+		return "", fmt.Errorf("sender mismatch: expected %s, got %s", accountAddress.Hex(), fromAddress.Hex())
+	}
+	var (
+		bTx       []byte
+		mtTx      mt_types.Transaction
+		releaseTx func()
+		buildErr  error
+	)
+	exists, err := h.appCtx.PKS.HasPrivateKey(fromAddress)
+	if err != nil {
+		return "", fmt.Errorf("error checking private key store: %w", err)
+	}
+	logger.Info("Rebuilding transaction for account %s, exists in PKS: %v", fromAddress.Hex(), exists)
+	if !exists {
+		bTx, mtTx, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTx(ethTx)
+	} else {
+		senderPkString, _ := h.appCtx.PKS.GetPrivateKey(fromAddress)
+		keyPair := bls.NewKeyPair(ethCommon.FromHex(senderPkString))
+		bTx, mtTx, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(
+			ethTx,
+			keyPair.PrivateKey(),
+		)
+	}
+	if buildErr != nil {
+		return "", fmt.Errorf("failed to build transaction: %w", buildErr)
+	}
+	rs := h.appCtx.ClientRpc.SendRawTransactionBinary(
+		bTx,
+		releaseTx,
+		decodedTxBytes,
+		releaseDecodedOnce,
+		nil,
+	)
+	if rs.Error != nil {
+		return "", fmt.Errorf("failed to send transaction: %v", rs.Error)
+	}
+	metaTxData, _, releaseFunc, err := h.appCtx.ClientRpc.BuildTransferTransaction(ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress), ethCommon.Address(pendingTx.Address), big.NewInt(1000000000000000000))
+	rst := h.appCtx.ClientRpc.SendRawTransactionBinary(
+		metaTxData,
+		releaseFunc,
+		nil,
+		nil,
+		nil,
+	)
+	if rs.Error != nil {
+		return "", fmt.Errorf("failed to send transaction: %v", rst.Error)
+	}
+	// Cập nhật trạng thái confirmed
+	if err := h.storage.MarkAccountConfirmed(
+		accountAddress,
+		mtTx.Hash().Bytes(),
+		pendingTx.BlsPublicKey,
+	); err != nil {
+		logger.Error("Failed to mark account as confirmed: %v", err)
+	}
+	// Xóa pending transaction
+	if err := h.storage.DeletePendingTransaction(accountAddress); err != nil {
+		logger.Error("Failed to delete pending transaction: %v", err)
+	}
 	// ✅ TẠO NOTIFICATION VÀ BROADCAST EVENT
 	msgNoti := fmt.Sprintf("Your account %s has been successfully confirmed!", accountAddress.Hex())
 

@@ -94,6 +94,34 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
   // Listen to AccountConfirmed events via WebSocket
   useEffect(() => {
+    const cleanup = () => {
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+      const ws = wsRef.current;
+      if (ws) {
+        // ✅ Remove all event listeners trước
+        ws.onopen = null;
+        ws.onmessage = null;
+        ws.onerror = null;
+        ws.onclose = null;
+        if (
+          ws.readyState === WebSocket.OPEN ||
+          ws.readyState === WebSocket.CONNECTING
+        ) {
+          console.log(
+            "⚠️ Forcing close old WebSocket (readyState:",
+            ws.readyState,
+            ")"
+          );
+          ws.close(1000, "Account changed");
+        }
+        wsRef.current = null;
+      }
+    };
+    // ✅ Cleanup trước khi tạo WebSocket mới
+    cleanup();
     if (!connectedAccount) {
       // Cleanup when disconnected
       const ws = wsRef.current;
@@ -101,25 +129,26 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         ws.close();
       }
       wsRef.current = null;
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
       return;
     }
 
     const wsUrl = "ws://192.168.1.234:8545";
-
-    // ✅ Lưu subscription IDs để unsubscribe sau
-    const subscriptionIdsRef = {
-      accountConfirmed: null as string | null,
-      registerBls: null as string | null,
-    };
-
     const connectWebSocket = () => {
+      const oldWs = wsRef.current;
+      if (oldWs && oldWs.readyState === WebSocket.OPEN) {
+        console.log("🧹 Closing old WebSocket before creating new one");
+        oldWs.close(1000, "Creating new connection");
+        wsRef.current = null;
+      }
       try {
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
         ws.onopen = () => {
           console.log("✅ WebSocket connected");
           reconnectAttemptsRef.current = 0;
-
           // Calculate event topic hash
           const sigAccountConfirmed =
             "AccountConfirmed(address,uint256,string)";
@@ -164,40 +193,17 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
             const data = JSON.parse(event.data);
             console.log("📩 WebSocket message received:", data);
 
-            // ✅ Lưu subscription ID từ response
-            if (
-              data.result &&
-              typeof data.result === "string" &&
-              data.result.startsWith("0x")
-            ) {
-              if (data.id === 1) {
-                subscriptionIdsRef.accountConfirmed = data.result;
-                console.log(
-                  "📝 Saved AccountConfirmed subscription ID:",
-                  data.result
-                );
-              } else if (data.id === 2) {
-                subscriptionIdsRef.registerBls = data.result;
-                console.log(
-                  "📝 Saved RegisterBls subscription ID:",
-                  data.result
-                );
-              }
-            }
-
             if (data.method === "eth_subscription" && data.params?.result) {
               const log = data.params.result;
 
               if (log.topics && log.data) {
                 console.log("📥 Event log received:", log);
-
                 // Decode event log
                 const decoded = decodeEventLog({
                   abi: contracts.AccountManager.abi,
                   data: log.data as `0x${string}`,
                   topics: log.topics as [Hex, ...Hex[]],
                 });
-
                 const args = decoded.args as {
                   account?: string;
                   time?: bigint;
@@ -207,7 +213,6 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
                 };
                 let notifMessage = "";
                 let notifTitle = "";
-
                 // console.log("🔍 Decoded event:", decoded.eventName, args);
                 console.log(
                   "event account",
@@ -268,11 +273,11 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         ws.onerror = (error) => {
           console.error("❌ WebSocket error:", error);
         };
-        ws.onclose = () => {
+        ws.onclose = (event) => {
           console.log("❌ WebSocket disconnected");
           wsRef.current = null;
           // ✅ Auto-reconnect sau 100ms
-          if (reconnectAttemptsRef.current < maxReconnectAttempts) {
+          if (event.code !== 1000  && reconnectAttemptsRef.current < maxReconnectAttempts) {
             console.log(
               `🔄 WebSocket reconnecting in 100ms... (attempt ${
                 reconnectAttemptsRef.current + 1
@@ -297,56 +302,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     connectWebSocket();
 
     // ✅ Cleanup on unmount: Unsubscribe trước khi close
-    return () => {
-      const ws = wsRef.current;
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.close();
-      }
-      // if (ws && ws.readyState === WebSocket.OPEN) {
-      //   // ✅ Unsubscribe AccountConfirmed
-      //   if (subscriptionIdsRef.accountConfirmed) {
-      //     console.log(
-      //       "🛑 Unsubscribing AccountConfirmed:",
-      //       subscriptionIdsRef.accountConfirmed
-      //     );
-      //     ws.send(
-      //       JSON.stringify({
-      //         jsonrpc: "2.0",
-      //         id: 999,
-      //         method: "eth_unsubscribe",
-      //         params: [subscriptionIdsRef.accountConfirmed],
-      //       })
-      //     );
-      //   }
-
-      //   // ✅ Unsubscribe RegisterBls
-      //   if (subscriptionIdsRef.registerBls) {
-      //     console.log(
-      //       "🛑 Unsubscribing RegisterBls:",
-      //       subscriptionIdsRef.registerBls
-      //     );
-      //     ws.send(
-      //       JSON.stringify({
-      //         jsonrpc: "2.0",
-      //         id: 998,
-      //         method: "eth_unsubscribe",
-      //         params: [subscriptionIdsRef.registerBls],
-      //       })
-      //     );
-      //   }
-      //   // ✅ Đợi một chút để messages được gửi trước khi close
-      //   setTimeout(() => {
-      //     ws.close();
-      //     wsRef.current = null;
-      //   }, 100);
-      // } else {
-      //   wsRef.current = null;
-      // }
-
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-    };
+    return cleanup;
   }, [connectedAccount]);
 
   // Load notifications on mount and when account changes

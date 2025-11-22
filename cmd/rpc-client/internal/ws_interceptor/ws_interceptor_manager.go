@@ -125,7 +125,7 @@ func (sm *SubscriptionInterceptor) BroadcastEventToContract(contractAddr string,
 	defer sm.mu.RUnlock()
 
 	count := 0
-	for _, sub := range sm.subscriptions {
+	for subID, sub := range sm.subscriptions {
 		// Kiểm tra contract address khớp (case-insensitive)
 		addressMatch := false
 		for _, addr := range sub.ContractAddresses {
@@ -168,6 +168,7 @@ func (sm *SubscriptionInterceptor) BroadcastEventToContract(contractAddr string,
 			logger.Error("Failed to send event to %s: %v", sub.ID, err)
 		} else {
 			count++
+			logger.Info("✅ Sent to subscription %s (created at %v)", subID, sub.CreatedAt)
 		}
 	}
 	logger.Info("📡 Broadcasted event to %d subscribers of contract %s", count, contractAddr)
