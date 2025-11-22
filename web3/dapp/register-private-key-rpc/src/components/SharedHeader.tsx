@@ -30,44 +30,40 @@ const LoadingSpinnerIcon = () => (
     ></path>
   </svg>
 );
-
-const CloseIcon = () => (
-  <svg
-    className="h-4 w-4"
-    xmlns="http://www.w3.org/2000/svg"
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-    aria-hidden="true"
-  >
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth="2"
-      d="M6 18L18 6M6 6l12 12"
-    />
-  </svg>
-);
-
 // Mobile menu button component
 const MobileMenuButton: React.FC = () => {
   const { isMobileMenuOpen, toggleMobileMenu } = useMobileMenu();
-  
+
   return (
     <button
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();
-        console.log('Mobile menu button clicked, current state:', isMobileMenuOpen);
+        console.log(
+          "Mobile menu button clicked, current state:",
+          isMobileMenuOpen
+        );
         toggleMobileMenu();
       }}
       className="md:hidden w-10 h-10 bg-primary hover:bg-primary-hover rounded-full flex items-center justify-center text-white transition-all duration-200 shadow-md hover:shadow-lg active:scale-[0.98] font-bold dark:bg-primary dark:text-white"
       aria-label="Toggle menu"
     >
       <div className="w-5 h-5 flex flex-col justify-center items-center">
-        <span className={`bg-white block transition-all duration-300 ease-out h-0.5 w-4 rounded-sm ${isMobileMenuOpen ? 'rotate-45 translate-y-1' : '-translate-y-0.5'}`}></span>
-        <span className={`bg-white block transition-all duration-300 ease-out h-0.5 w-4 rounded-sm my-0.5 ${isMobileMenuOpen ? 'opacity-0' : 'opacity-100'}`}></span>
-        <span className={`bg-white block transition-all duration-300 ease-out h-0.5 w-4 rounded-sm ${isMobileMenuOpen ? '-rotate-45 -translate-y-1' : 'translate-y-0.5'}`}></span>
+        <span
+          className={`bg-white block transition-all duration-300 ease-out h-0.5 w-4 rounded-sm ${
+            isMobileMenuOpen ? "rotate-45 translate-y-1" : "-translate-y-0.5"
+          }`}
+        ></span>
+        <span
+          className={`bg-white block transition-all duration-300 ease-out h-0.5 w-4 rounded-sm my-0.5 ${
+            isMobileMenuOpen ? "opacity-0" : "opacity-100"
+          }`}
+        ></span>
+        <span
+          className={`bg-white block transition-all duration-300 ease-out h-0.5 w-4 rounded-sm ${
+            isMobileMenuOpen ? "-rotate-45 -translate-y-1" : "translate-y-0.5"
+          }`}
+        ></span>
       </div>
     </button>
   );

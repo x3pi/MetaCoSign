@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"crypto/tls"
 	"fmt"
 	"net"
 	"net/http"
@@ -82,6 +83,11 @@ func createCustomTransport() *http.Transport {
 		DisableCompression: true,  // Tắt auto compression (proxy nên giữ nguyên)
 		DisableKeepAlives:  false, // Bật HTTP keep-alive (reuse connections)
 		ForceAttemptHTTP2:  false, // Không ép HTTP/2 (dùng HTTP/1.1)
+
+		// TLS Config - Skip certificate verification
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true, // Bỏ qua xác thực TLS certificate
+		},
 
 		// Dialer config
 		DialContext: (&net.Dialer{

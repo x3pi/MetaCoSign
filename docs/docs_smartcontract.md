@@ -1,5 +1,5 @@
 # Tài liệu Smart Contract AccountManager
-
+Contract file ở `/contracts/Account.sol`
 Tài liệu này mô tả các sự kiện (Events) và các hàm (Functions) trong Smart Contract `AccountManager`. Contract này quản lý việc đăng ký khóa BLS, xác thực tài khoản và quản lý trạng thái người dùng.
 
 ## 1. Events (Sự kiện)

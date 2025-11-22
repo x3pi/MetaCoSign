@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net"
@@ -67,6 +68,9 @@ func (p *RpcReverseProxy) dialUpstreamWebSocket(targetURL string, r *http.Reques
 		ReadBufferSize:    65536,
 		WriteBufferSize:   65536,
 		EnableCompression: false,
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true, // Skip TLS certificate verification
+		},
 		NetDialContext: (&net.Dialer{
 			Timeout:   15 * time.Second,
 			KeepAlive: 30 * time.Second,

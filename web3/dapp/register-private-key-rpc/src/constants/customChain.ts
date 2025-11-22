@@ -1,24 +1,22 @@
 // src/customChain.ts
-import { type Chain } from 'viem';
-// const GO_BACKEND_RPC_URL =  window.location.origin;
+import { type Chain } from "viem";
+// const GO_BACKEND_RPC_URL = window.location.origin;
+// export const WSS_RPC = window.location.origin.replace(/^http/, "ws");
 export const WSS_RPC = "ws://192.168.1.234:8545";
-const GO_BACKEND_RPC_URL =  "http://192.168.1.234:8545";
-// export const WSS_RPC = "wss://rpc-proxy-sequoia.iqnb.com:8446";
-// const GO_BACKEND_RPC_URL =  "https://rpc-proxy-sequoia.iqnb.com:8446";
+const GO_BACKEND_RPC_URL = "http://192.168.1.234:8545";
+// const GO_BACKEND_RPC_URL = "https://rpc-proxy-sequoia.iqnb.com:8446";
 // Replace with your actual Chain ID 991 details
 export const chain991 = {
   id: 991,
-  name: 'My Chain 991', // Give your network a descriptive name
+  name: "My Chain 991", // Give your network a descriptive name
   nativeCurrency: {
-    name: 'My Native Token',
-    symbol: 'MNT',
+    name: "My Native Token",
+    symbol: "MNT",
     decimals: 18,
   },
   rpcUrls: {
     default: { http: [GO_BACKEND_RPC_URL] },
     public: { http: [GO_BACKEND_RPC_URL] },
-   
-
   },
   // Optional: Add block explorer if you have one
   // blockExplorers: {
