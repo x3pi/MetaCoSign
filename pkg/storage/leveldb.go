@@ -14,8 +14,6 @@ import (
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/opt"
 	"github.com/syndtr/goleveldb/leveldb/util"
-
-	sharedmemory "github.com/meta-node-blockchain/meta-node/pkg/shared_memory"
 )
 
 type LevelDBManager struct {
@@ -97,7 +95,6 @@ func (mgr *LevelDBManager) GetOrCreate(path string, isReadOnly bool) (*LevelDB, 
 			return nil, err
 		}
 
-		sharedmemory.GlobalSharedMemory.Write("overloaded", true)
 		logger.Warn("Failed to open LevelDB (attempt %d/%d): %v", i+1, maxRetries, err)
 	}
 
@@ -206,23 +203,6 @@ func (mgr *LevelDBManager) removeInstance(path string) {
 }
 
 func (ldb *LevelDB) Compact() error {
-	var isExistOverloaded bool
-	value, exists := sharedmemory.GlobalSharedMemory.Read("overloaded")
-
-	if !exists {
-		isExistOverloaded = false
-	} else {
-		var ok bool
-		isExistOverloaded, ok = value.(bool) // Type assertion
-		if !ok {
-			err := fmt.Errorf("Error: cannot convert 'overloaded' to bool")
-			return err
-		}
-	}
-	if isExistOverloaded {
-		return nil
-	}
-
 	return ldb.db.CompactRange(util.Range{
 		Start: nil,
 		Limit: nil,
