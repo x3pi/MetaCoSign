@@ -1,90 +1,20 @@
 package file_handler_helper
 
 import (
-	"encoding/hex"
 	"fmt"
 	"math/big"
 	"reflect"
 	"strings"
-	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
-	com "github.com/meta-node-blockchain/meta-node/pkg/common"
 	"github.com/meta-node-blockchain/meta-node/pkg/file_handler/abi_file"
 	file_model "github.com/meta-node-blockchain/meta-node/pkg/models/file_model"
 
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/meta-node-blockchain/meta-node/pkg/blockchain"
-	"github.com/meta-node-blockchain/meta-node/pkg/blockchain/tx_processor"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	"github.com/meta-node-blockchain/meta-node/pkg/transaction"
 	"github.com/meta-node-blockchain/meta-node/types"
 )
-
-func CreateSetServiceTransaction(tp tx_processor.OffChainProcessor, none uint64, address common.Address,
-	chainState *blockchain.ChainState,
-	originalTx types.Transaction) (types.Transaction, error) {
-
-	// Parse ABI để encode function call
-	parsedABI, err := abi.JSON(strings.NewReader(abi_file.FileABI))
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse ABI: %v", err)
-	}
-
-	// Encode function call cho setService
-	inputData, err := parsedABI.Pack("setService", address)
-	if err != nil {
-		return nil, fmt.Errorf("failed to pack setService data: %v", err)
-	}
-	callData := transaction.NewCallData(inputData)
-	bData, _ := callData.Marshal()
-	// tạm thời để v
-	lastHash, err := chainState.GetAccountStateDB().GetLastHash(originalTx.FromAddress())
-	if err != nil {
-		return nil, fmt.Errorf("failed to get last hash: %v", err)
-	}
-	acc, _ := chainState.GetAccountStateDB().AccountState(originalTx.FromAddress())
-	logger.Error("DB: %v", acc)
-	deviceKey, err := tp.GetDeviceKey(lastHash)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get device key: %v", err)
-	}
-	rawNewDeviceKeyBytes := []byte(fmt.Sprintf("%s-%d", hex.EncodeToString(lastHash[:]), time.Now().Unix()))
-	rawNewDeviceKey := crypto.Keccak256(rawNewDeviceKeyBytes)
-	newDeviceKey := crypto.Keccak256Hash(rawNewDeviceKey)
-	// Tạo transaction mới (sao chép thông tin từ original tx)
-	newTx := transaction.NewTransaction(
-		originalTx.FromAddress(), // from address
-		originalTx.ToAddress(),   // to address (contract address)
-		big.NewInt(0),            // amount = 0 (view function)
-		20000000,                 // max gas
-		10000000,                 // max gas price
-		60,                       // max time use
-		bData,                    // encoded function call
-		[][]byte{},               // related addresses
-		deviceKey,                // last device key
-		newDeviceKey,             // new device key
-		none,                     // nonce
-		originalTx.GetChainID(),  // chain ID
-	)
-	// Copy signature từ original transaction nếu cần
-	privateKeyHex := "2b3aa0f620d2d73c046cd93eb64f2eb687a95b22e278500aa251c8c9dda1203b"
-	privateKeyBytes, err := hex.DecodeString(privateKeyHex)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode private key hex: %v", err)
-	}
-	var privateKey com.PrivateKey
-	copy(privateKey[:], privateKeyBytes)
-
-	newTx.SetSign(privateKey)
-	err = tp.ProcessTransactionOnChainWithDeviceKey(newTx, rawNewDeviceKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to process transaction on chain: %v", err)
-	}
-	logger.Error("Đã tạo và xử lý xong transaction setService đến %s", address.Hex())
-	return newTx, nil
-}
 
 // FileInfo struct để lưu thông tin file từ smart contract
 

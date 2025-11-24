@@ -1,6 +1,0 @@
-# Đây là cấu hình được tạo tự động
-libp2p:
-  private_key: "12D3KooWRUoWsUkov4BMRdzpHE9o1MJYKfoPDXTiDhqPM3Qsvtxx"
-  # Private Key (Raw Bytes - lưu trữ cẩn thận):
-  # [73 103 200 37 153 217 48 107 102 148 201 205 97 50 213 68 91 205 134 250 246 193 183 102 104 75 128 203 145 22 93 186 232 184 8 219 102 170 7 152 39 120 80 147 13 145 9 22 36 31 123 226 182 205 245 244 15 58 117 209 57 201 56 33]
-# Hãy đảm bảo bạn đã cấu hình các thông tin khác như listen_address và bootstrap_peers
