@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"crypto/tls"
 	"errors"
 	"flag"
@@ -23,12 +22,6 @@ import (
 )
 
 var defaultLogsDir string
-
-type loggingResponseWriter struct {
-	http.ResponseWriter
-	statusCode int
-	body       *bytes.Buffer
-}
 
 func main() {
 	log.SetOutput(os.Stdout)
@@ -52,7 +45,11 @@ func main() {
 	}()
 	appCtx, err := app.New(cfg, tcpCfg)
 	if err != nil {
+		// In lỗi ra cả stdout và logger để đảm bảo user thấy được
 		logger.Error("Failed to initialize application context: %v", err)
+		log.Printf("FATAL: Application context initialization failed: %v", err)
+		log.Printf("HINT: Nếu LevelDB bị corrupted, hãy xóa thư mục database và chạy lại:")
+		log.Printf("     rm -rf %s %s", cfg.LdbBlsWalletsPath, cfg.LdbNotificationPath)
 		log.Fatalf("FATAL: Application context initialization failed: %v", err)
 	}
 	// Initialize proxy

@@ -48,3 +48,4 @@ cmd/test
 cmd/demoSocket
 hybrid-storage-demo/storage-rust/storage_server1
 hybrid-storage-demo/storage-rust/storage_server2
+rpc-client

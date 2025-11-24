@@ -3,6 +3,8 @@ package ldb_storage
 import (
 	"errors"
 	"fmt"
+	"os"
+	"strings"
 	"sync"
 
 	"github.com/syndtr/goleveldb/leveldb"
@@ -19,6 +21,41 @@ type LevelDBStorage struct {
 func NewLevelDBStorage(path string) (*LevelDBStorage, error) {
 	db, err := leveldb.OpenFile(path, nil)
 	if err != nil {
+		// Kiểm tra nếu lỗi có chứa từ "corrupted" hoặc "missing"
+		errMsg := strings.ToLower(err.Error())
+		if strings.Contains(errMsg, "corrupted") || strings.Contains(errMsg, "missing") {
+			return nil, fmt.Errorf("lỗi mở LevelDB tại '%s': database entry point either missing or corrupted. Hãy xóa thư mục và tạo lại: rm -rf %s", path, path)
+		}
+		return nil, fmt.Errorf("lỗi mở LevelDB tại '%s': %w", path, err)
+	}
+	return &LevelDBStorage{db: db}, nil
+}
+
+// NewLevelDBStorageWithRecovery tạo LevelDB storage với khả năng tự động recover nếu corrupted
+func NewLevelDBStorageWithRecovery(path string, recoverOnCorrupted bool) (*LevelDBStorage, error) {
+	db, err := leveldb.OpenFile(path, nil)
+	if err != nil {
+		errMsg := strings.ToLower(err.Error())
+		isCorrupted := strings.Contains(errMsg, "corrupted") || strings.Contains(errMsg, "missing")
+		
+		// Nếu database bị corrupted và cho phép recover
+		if recoverOnCorrupted && isCorrupted {
+			// Thử recover
+			recoveredDB, recoverErr := leveldb.RecoverFile(path, nil)
+			if recoverErr != nil {
+				// Nếu recover thất bại, xóa và tạo mới
+				if removeErr := os.RemoveAll(path); removeErr != nil {
+					return nil, fmt.Errorf("không thể xóa database corrupted tại '%s': %w (lỗi gốc: %v)", path, removeErr, err)
+				}
+				// Tạo lại database mới
+				newDB, newErr := leveldb.OpenFile(path, nil)
+				if newErr != nil {
+					return nil, fmt.Errorf("không thể tạo lại database tại '%s': %w (lỗi gốc: %v)", path, newErr, err)
+				}
+				return &LevelDBStorage{db: newDB}, nil
+			}
+			return &LevelDBStorage{db: recoveredDB}, nil
+		}
 		return nil, fmt.Errorf("lỗi mở LevelDB tại '%s': %w", path, err)
 	}
 	return &LevelDBStorage{db: db}, nil
