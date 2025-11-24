@@ -18,14 +18,11 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	client_tcp "github.com/meta-node-blockchain/meta-node/cmd/rpc-client/client-tcp"
 	tcp_config "github.com/meta-node-blockchain/meta-node/cmd/rpc-client/client-tcp/config"
-	"github.com/meta-node-blockchain/meta-node/pkg/blockchain"
-	"github.com/meta-node-blockchain/meta-node/pkg/blockchain/tx_processor"
 	"github.com/meta-node-blockchain/meta-node/pkg/file_handler/abi_file"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	"github.com/meta-node-blockchain/meta-node/pkg/loggerfile"
 	file_model "github.com/meta-node-blockchain/meta-node/pkg/models/file_model"
 	"github.com/meta-node-blockchain/meta-node/pkg/quic_network"
-	"github.com/meta-node-blockchain/meta-node/pkg/storage"
 	"github.com/meta-node-blockchain/meta-node/types"
 	"github.com/quic-go/quic-go"
 	"github.com/shirou/gopsutil/mem"
@@ -117,24 +114,6 @@ func GetFileHandlerTCP(c *client_tcp.Client, config *tcp_config.ClientConfig) (*
 		return nil, err // Trả về lỗi nếu khởi tạo thất bại
 	}
 	return tcpHandlerInstance, nil
-}
-
-// xử lý trên chain
-func GetFileHandlerOnChain(tp tx_processor.OffChainProcessor, sm *storage.StorageManager, cs *blockchain.ChainState) (*FileHandlerNoReceipt, error) {
-	var err error
-	inProcessOnce.Do(func() {
-		parsedABI, abiErr := abi.JSON(strings.NewReader(abi_file.FileABI))
-		if abiErr != nil {
-			err = fmt.Errorf("Failed to parse ABI for communicator: %v", abiErr)
-			return
-		}
-		comm := NewInProcessCommunicator(tp, sm, cs, parsedABI)
-		inProcessHandlerInstance, err = createAndStartFileHandler(comm)
-	})
-	if err != nil {
-		return nil, err // Trả về lỗi nếu khởi tạo thất bại
-	}
-	return inProcessHandlerInstance, nil
 }
 
 func (h *FileHandlerNoReceipt) HandleFileTransactionNoReceipt(

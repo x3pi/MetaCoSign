@@ -30,6 +30,8 @@ cmd/rpc-client/privatekey_db_encrypted
 cmd/storage/db_data
 cmd/storage/running_instances
 cmd/storage/storage_server
+cmd/rpc-client/db
+
 demo/receiver/incoming_chunks
 demo/receiver/restored_data
 demo/sender/db_data
