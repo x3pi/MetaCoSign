@@ -49,16 +49,6 @@ var (
 
 )
 
-type ServiceType string
-
-const (
-	ServiceTypeWrite    ServiceType = "SUB-WRITE"
-	ServiceTypeMaster   ServiceType = "MASTER"
-	ServiceTypeReadonly ServiceType = "SUB-READ"
-)
-
-type FolderBackup int
-
 const (
 	BlockDataTopic               = "block_data_topic"
 	TransactionsFromSubTopic     = "tx_from_sub_topic"
