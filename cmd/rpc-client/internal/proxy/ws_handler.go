@@ -51,7 +51,6 @@ func (p *RpcReverseProxy) ServeWebSocket(w http.ResponseWriter, r *http.Request,
 	defer targetConn.Close()
 
 	targetWriter := ws_writer.NewWebSocketWriter(targetConn)
-	logger.Info("8.WebSocket connection established between client %s and upstream %s", clientConn.RemoteAddr(), targetURL)
 	// Proxy bidirectional traffic
 	p.proxyWebSocketTraffic(clientConn, targetConn, clientWriter, targetWriter, r)
 }
@@ -211,7 +210,6 @@ func (p *RpcReverseProxy) proxyClientToUpstream(
 			}
 			return
 		}
-		logger.Info("Received RPC from client %s: Method=%s, ID=%v", clientConn.RemoteAddr(), req.Method, req.Id)
 		if req.Method == "eth_subscribe" {
 			if err := p.HandleSubscribeRequest(req, clientConn, targetConn, clientWriter, targetWriter, errChan, quit); err != nil {
 				errorResp := map[string]interface{}{
@@ -226,7 +224,6 @@ func (p *RpcReverseProxy) proxyClientToUpstream(
 			}
 			continue
 		} else if req.Method == "eth_unsubscribe" {
-			logger.Info(")_)_)_)_Processing eth_unsubscribe for client %s", clientConn.RemoteAddr())
 			p.AppCtx.SubInterceptor.RemoveByConnection(clientConn)
 		}
 		// Try to handle RPC method locally
@@ -242,7 +239,6 @@ func (p *RpcReverseProxy) proxyClientToUpstream(
 				return
 			}
 		} else {
-			// logger.Info("Forwarding to Upstream -> Method: %s | Params: %s | ID: %s", req.Method, string(req.Params), req.Id)
 			if err := targetWriter.WriteJSON(req); err != nil {
 				logger.Error("Error writing to upstream for client %s: %v", clientConn.RemoteAddr(), err)
 				select {

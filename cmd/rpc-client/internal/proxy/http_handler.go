@@ -42,7 +42,6 @@ func (p *RpcReverseProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch method {
 	case "eth_sendRawTransaction":
 		rawTx := gjson.GetBytes(body, "params.0")
-		logger.Info(" eth_sendRawTransaction rawTx: %s", rawTx.String())
 		if !rawTx.Exists() {
 			resp := utils.MakeInvalidParamError(id, "Invalid params for sendRawTransaction")
 			utils.WriteJSON(w, resp)

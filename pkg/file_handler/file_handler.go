@@ -3,7 +3,6 @@ package file_handler
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -16,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/crypto"
 	client_tcp "github.com/meta-node-blockchain/meta-node/cmd/rpc-client/client-tcp"
 	tcp_config "github.com/meta-node-blockchain/meta-node/cmd/rpc-client/client-tcp/config"
 	"github.com/meta-node-blockchain/meta-node/pkg/file_handler/abi_file"
@@ -64,7 +64,7 @@ var (
 )
 
 const (
-	CONNECTION_POOL_SIZE = 100
+	CONNECTION_POOL_SIZE = 50
 	MAX_SEND_RETRIES     = 3
 )
 
@@ -260,8 +260,6 @@ func (h *FileHandlerNoReceipt) HandleUploadChunk(
 			formattedEndTime,
 		)
 	}()
-	logger.Info("%s Băt đầu lấy file info ", logPrefix)
-
 	var fileInfo *file_model.FileInfo
 	val, found := h.fileInfoCache.Load(fileKeyStr)
 	if !found {
@@ -277,7 +275,6 @@ func (h *FileHandlerNoReceipt) HandleUploadChunk(
 	} else {
 		fileInfo = val.(*file_model.FileInfo)
 	}
-	logger.Info("%s __Lấy hoàn tất FileInfo______ ", logPrefix)
 	if fileInfo.TotalChunks.Cmp(big.NewInt(int64(MAX_CHUNK))) > 0 {
 		return nil, fmt.Errorf("số chunk vượt quá giới hạn %d , yêu cầu < 2G", MAX_CHUNK)
 	}
@@ -294,20 +291,18 @@ func (h *FileHandlerNoReceipt) HandleUploadChunk(
 	}
 	startVerifyMerkle := time.Now()
 	merkleRoot := fileInfo.MerkleRoot
-	leafHash32 := sha256.Sum256(chunkData)
-	computedHash := leafHash32[:]
+	leafHash := crypto.Keccak256Hash(chunkData)
+	computedHash := leafHash[:]
 	for level := 0; level < len(merkleProofHashes); level++ {
 		siblingHash := merkleProofHashes[level]
-		hash := sha256.New()
 		levelIndex := chunkIndex.Uint64() >> uint(level)
+		var combined []byte
 		if levelIndex%2 == 0 {
-			hash.Write(computedHash)
-			hash.Write(siblingHash[:])
+			combined = append(computedHash, siblingHash[:]...)
 		} else {
-			hash.Write(siblingHash[:])
-			hash.Write(computedHash)
+			combined = append(siblingHash[:], computedHash...)
 		}
-		computedHash = hash.Sum(nil)
+		computedHash = crypto.Keccak256(combined)
 	}
 	if !bytes.Equal(computedHash, merkleRoot[:]) {
 		logger.Error("INVALID Merkle Proof for file %s, chunk %d. Computed: %x, Expected: %x", fileKeyStr, chunkIndexInt, computedHash, merkleRoot)
@@ -396,7 +391,7 @@ func (h *FileHandlerNoReceipt) sendChunk(
 		if lastErr == nil {
 			return nil
 		}
-		if errors.Is(lastErr, context.DeadlineExceeded) || strings.Contains(lastErr.Error(), "timeout") {
+		if errors.Is(lastErr, context.DeadlineExceeded) || strings.Contains(lastErr.Error(), "deadline exceeded") {
 			logger.Warn("[file: %s, chunk: %d] Stream timeout, sẽ thử stream mới...", fileKey, chunkIndex)
 			continue // vòng lặp sẽ mở stream mới trên cùng connection
 		}
@@ -411,7 +406,6 @@ func (h *FileHandlerNoReceipt) sendChunk(
 	return fmt.Errorf("❌❌ [file: %s, chunk: %d] không thể gửi chunk sau %d lần thử: %v",
 		fileKey, chunkIndex, MAX_SEND_RETRIES, lastErr)
 }
-
 func (h *FileHandlerNoReceipt) getAndRenewConn(isServer1 bool, poolIndex int, fileKeyStr string, chunkIndexInt int) (quic.Connection, error) {
 	var pool []quic.Connection
 	var addr string

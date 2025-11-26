@@ -111,7 +111,6 @@ func (tc *TransactionController) ReadTransaction(
 		chainId,
 	)
 	transaction.SetSign(tc.clientContext.KeyPair.PrivateKey())
-	logger.Error("_ReadTransaction: %v", transaction)
 	bTransaction, err := transaction.Marshal()
 	if err != nil {
 		return nil, err

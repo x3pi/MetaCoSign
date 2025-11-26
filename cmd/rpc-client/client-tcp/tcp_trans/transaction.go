@@ -15,7 +15,6 @@ import (
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/client-tcp/command"
 	tcp_config "github.com/meta-node-blockchain/meta-node/cmd/rpc-client/client-tcp/config"
 	"github.com/meta-node-blockchain/meta-node/pkg/file_handler/abi_file"
-	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	"github.com/meta-node-blockchain/meta-node/pkg/models/file_model"
 	"github.com/meta-node-blockchain/meta-node/pkg/transaction"
 	"github.com/meta-node-blockchain/meta-node/pkg/utils/file_handler_helper"
@@ -216,7 +215,6 @@ func SendTransactionWithDeviceKey(
 		lastDeviceKey := common.HexToHash(
 			hex.EncodeToString(receiveDeviceKey.LastDeviceKeyFromServer),
 		)
-		logger.Info("lastDeviceKey", lastDeviceKey)
 
 		// Tạo khóa thiết bị mới
 		rawNewDeviceKeyBytes := []byte(fmt.Sprintf("%s-%d", hex.EncodeToString(TransactionHash), time.Now().Unix()))
@@ -247,7 +245,6 @@ func SendTransactionWithDeviceKey(
 		if err != nil {
 			return nil, err
 		}
-		logger.Info("SendTransactionWithDeviceKey %v", tx)
 		// Chờ biên lai giao dịch (receipt)
 		receipt, err := client.FindReceiptByHash(tx.Hash())
 		if err != nil {

@@ -75,7 +75,6 @@ func (p *RpcReverseProxy) HandleSubscribeRequest(req models.JSONRPCRequestRaw,
 		return clientWriter.WriteJSON(response)
 	}
 	// Forward lên chain nếu không intercept
-	logger.Info("No monitored addresses. Forwarding to chain: %v", contractAddrs)
 	return p.forwardToUpstream(req, targetWriter, errChan, quit)
 }
 
@@ -117,7 +116,6 @@ func (p *RpcReverseProxy) forwardToUpstream(
 	errChan chan<- error,
 	quit <-chan struct{},
 ) error {
-	logger.Info("Forwarding to Upstream -> Method: %s | Params: %s | ID: %s", req.Method, string(req.Params), req.Id)
 	if err := targetWriter.WriteJSON(req); err != nil {
 		select {
 		case errChan <- fmt.Errorf("upstream write error: %w", err):

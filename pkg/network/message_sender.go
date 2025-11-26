@@ -97,8 +97,6 @@ func (s *MessageSender) SendBytes(
 	if connection != nil {
 		addressHex = connection.Address().Hex()
 	}
-	// logger.Info("SendBytes called for command '%s' to connection %s", command, addressHex)
-
 	isReceipt := strings.EqualFold(command, "Receipt")
 	var remoteAddr string
 	if connection != nil {

@@ -32,7 +32,6 @@ func processEthCallParams(appCtx *app.Context, id interface{}, callObjectRaw jso
 		return utils.MakeInvalidParamError(id, "Invalid eth_call parameter")
 	}
 	if hasTo && toAddress == ethCommon.HexToAddress(appCtx.Cfg.ContractsInterceptor[0]) {
-		logger.Info("Handling eth_call for Account contract at address %s", toAddress.Hex())
 		accountHandler, err := account_handler.GetAccountHandler(appCtx)
 		if err != nil {
 			logger.Error("Failed to get account handler: %v", err)
@@ -71,7 +70,7 @@ func processEthCallParams(appCtx *app.Context, id interface{}, callObjectRaw jso
 	}
 
 	if buildErr != nil {
-		return utils.MakeInternalError(id, "Failed to build transaction for eth_call")
+		return utils.MakeInternalError(id, "Failed to build transaction for eth_call "+buildErr.Error())
 	}
 
 	rs := appCtx.ClientRpc.SendCallTransaction(bTx)

@@ -36,7 +36,7 @@ func (comm *TCPCommunicator) GetFileInfo(fileKey [32]byte, tx types.Transaction)
 	fileKeyStr := hex.EncodeToString(fileKey[:])
 	messageBytes := []byte(fileKeyStr)
 	hash := crypto.Keccak256Hash(
-		[]byte(fmt.Sprintf("\x19Ethereum Signed Message:\n%d", len(messageBytes))),
+		[]byte(fmt.Sprintf("0x00")),
 		messageBytes,
 	)
 	privateKey, err := crypto.HexToECDSA(comm.config.PkAdminFileStorage)

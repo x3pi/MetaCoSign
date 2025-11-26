@@ -133,7 +133,6 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 		fileAbi, _ := file_handler.GetFileAbi()
 		name, _ := fileAbi.ParseMethodName(tx)
 		if !(tx.ToAddress() == file_handler.PredictContractAddress(ethCommon.HexToAddress(appCtx.ClientTcp.GetClientContext().Config.OwnerFileStorageAddress)) && name == "uploadChunk") {
-			logger.Info("2.Sending transaction to RPC server___ chain: %s", rawTransactionHex)
 			rs := appCtx.ClientRpc.SendRawTransactionBinary(bTx, releaseTx, decodedTxBytes, releaseDecodedOnce, nil)
 			releaseDecodedOnce()
 			rs.Id = id

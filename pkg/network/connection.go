@@ -775,14 +775,14 @@ func (c *Connection) writeLoop(tcpConn net.Conn, sendChan chan network.Message, 
 			logger.Error("writeLoop %s: marshal error: %v", remoteAddr, err)
 			continue
 		}
-		// logger.Info(
-		// 	"writeLoop %s: sending command %s (%d bytes, remaining queue=%d/%d)",
-		// 	remoteAddr,
-		// 	message.Command(),
-		// 	len(b),
-		// 	len(sendChan),
-		// 	c.config.SendChanSize,
-		// )
+		logger.Info(
+			"writeLoop %s: sending command %s (%d bytes, remaining queue=%d/%d)",
+			remoteAddr,
+			message.Command(),
+			len(b),
+			len(sendChan),
+			c.config.SendChanSize,
+		)
 		_ = tcpConn.SetWriteDeadline(time.Now().Add(c.config.WriteTimeout))
 		length := make([]byte, 8)
 		binary.LittleEndian.PutUint64(length, uint64(len(b)))

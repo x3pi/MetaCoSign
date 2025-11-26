@@ -98,7 +98,7 @@ func SendChunkToRustServerQuic(conn quic.Connection, fileKey string, chunkIndex 
 	peerAddr := conn.RemoteAddr()
 	fileTimeLogger, _ := loggerfile.NewFileLogger("fileTimeLogger.log")
 	fileTimeLogger.Info("Đang gửi chunk %d -key %s đến peer: %s\n", chunkIndex, fileKey, peerAddr.String())
-	const chunkTimeout = 70 * time.Second
+	const chunkTimeout = 120 * time.Second
 	// Tạo context với timeout cho toàn bộ quá trình gửi/nhận
 	ctx, cancel := context.WithTimeout(context.Background(), chunkTimeout)
 	defer cancel()
@@ -127,17 +127,15 @@ func SendChunkToRustServerQuic(conn quic.Connection, fileKey string, chunkIndex 
 	jsonData = append(jsonData, '\n')
 
 	// Set deadline cho write
-	stream.SetWriteDeadline(time.Now().Add(15 * time.Second))
+	stream.SetWriteDeadline(time.Now().Add(chunkTimeout / 2))
 	fileTimeLogger.Info("📤 Bắt đầu gửi command cho chunk %d -key %s (size: %d bytes)", chunkIndex, fileKey, len(jsonData))
 	if err := writeFrameWithLength(stream, jsonData); err != nil {
 		return fmt.Errorf("lỗi khi gửi command: %v", err)
 	}
 	fileTimeLogger.Info("✅ Đã gửi command thành công cho chunk %d -key %s", chunkIndex, fileKey)
-
 	// Set deadline cho read
-	stream.SetReadDeadline(time.Now().Add(30 * time.Second))
+	stream.SetReadDeadline(time.Now().Add(chunkTimeout / 2))
 	fileTimeLogger.Info("📥 Bắt đầu chờ nhận response cho chunk %d -key %s", chunkIndex, fileKey)
-	// Đọc response với length prefix
 	responseData, err := readFrameWithLength(stream)
 	if err != nil {
 		return fmt.Errorf("lỗi khi đọc phản hồi (có thể timeout): %v", err)

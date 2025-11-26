@@ -113,7 +113,7 @@ func (cm *ConnectionsManager) ConnectionByTypeAndAddress(cType int, address comm
 	}
 
 	key := addressKey(address)
-	shardIndex := calculateShardIndex(address)
+	// shardIndex := calculateShardIndex(address)
 
 	// sync.Map Load - non-blocking, không cần lock
 	if val, ok := shard.connections.Load(key); ok {
@@ -121,24 +121,24 @@ func (cm *ConnectionsManager) ConnectionByTypeAndAddress(cType int, address comm
 		// Chỉ kiểm tra conn != nil, không check IsConnect() ở đây
 		// Caller sẽ check IsConnect() khi cần thiết để tránh race condition với cache
 		if record.conn != nil {
-			logger.Info(
-				"ConnectionByTypeAndAddress: tìm thấy connection",
-				"cType", cType,
-				"address", address.Hex(),
-				"recordAddress", record.address.Hex(),
-				"shardIndex", shardIndex,
-			)
+			// logger.Info(
+			// 	"ConnectionByTypeAndAddress: tìm thấy connection",
+			// 	"cType", cType,
+			// 	"address", address.Hex(),
+			// 	"recordAddress", record.address.Hex(),
+			// 	"shardIndex", shardIndex,
+			// )
 			return record.conn
 		}
 	}
 
-	logger.Warn(
-		"ConnectionByTypeAndAddress: không tìm thấy connection",
-		"cType", cType,
-		"address", address.Hex(),
-		"key", key,
-		"shardIndex", shardIndex,
-	)
+	// logger.Warn(
+	// 	"ConnectionByTypeAndAddress: không tìm thấy connection",
+	// 	"cType", cType,
+	// 	"address", address.Hex(),
+	// 	"key", key,
+	// 	"shardIndex", shardIndex,
+	// )
 	return nil
 }
 
