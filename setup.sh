@@ -18,8 +18,6 @@ sudo sysctl -w net.core.netdev_max_backlog=30000
 sudo sysctl -w net.core.rmem_max=33554432
 sudo sysctl -w net.core.wmem_max=33554432
 # Default: 8MB. 
-# 8MB đủ chứa khoảng 32 chunks (250KB/chunk) trong RAM chờ xử lý.
-# Không set quá cao (như 25MB) để tránh hết RAM khi có hàng nghìn kết nối.
 sudo sysctl -w net.core.rmem_default=8388608
 sudo sysctl -w net.core.wmem_default=8388608
 # -----------------------------------------------------------------
