@@ -552,6 +552,8 @@ func (c *ClientRPC) BuildCallTransaction(callDataT []byte, toAddress common.Addr
 		as.Nonce(),
 		c.ChainId.Uint64(),
 	)
+	logger.Info("BuildDeployTransaction TRÂNNANANAN: %v", txx)
+
 	txx.SetSign(c.KeyPair.PrivateKey())
 	bTransaction, err := txx.Marshal()
 	return bTransaction, err
@@ -600,6 +602,7 @@ func (c *ClientRPC) BuildDeployTransaction(callDataT []byte, from common.Address
 		c.ChainId.Uint64(),
 	)
 	txx.SetSign(c.KeyPair.PrivateKey())
+	logger.Info("BuildDeployTransaction nonce: %v", txx)
 	bTransaction, err := txx.Marshal()
 	return bTransaction, err
 }

@@ -27,6 +27,7 @@ func HandleEthCallRaw(appCtx *app.Context, callParam json.RawMessage, id interfa
 
 func processEthCallParams(appCtx *app.Context, id interface{}, callObjectRaw json.RawMessage) rpc_client.JSONRPCResponse {
 	// logger.Info("Processing eth_call with params: %s", string(callObjectRaw))
+	logger.Info("Processing eth_call with params: %s", string(callObjectRaw))
 	fromAddress, toAddress, hasTo, payload, err := utils.DecodeCallObject(callObjectRaw)
 	if err != nil {
 		return utils.MakeInvalidParamError(id, "Invalid eth_call parameter")
