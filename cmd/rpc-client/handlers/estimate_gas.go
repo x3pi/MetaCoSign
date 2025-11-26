@@ -18,7 +18,7 @@ func HandleEstimateGas(appCtx *app.Context, req models.JSONRPCRequestRaw) rpc_cl
 }
 
 func HandleEstimateGasRaw(appCtx *app.Context, callParam json.RawMessage, id interface{}) rpc_client.JSONRPCResponse {
-	fromAddress, toAddress, hasTo, payload, err := utils.DecodeCallObject(callParam)
+	decoded, err := utils.DecodeCallObject(callParam)
 	if err != nil {
 		return utils.MakeInvalidParamError(id, "Invalid eth_estimateGas parameter")
 	}
@@ -26,10 +26,10 @@ func HandleEstimateGasRaw(appCtx *app.Context, callParam json.RawMessage, id int
 	var bTx []byte
 	var buildErr error
 
-	if !hasTo {
-		bTx, buildErr = appCtx.ClientRpc.BuildDeployTransaction(payload, fromAddress)
+	if !decoded.HasTo {
+		bTx, buildErr = appCtx.ClientRpc.BuildDeployTransaction(decoded)
 	} else {
-		bTx, buildErr = appCtx.ClientRpc.BuildCallTransaction(payload, toAddress, fromAddress)
+		bTx, buildErr = appCtx.ClientRpc.BuildCallTransaction(decoded)
 	}
 
 	if buildErr != nil {

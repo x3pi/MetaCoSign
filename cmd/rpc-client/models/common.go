@@ -16,9 +16,3 @@ type RegisterBlsKeyParams struct {
 	Timestamp     string `json:"timestamp"`
 	Signature     string `json:"signature"`
 }
-type CallObjectSchema struct {
-	From  string `json:"from"`
-	To    string `json:"to"`
-	Data  string `json:"data"`
-	Input string `json:"input"`
-}
