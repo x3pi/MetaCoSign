@@ -32,20 +32,25 @@ func (comm *TCPCommunicator) GetFileInfo(fileKey [32]byte, tx types.Transaction)
 	if err != nil {
 		return nil, err
 	}
-	// Thêm logic ký (sign) fileKey từ V2
+	// ✅ UPDATED: Sign with fileKey + merkleRoot (instead of just fileKey)
 	fileKeyStr := hex.EncodeToString(fileKey[:])
-	messageBytes := []byte(fileKeyStr)
+	merkleRootStr := hex.EncodeToString(fileInfo.MerkleRoot[:])
+
+	// Combine fileKey + merkleRoot for signing
+	messageToSign := fileKeyStr + merkleRootStr
+	messageBytes := []byte(messageToSign)
+
 	hash := crypto.Keccak256Hash(
 		[]byte(fmt.Sprintf("0x00")),
 		messageBytes,
 	)
 	privateKey, err := crypto.HexToECDSA(comm.config.PkAdminFileStorage)
 	if err != nil {
-		return nil, fmt.Errorf("failed to sign fileKey: %v", err)
+		return nil, fmt.Errorf("failed to sign fileKey+merkleRoot: %v", err)
 	}
 	signatureBytes, err := crypto.Sign(hash.Bytes(), privateKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to sign fileKey: %v", err)
+		return nil, fmt.Errorf("failed to sign fileKey+merkleRoot: %v", err)
 	}
 	fileInfo.Signature = hex.EncodeToString(signatureBytes)
 	return fileInfo, nil

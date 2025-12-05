@@ -2,6 +2,9 @@
   // "rpc_server_url": "https://rpc-proxy-sequoia.iqnb.com:8446",
   // "wss_server_url": "wss://rpc-proxy-sequoia.iqnb.com:8446",
 
+    "rpc_server_url": "http://localhost:8646",
+  "wss_server_url": "ws://localhost:8646/ws",
+
     "parent_connection_address": "139.59.243.85:4200",
 Dự án này là một reverse proxy được viết bằng Go, đóng vai trò trung gian cho các lệnh gọi RPC và WebSocket tới một máy chủ RPC Ethereum (hoặc tương thích). Nó cũng cung cấp các điểm cuối tùy chỉnh để quản lý khóa BLS và phục vụ một giao diện người dùng tĩnh để đăng ký khóa BLS.
 

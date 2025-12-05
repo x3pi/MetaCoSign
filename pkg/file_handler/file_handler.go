@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"math/big"
 	"runtime"
 	"runtime/debug"
@@ -247,7 +248,6 @@ func (h *FileHandlerNoReceipt) HandleUploadChunk(
 	chunkIndexInt := int(chunkIndex.Int64())
 	logPrefix := fmt.Sprintf("[Chunk %d -k %s]", chunkIndexInt, fileKeyStr)
 	fileTimeLogger, _ := loggerfile.NewFileLogger("fileTimeLogger.log")
-	fileTimeLogger.Info("%s ____Bắt đầu vào hàm uploadChunk cho tx %s", logPrefix, tx.Hash().Hex())
 	fileTimeLogger.Info("%s Bắt đầu xử lý upload chunk", logPrefix, start.Format("2006-01-02 15:04:05.999"))
 	defer func() {
 		endTime := time.Now()
@@ -286,6 +286,7 @@ func (h *FileHandlerNoReceipt) HandleUploadChunk(
 	if tx.FromAddress() != fileInfo.OwnerAddress {
 		return nil, fmt.Errorf("chỉ chủ sở hữu file mới có thể upload chunk")
 	}
+	log.Printf("Chunk data %s , max kích thước: %d", len(chunkData), MAX_SIZE_CHUNK)
 	if len(chunkData) > MAX_SIZE_CHUNK {
 		return nil, fmt.Errorf("kích thước chunk vượt quá giới hạn %d KB", MAX_SIZE_CHUNK/1024)
 	}
@@ -334,7 +335,7 @@ func (h *FileHandlerNoReceipt) HandleUploadChunk(
 	if err != nil {
 		return nil, fmt.Errorf("không thể lấy/tạo kết nối cho chunk %d: %v", chunkIndexInt, err)
 	}
-	err = h.sendChunk(conn, isServer1, poolIndex, fileKeyStr, chunkIndexInt, chunkData, fileInfo.Signature)
+	err = h.sendChunk(conn, isServer1, poolIndex, fileKeyStr, chunkIndexInt, chunkData, fileInfo.Signature, merkleProofHashes, merkleRoot)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send chunk %d: %v", chunkIndexInt, err)
 	}
@@ -383,12 +384,17 @@ func (h *FileHandlerNoReceipt) sendChunk(
 	chunkIndex int,
 	chunkData []byte,
 	signature string,
+	merkleProofHashes [][32]byte,
+	merkleRoot [32]byte,
 ) error {
 	currentConn := initialConn
 	var lastErr error
 	for i := 0; i < MAX_SEND_RETRIES; i++ {
-		lastErr = quic_network.SendChunkToRustServerQuic(currentConn, fileKey, chunkIndex, chunkData, signature)
+		lastErr = quic_network.SendChunkToRustServerQuic(currentConn, fileKey, chunkIndex, chunkData, signature, merkleProofHashes, merkleRoot)
 		if lastErr == nil {
+			return nil
+		}
+		if lastErr != nil && strings.Contains(lastErr.Error(), "to store chunk on disk") {
 			return nil
 		}
 		if errors.Is(lastErr, context.DeadlineExceeded) || strings.Contains(lastErr.Error(), "deadline exceeded") {
@@ -406,6 +412,7 @@ func (h *FileHandlerNoReceipt) sendChunk(
 	return fmt.Errorf("❌❌ [file: %s, chunk: %d] không thể gửi chunk sau %d lần thử: %v",
 		fileKey, chunkIndex, MAX_SEND_RETRIES, lastErr)
 }
+
 func (h *FileHandlerNoReceipt) getAndRenewConn(isServer1 bool, poolIndex int, fileKeyStr string, chunkIndexInt int) (quic.Connection, error) {
 	var pool []quic.Connection
 	var addr string

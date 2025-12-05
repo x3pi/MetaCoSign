@@ -23,10 +23,12 @@ type Command struct {
 }
 
 type UploadChunkPayload struct {
-	FileKey         string `json:"file_key"`
-	ChunkIndex      int    `json:"chunk_index"`
-	ChunkDataBase64 string `json:"chunk_data_base64"`
-	Signature       string `json:"signature"`
+	FileKey           string   `json:"file_key"`
+	ChunkIndex        int      `json:"chunk_index"`
+	ChunkDataBase64   string   `json:"chunk_data_base64"`
+	Signature         string   `json:"signature"`
+	MerkleProofHashes []string `json:"merkle_proof_hashes"` // Hex strings of proof hashes
+	MerkleRoot        string   `json:"merkle_root"`         // Hex string of merkle root
 }
 
 type DownloadChunkPayload struct {

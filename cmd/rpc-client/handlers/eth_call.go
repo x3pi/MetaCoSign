@@ -26,13 +26,12 @@ func HandleEthCallRaw(appCtx *app.Context, callParam json.RawMessage, id interfa
 }
 
 func processEthCallParams(appCtx *app.Context, id interface{}, callObjectRaw json.RawMessage) rpc_client.JSONRPCResponse {
-	// logger.Info("Processing eth_call with params: %s", string(callObjectRaw))
 	logger.Info("Processing eth_call with params: %s", string(callObjectRaw))
-	fromAddress, toAddress, hasTo, payload, err := utils.DecodeCallObject(callObjectRaw)
+	decoded, err := utils.DecodeCallObject(callObjectRaw)
 	if err != nil {
 		return utils.MakeInvalidParamError(id, "Invalid eth_call parameter")
 	}
-	if hasTo && toAddress == ethCommon.HexToAddress(appCtx.Cfg.ContractsInterceptor[0]) {
+	if decoded.HasTo && decoded.ToAddress == ethCommon.HexToAddress(appCtx.Cfg.ContractsInterceptor[0]) {
 		accountHandler, err := account_handler.GetAccountHandler(appCtx)
 		if err != nil {
 			logger.Error("Failed to get account handler: %v", err)
@@ -40,7 +39,7 @@ func processEthCallParams(appCtx *app.Context, id interface{}, callObjectRaw jso
 		}
 
 		// Handle eth_call cho account operations
-		result, err := accountHandler.HandleEthCall(context.Background(), payload)
+		result, err := accountHandler.HandleEthCall(context.Background(), decoded.Payload)
 		if err != nil {
 			// logger.Error("Account handler eth_call error: %v", err)
 			return utils.MakeInternalError(id, "Account handler error: "+err.Error())
@@ -64,10 +63,10 @@ func processEthCallParams(appCtx *app.Context, id interface{}, callObjectRaw jso
 	var buildErr error
 
 	// ✅ Sử dụng appCtx.ClientRpc
-	if !hasTo {
-		bTx, buildErr = appCtx.ClientRpc.BuildDeployTransaction(payload, fromAddress)
+	if !decoded.HasTo {
+		bTx, buildErr = appCtx.ClientRpc.BuildDeployTransaction(decoded)
 	} else {
-		bTx, buildErr = appCtx.ClientRpc.BuildCallTransaction(payload, toAddress, fromAddress)
+		bTx, buildErr = appCtx.ClientRpc.BuildCallTransaction(decoded)
 	}
 
 	if buildErr != nil {

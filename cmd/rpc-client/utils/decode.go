@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	ethCommon "github.com/ethereum/go-ethereum/common"
-	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/models"
+	"github.com/meta-node-blockchain/meta-node/pkg/rpc_client"
 )
 
 var hexDecodePool = sync.Pool{
@@ -93,10 +93,10 @@ func DecodeHexPooled(hexStr string) ([]byte, func(), error) {
 	return buf, release, nil
 }
 
-func DecodeCallObject(raw json.RawMessage) (ethCommon.Address, ethCommon.Address, bool, []byte, error) {
-	var schema models.CallObjectSchema
+func DecodeCallObject(raw json.RawMessage) (rpc_client.DecodedCallObject, error) {
+	var schema rpc_client.CallObjectSchema
 	if err := json.Unmarshal(raw, &schema); err != nil {
-		return ethCommon.Address{}, ethCommon.Address{}, false, nil, err
+		return rpc_client.DecodedCallObject{}, err
 	}
 
 	var fromAddress ethCommon.Address
@@ -116,15 +116,31 @@ func DecodeCallObject(raw json.RawMessage) (ethCommon.Address, ethCommon.Address
 		}
 		data, err := DecodeHexString(payloadHex)
 		if err != nil {
-			return ethCommon.Address{}, ethCommon.Address{}, false, nil, err
+			return rpc_client.DecodedCallObject{}, err
 		}
 		payload = data
+		// đồng bộ lại các trường dữ liệu hex
+		schema.Data = payloadHex
+		if schema.Input == "" {
+			schema.Input = payloadHex
+		}
+	} else {
+		// đảm bảo cả hai trường cùng rỗng nếu input không có
+		schema.Data = ""
+		schema.Input = ""
 	}
 
-	if schema.To == "" || schema.To == "0x" {
-		return fromAddress, ethCommon.Address{}, false, payload, nil
+	hasTo := !(schema.To == "" || schema.To == "0x")
+	var toAddress ethCommon.Address
+	if hasTo {
+		toAddress = ethCommon.HexToAddress(schema.To)
 	}
 
-	toAddress := ethCommon.HexToAddress(schema.To)
-	return fromAddress, toAddress, true, payload, nil
+	return rpc_client.DecodedCallObject{
+		Schema:      schema,
+		FromAddress: fromAddress,
+		ToAddress:   toAddress,
+		HasTo:       hasTo,
+		Payload:     payload,
+	}, nil
 }

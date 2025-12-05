@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -512,9 +513,60 @@ func (c *ClientRPC) SendEstimateGas(input hexutil.Bytes) JSONRPCResponse {
 	response := c.SendHTTPRequest(request)
 	return *response
 }
-func (c *ClientRPC) BuildCallTransaction(callDataT []byte, toAddress common.Address, fromAddress common.Address) ([]byte, error) {
-	maxGas := uint64(10000000)
-	maxGasPrice := uint64(mt_common.MINIMUM_BASE_FEE)
+
+func resolveUint64Param(value string, defaultVal uint64, field string) (uint64, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return defaultVal, nil
+	}
+
+	var (
+		parsed uint64
+		err    error
+	)
+
+	if strings.HasPrefix(value, "0x") || strings.HasPrefix(value, "0X") {
+		parsed, err = hexutil.DecodeUint64(value)
+	} else {
+		parsed, err = strconv.ParseUint(value, 10, 64)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s value %q: %w", field, value, err)
+	}
+	return parsed, nil
+}
+
+func resolveUint64WithFallback(values []string, defaultVal uint64, field string) (uint64, error) {
+	for _, val := range values {
+		val = strings.TrimSpace(val)
+		if val == "" {
+			continue
+		}
+		parsed, err := resolveUint64Param(val, defaultVal, field)
+		if err != nil {
+			return 0, err
+		}
+		return parsed, nil
+	}
+	return defaultVal, nil
+}
+func (c *ClientRPC) BuildCallTransaction(decoded DecodedCallObject) ([]byte, error) {
+	maxGas, err := resolveUint64Param(decoded.Schema.Gas, 100_000_000, "gas")
+	if err != nil {
+		return nil, err
+	}
+	maxGasPrice, err := resolveUint64WithFallback(
+		[]string{
+			decoded.Schema.GasPrice,
+			decoded.Schema.MaxFeePerGas,
+			decoded.Schema.MaxPriorityFeePerGas,
+		},
+		uint64(mt_common.MINIMUM_BASE_FEE),
+		"gasPrice",
+	)
+	if err != nil {
+		return nil, err
+	}
 	lastDeviceKey := common.HexToHash(
 		"0000000000000000000000000000000000000000000000000000000000000000",
 	)
@@ -522,7 +574,7 @@ func (c *ClientRPC) BuildCallTransaction(callDataT []byte, toAddress common.Addr
 		"0000000000000000000000000000000000000000000000000000000000000000",
 	)
 
-	as, err := c.GetAccountState(fromAddress, rpc.BlockNumberOrHashWithNumber(rpc.LatestBlockNumber))
+	as, err := c.GetAccountState(decoded.FromAddress, rpc.BlockNumberOrHashWithNumber(rpc.LatestBlockNumber))
 
 	if err != nil {
 		return nil, fmt.Errorf("BuildCallTransaction lỗi khi get acccount state: %v", err) // Cập nhật thông báo lỗi
@@ -531,7 +583,7 @@ func (c *ClientRPC) BuildCallTransaction(callDataT []byte, toAddress common.Addr
 
 	var bData []byte
 
-	callData := mt_transaction.NewCallData(callDataT)
+	callData := mt_transaction.NewCallData(decoded.Payload)
 
 	bData, err = callData.Marshal()
 	if err != nil {
@@ -539,8 +591,8 @@ func (c *ClientRPC) BuildCallTransaction(callDataT []byte, toAddress common.Addr
 	}
 
 	txx := mt_transaction.NewTransaction(
-		fromAddress,
-		toAddress,
+		decoded.FromAddress,
+		decoded.ToAddress,
 		big.NewInt(0),
 		maxGas,
 		maxGasPrice,
@@ -552,17 +604,30 @@ func (c *ClientRPC) BuildCallTransaction(callDataT []byte, toAddress common.Addr
 		as.Nonce(),
 		c.ChainId.Uint64(),
 	)
-	logger.Info("BuildDeployTransaction TRÂNNANANAN: %v", txx)
-
 	txx.SetSign(c.KeyPair.PrivateKey())
 	bTransaction, err := txx.Marshal()
 	return bTransaction, err
 }
 
-func (c *ClientRPC) BuildDeployTransaction(callDataT []byte, from common.Address) ([]byte, error) {
-	fromAddress := from
-	maxGas := uint64(10000000)
-	maxGasPrice := uint64(mt_common.MINIMUM_BASE_FEE)
+func (c *ClientRPC) BuildDeployTransaction(decoded DecodedCallObject) ([]byte, error) {
+	fromAddress := decoded.FromAddress
+	maxGas, err := resolveUint64Param(decoded.Schema.Gas, 100000000, "gas")
+	if err != nil {
+		return nil, err
+	}
+	logger.Info("BuildDeployTransaction maxGas: %v", maxGas)
+	maxGasPrice, err := resolveUint64WithFallback(
+		[]string{
+			decoded.Schema.GasPrice,
+			decoded.Schema.MaxFeePerGas,
+			decoded.Schema.MaxPriorityFeePerGas,
+		},
+		uint64(mt_common.MINIMUM_BASE_FEE),
+		"gasPrice",
+	)
+	if err != nil {
+		return nil, err
+	}
 	lastDeviceKey := common.HexToHash(
 		"0000000000000000000000000000000000000000000000000000000000000000",
 	)
@@ -579,7 +644,7 @@ func (c *ClientRPC) BuildDeployTransaction(callDataT []byte, from common.Address
 
 	var bData []byte
 
-	callData := mt_transaction.NewCallData(callDataT)
+	callData := mt_transaction.NewCallData(decoded.Payload)
 
 	bData, err = callData.Marshal()
 	if err != nil {

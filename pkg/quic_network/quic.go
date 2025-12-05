@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -93,7 +94,7 @@ func CreateQuicConnection(serverAddr string) (quic.Connection, error) {
 }
 
 // SendChunkToRustServerQuic gửi chunk data qua QUIC
-func SendChunkToRustServerQuic(conn quic.Connection, fileKey string, chunkIndex int, chunkData []byte, signature string) error {
+func SendChunkToRustServerQuic(conn quic.Connection, fileKey string, chunkIndex int, chunkData []byte, signature string, merkleProofHashes [][32]byte, merkleRoot [32]byte) error {
 	// Mở stream với timeout
 	peerAddr := conn.RemoteAddr()
 	fileTimeLogger, _ := loggerfile.NewFileLogger("fileTimeLogger.log")
@@ -108,12 +109,24 @@ func SendChunkToRustServerQuic(conn quic.Connection, fileKey string, chunkIndex 
 		return fmt.Errorf("không thể mở stream: %v", err)
 	}
 	defer stream.Close()
+
+	// Convert merkle proof hashes to hex strings
+	merkleProofHexStrings := make([]string, len(merkleProofHashes))
+	for i, hash := range merkleProofHashes {
+		merkleProofHexStrings[i] = hex.EncodeToString(hash[:])
+	}
+
+	// Convert merkle root to hex string
+	merkleRootHex := hex.EncodeToString(merkleRoot[:])
+
 	// Tạo payload
 	payload := file_model.UploadChunkPayload{
-		FileKey:         fileKey,
-		ChunkIndex:      chunkIndex,
-		ChunkDataBase64: base64.StdEncoding.EncodeToString(chunkData),
-		Signature:       signature,
+		FileKey:           fileKey,
+		ChunkIndex:        chunkIndex,
+		ChunkDataBase64:   base64.StdEncoding.EncodeToString(chunkData),
+		Signature:         signature,
+		MerkleProofHashes: merkleProofHexStrings,
+		MerkleRoot:        merkleRootHex,
 	}
 	command := file_model.Command{Command: "UploadChunk", Payload: payload}
 
