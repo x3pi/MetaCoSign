@@ -9,6 +9,7 @@ import (
 	_ "net/http/pprof"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -128,14 +129,12 @@ func main() {
 }
 func setupHTTPServer(rpcProxy *proxy.RpcReverseProxy, cfg *config.Config, logsDir string) *http.Server {
 	mux := http.NewServeMux()
-	webPathPrefix := "/register-bls-key/"
-	fs := http.FileServer(http.Dir("./dist"))
-	mux.Handle(webPathPrefix, http.StripPrefix(webPathPrefix, fs))
 
 	mux.HandleFunc("/debug/logs/list", setup.HandleRPCLogList(logsDir))
 	mux.HandleFunc("/debug/logs/content", setup.HandleRPCLogContent(logsDir))
 	mux.HandleFunc("/trigger-event", rpcProxy.HandleTriggerEvent)
-
+	distPath := "./dist"
+	mux.Handle("/register-bls-key/", spaHandler(distPath, "/register-bls-key/"))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// WebSocket upgrade handling
 		if websocket.IsWebSocketUpgrade(r) {
@@ -183,13 +182,6 @@ func setupHTTPServer(rpcProxy *proxy.RpcReverseProxy, cfg *config.Config, logsDi
 			}
 			return
 		}
-
-		// Redirect root GET to BLS registration UI
-		if r.Method == http.MethodGet && r.URL.Path == "/" {
-			http.Redirect(w, r, webPathPrefix, http.StatusMovedPermanently)
-			return
-		}
-
 		// Default: Forward to main RPC proxy
 		rpcProxy.ServeHTTP(w, r)
 	})
@@ -205,4 +197,26 @@ func setupHTTPServer(rpcProxy *proxy.RpcReverseProxy, cfg *config.Config, logsDi
 		MaxHeaderBytes:    1 << 20, // 1MB
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+}
+
+// spaHandler serves static files với SPA routing fallback
+func spaHandler(staticPath string, prefix string) http.Handler {
+	return http.StripPrefix(prefix, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := filepath.Join(staticPath, r.URL.Path)
+		fileInfo, err := os.Stat(path)
+		// If file exists and is not a directory, serve it
+		if err == nil && !fileInfo.IsDir() {
+			http.ServeFile(w, r, path)
+			return
+		}
+		// If file doesn't exist or is a directory, serve index.html (SPA fallback)
+		indexPath := filepath.Join(staticPath, "index.html")
+		if _, err := os.Stat(indexPath); err == nil {
+			http.ServeFile(w, r, indexPath)
+			return
+		}
+
+		// If index.html doesn't exist, return 404
+		http.NotFound(w, r)
+	}))
 }

@@ -8,6 +8,7 @@ import LoadingSpinnerIcon from "~/components/LoadingSpinnerIcon";
 import Pagination from "~/components/pagination/Pagination";
 import { TransactionModal } from "./TransactionModal";
 import type { Transaction, TransactionResponse } from "~/types/transaction";
+import { GO_BACKEND_RPC_URL } from "~/constants/customChain";
 
 interface TransactionListPageProps {
   address: string;
@@ -36,9 +37,8 @@ export function TransactionListPage({
     setIsLoading(true);
     setError("");
     try {
-      console.log("laoding address", address);
       // Call JSON-RPC via fetch (page starts from 0 in API)
-      const response = await fetch("http://192.168.1.234:8545", {
+      const response = await fetch(GO_BACKEND_RPC_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

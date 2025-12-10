@@ -9,8 +9,7 @@ const alertVariants = cva(
     variants: {
       variant: {
         // Material 3 Surface Variant
-        default:
-          "bg-card text-foreground border-border shadow-md",
+        default: "bg-card text-foreground border-border shadow-md",
         // Material 3 Error Container - Text đậm để dễ đọc
         destructive:
           "border-error bg-error-container text-error font-medium [&>svg]:text-error shadow-md",
@@ -50,7 +49,11 @@ const Alert = React.forwardRef<
     <div
       ref={ref}
       role="alert"
-      className={cn(alertVariants({ variant }), className)}
+      className={cn(
+        alertVariants({ variant }),
+        "overflow-wrap-anywhere",
+        className
+      )}
       {...props}
     >
       {icon && <Icon className="h-4 w-4" />}

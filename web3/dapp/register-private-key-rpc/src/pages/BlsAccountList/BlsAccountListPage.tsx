@@ -72,7 +72,7 @@ function BlsAccountListPage() {
       let signature: Hex;
       let timestamp: bigint;
       const now = Math.floor(Date.now() / 1000);
-      
+
       if (loadAuthCache.current && loadAuthCache.current.expiry > now + 10) {
         signature = loadAuthCache.current.signature;
         timestamp = loadAuthCache.current.timestamp;
@@ -164,7 +164,7 @@ function BlsAccountListPage() {
   useEffect(() => {
     loadAccounts();
   }, [loadAccounts]);
-  
+
   // ✅ Only clear cache when address actually changes (not on first mount)
   const previousAddress = useRef<string | undefined>(undefined);
   useEffect(() => {
@@ -193,7 +193,7 @@ function BlsAccountListPage() {
       }
       const now = Math.floor(Date.now() / 1000);
       const cachedAuth = confirmAuthCache.current[accountAddress];
-      
+
       // ✅ Use cache if it's still valid (with 10 second buffer instead of 30)
       if (cachedAuth && cachedAuth.expiry > now + 10) {
         signature = cachedAuth.signature;
@@ -330,10 +330,19 @@ function BlsAccountListPage() {
         </div>
         {/* Error Alert */}
         {error && (
-          <Alert variant="destructive" className="mb-4">
+          <Alert
+            variant="destructive"
+            className="mb-4"
+            style={{
+              wordBreak: "break-word",
+              overflowWrap: "anywhere",
+              whiteSpace: "pre-wrap",
+            }}
+          >
             {error}
           </Alert>
         )}
+
         {/* Loading State */}
         {isLoading && (
           <div className="flex justify-center items-center py-12">
@@ -404,7 +413,8 @@ function BlsAccountListPage() {
                         size="sm"
                         appVariant="success"
                       >
-                        {confirmingAddress === bytesToAddress(account.address) ? (
+                        {confirmingAddress ===
+                        bytesToAddress(account.address) ? (
                           <>
                             <LoadingSpinnerIcon />
                             <span className="ml-2">Confirming...</span>
@@ -417,7 +427,9 @@ function BlsAccountListPage() {
                     <AppButton
                       onClick={() => {
                         setShowTransactionList(true);
-                        setSelectedAddressForTx(bytesToAddress(account.address));
+                        setSelectedAddressForTx(
+                          bytesToAddress(account.address)
+                        );
                       }}
                       size="sm"
                       appVariant="outline"
@@ -476,7 +488,7 @@ function BlsAccountListPage() {
               }}
             />
           </div>
-         </div>
+        </div>
       )}
     </PageContainer>
   );
