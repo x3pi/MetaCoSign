@@ -63,7 +63,6 @@ func processRegisterBlsKeyParams(appCtx *app.Context, params models.RegisterBlsK
 	if time.Since(clientTimestamp).Abs() > 2*time.Minute {
 		return utils.MakeAuthError(id, "Timestamp is too old or in the future.")
 	}
-
 	messageToVerify := fmt.Sprintf("BLS Data: %s\nTimestamp: %s", params.BlsPrivateKey, params.Timestamp)
 	prefixedMessage := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", len(messageToVerify), messageToVerify)
 	messageHash := crypto.Keccak256Hash([]byte(prefixedMessage))

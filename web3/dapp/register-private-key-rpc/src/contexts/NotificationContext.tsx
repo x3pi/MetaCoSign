@@ -46,7 +46,6 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptsRef = useRef(0);
-  const maxReconnectAttempts = 999; // Unlimited retry
 
   // Load notifications from contract
   const loadNotifications = useCallback(
@@ -191,13 +190,11 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
-            console.log("📩 WebSocket message received:", data);
 
             if (data.method === "eth_subscription" && data.params?.result) {
               const log = data.params.result;
 
               if (log.topics && log.data) {
-                console.log("📥 Event log received:", log);
                 // Decode event log
                 const decoded = decodeEventLog({
                   abi: contracts.AccountManager.abi,
@@ -277,16 +274,11 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
           console.log("❌ WebSocket disconnected");
           wsRef.current = null;
           // ✅ Auto-reconnect sau 100ms
-          if (event.code !== 1000  && reconnectAttemptsRef.current < maxReconnectAttempts) {
-            console.log(
-              `🔄 WebSocket reconnecting in 100ms... (attempt ${
-                reconnectAttemptsRef.current + 1
-              })`
-            );
+          if (event.code !== 1000) {
             reconnectTimeoutRef.current = setTimeout(() => {
               reconnectAttemptsRef.current++;
               connectWebSocket();
-            }, 100);
+            }, 500);
           } else {
             setError("WebSocket connection failed after multiple attempts");
           }

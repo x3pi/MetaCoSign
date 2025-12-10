@@ -4,13 +4,12 @@ import SharedHeader from "./components/SharedHeader";
 import { Sidebar } from "./components/Sidebar";
 import { Route, Routes } from "react-router-dom";
 import BlsManagerPage from "./pages/BlsManager/BlsManagerPage";
-// import MetaMaskSigner from "./pages/MetaMaskSigner/MetaMaskSigner";
+import MetaMaskSigner from "./pages/MetaMaskSigner/MetaMaskSigner";
 import HomePage from "./pages/Home/HomePage";
 import AccountTypeManagerPage from "./pages/SetAccountType/AccountTypeManagerPage";
 import BlsAccountListPage from "./pages/BlsAccountList/BlsAccountListPage";
 import { MobileMenuProvider } from "./contexts/MobileMenuContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
-// import { WebSocketProvider } from "./contexts/WebSocketContext";
 import { NotificationProvider } from "./contexts/NotificationContext";
 
 export interface PageLink {
@@ -23,16 +22,12 @@ function App() {
     { path: "/", label: "Account" },
     { path: "/bls", label: "Publickey BLS" },
     { path: "/account-type", label: "AccountType" },
-    // { path: "/register-rpc", label: "Register BLS Rpc" },
+    { path: "/register-rpc", label: "Register BLS Rpc" },
     { path: "/accounts", label: "Account List" },
   ];
 
-  // WebSocket URL - có thể đưa vào env file
-  // const wsUrl = "ws://192.168.1.234:8545";
-
   return (
     <ThemeProvider>
-      {/* <WebSocketProvider url={wsUrl}> */}
         <NotificationProvider>
           <MobileMenuProvider>
             <div className="bg-app text-app min-h-screen w-full flex flex-col transition-colors duration-300">
@@ -50,7 +45,7 @@ function App() {
                   <Route path="/" element={<HomePage />} />
                   <Route path="bls" element={<BlsManagerPage />} />
                   <Route path="account-type" element={<AccountTypeManagerPage />} />
-                  {/* <Route path="register-rpc" element={<MetaMaskSigner />} /> */}
+                  <Route path="register-rpc" element={<MetaMaskSigner />} />
                   <Route path="accounts" element={<BlsAccountListPage />} />
                   <Route path="*" element={<h1>Not found</h1>} />
                 </Routes>
@@ -60,7 +55,6 @@ function App() {
           </div>
         </MobileMenuProvider>
       </NotificationProvider>
-      {/* </WebSocketProvider> */}
     </ThemeProvider>
   );
 }

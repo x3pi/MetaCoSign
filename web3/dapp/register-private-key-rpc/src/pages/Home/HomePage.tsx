@@ -42,7 +42,6 @@ function HomePage() {
         chain: chain991,
         transport: http(chain991.rpcUrls.default.http[0]),
       });
-
       const state = (await client.request({
         method: "mtn_getAccountState" as any,
         params: [connectedAccount as `0x${string}`, "latest"],

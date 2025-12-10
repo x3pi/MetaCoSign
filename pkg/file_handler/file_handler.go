@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
 	"math/big"
 	"runtime"
 	"runtime/debug"
@@ -286,7 +285,6 @@ func (h *FileHandlerNoReceipt) HandleUploadChunk(
 	if tx.FromAddress() != fileInfo.OwnerAddress {
 		return nil, fmt.Errorf("chỉ chủ sở hữu file mới có thể upload chunk")
 	}
-	log.Printf("Chunk data %s , max kích thước: %d", len(chunkData), MAX_SIZE_CHUNK)
 	if len(chunkData) > MAX_SIZE_CHUNK {
 		return nil, fmt.Errorf("kích thước chunk vượt quá giới hạn %d KB", MAX_SIZE_CHUNK/1024)
 	}

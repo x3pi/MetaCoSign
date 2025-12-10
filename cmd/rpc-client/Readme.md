@@ -1,6 +1,6 @@
 # RPC Reverse Proxy
-  // "rpc_server_url": "https://rpc-proxy-sequoia.iqnb.com:8446",
-  // "wss_server_url": "wss://rpc-proxy-sequoia.iqnb.com:8446",
+"rpc_server_url": "https://rpc-proxy-sequoia.iqnb.com:8446",
+   "wss_server_url": "wss://rpc-proxy-sequoia.iqnb.com:8446",
 
     "rpc_server_url": "http://localhost:8646",
   "wss_server_url": "ws://localhost:8646/ws",

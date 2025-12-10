@@ -8,8 +8,8 @@ import { PageContainer } from "~/components/PageContainer";
 import { PageCard } from "~/components/PageCard";
 import { FormField } from "~/components/FormField";
 import { StatusDisplay } from "~/components/StatusDisplay";
+import { GO_BACKEND_RPC_URL } from "~/constants/customChain";
 
-const GO_BACKEND_RPC_URL = window.location.origin;
 
 function MetaMaskSigner() {
   const {
@@ -20,7 +20,6 @@ function MetaMaskSigner() {
     clearError: clearWalletError,
     setStatusMessage: setWalletStatusMessage,
   } = useWallet();
-
   const [blsInput, setBlsInput] = useState<string>("");
   const [signature, setSignature] = useState<Hex | null>(null);
   const [pageStatus, setPageStatus] = useState<string>("");
