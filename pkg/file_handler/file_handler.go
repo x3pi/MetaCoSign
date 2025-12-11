@@ -393,9 +393,6 @@ func (h *FileHandlerNoReceipt) sendChunk(
 		if lastErr == nil {
 			return nil
 		}
-		if lastErr != nil && strings.Contains(lastErr.Error(), "to store chunk on disk") {
-			return nil
-		}
 		if errors.Is(lastErr, context.DeadlineExceeded) || strings.Contains(lastErr.Error(), "deadline exceeded") {
 			logger.Warn("[file: %s, chunk: %d] Stream timeout, sẽ thử stream mới...", fileKey, chunkIndex)
 			continue // vòng lặp sẽ mở stream mới trên cùng connection
