@@ -27,6 +27,7 @@ type Config struct {
 	LdbNotificationPath  string   `json:"ldb_bls_account_noti"`
 	OwnerRpcAddress      string   `json:"owner_rpc_address"`
 	ContractsInterceptor []string `json:"contracts_interceptor"` // Địa chỉ contract dùng để intercept
+	RewardAmount         *big.Int `json:"reward_amount"`         // Số lượng reward cho mỗi giao dịch được intercept
 }
 
 func Load(path string, tcpCfgPath string) (*Config, *tcp_config.ClientConfig, error) {

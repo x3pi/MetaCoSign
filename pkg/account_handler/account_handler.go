@@ -290,7 +290,7 @@ func (h *AccountHandlerNoReceipt) handleConfirmAccount(
 	if rs.Error != nil {
 		return "", fmt.Errorf("failed to send transaction: %v", rs.Error)
 	}
-	metaTxData, _, releaseFunc, err := h.appCtx.ClientRpc.BuildTransferTransaction(ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress), ethCommon.Address(pendingTx.Address), big.NewInt(1000000000000000000))
+	metaTxData, _, releaseFunc, err := h.appCtx.ClientRpc.BuildTransferTransaction(ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress), ethCommon.Address(pendingTx.Address), h.appCtx.Cfg.RewardAmount)
 	rst := h.appCtx.ClientRpc.SendRawTransactionBinary(
 		metaTxData,
 		releaseFunc,
