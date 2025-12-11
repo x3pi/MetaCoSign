@@ -1,7 +1,10 @@
-## Thay đổi 
-# ở config-client-tcp.json
-"owner_file_storage_address":"0xC6E6474A8DEAD25B0e75b1aeA5d35FA19f69588a" 
-"parent_address": "0xC6E6474A8DEAD25B0e75b1aeA5d35FA19f69588a",
+## Thay đổi cần thực hiện
 
-# ở pkg/file_handler/file_handler.go
-- Khi đã up chunk rồi thì báo lỗi ra cho client
+### File: `config-client-tcp.json`
+
+Cập nhật các địa chỉ ví sau:
+
+```json
+"owner_file_storage_address": "0xC6E6474A8DEAD25B0e75b1aeA5d35FA19f69588a",
+"parent_address": "0xC6E6474A8DEAD25B0e75b1aeA5d35FA19f69588a"
+```
