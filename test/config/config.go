@@ -31,7 +31,7 @@ func Load(envFile string) {
 	// Tải các giá trị
 	RpcUrl = getEnv("RPC_URL", "ws://192.168.1.234:8545")
 	HttpUrl = getEnv("HTTP_URL", "http://192.168.1.234:8545")
-	ContractAddressHex = getEnv("CONTRACT_ADDRESS_HEX", "0xdC7b4fFD274112318083CCB3900d6287776f78b6")
+	ContractAddressHex = getEnv("CONTRACT_ADDRESS_HEX", "0x087cdab97d38a3bfFcDee170739E8C11Af651569")
 	FilePath = getEnv("FILE_PATH", "./file_to_upload/output.txt")
 	PrivateKeyHex = getEnvOrFatal("PRIVATE_KEY_HEX")
 	OutputFile = getEnv("OUTPUT_FILE", "downloaded_file.txt")

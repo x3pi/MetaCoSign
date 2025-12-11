@@ -9,7 +9,7 @@ import (
 )
 
 func PredictContractAddress(deployer common.Address) common.Address {
-	data, err := rlp.EncodeToBytes([]interface{}{deployer, uint64(1)})
+	data, err := rlp.EncodeToBytes([]interface{}{deployer, uint64(2)})
 	if err != nil {
 		log.Fatalf("RLP encode error: %v", err)
 	}

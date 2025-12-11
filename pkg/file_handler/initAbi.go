@@ -1,14 +1,12 @@
 package file_handler
 
 import (
-	"encoding/hex"
 	"fmt"
 	"strings"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/meta-node-blockchain/meta-node/pkg/file_handler/abi_file"
-	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	"github.com/meta-node-blockchain/meta-node/types"
 )
 
@@ -49,7 +47,7 @@ func (h *FileAbi) ParseMethodName(tx types.Transaction) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("không tìm thấy method trong ABI: %v", err)
 	}
-	hexInput := hex.EncodeToString(inputData)
-	logger.Info("input data: %s ,\n method name: %s \n tx %v", hexInput, method.Name, tx)
+	// hexInput := hex.EncodeToString(inputData)
+	// logger.Info("input data: %s ,\n method name: %s \n tx %v", hexInput, method.Name, tx)
 	return method.Name, nil
 }

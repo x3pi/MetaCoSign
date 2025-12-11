@@ -45,7 +45,7 @@ function BlsAccountListPage() {
   );
   const [accounts, setAccounts] = useState<BlsAccount[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize] = useState(1);
+  const [pageSize] = useState(10);
   const [totalPages, setTotalPages] = useState(0);
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(false);

@@ -232,6 +232,7 @@ func (h *FileHandlerNoReceipt) HandleUploadChunk(
 ) ([]types.EventLog, error) {
 	h.processingChunkCount.Add(1)
 	defer h.processingChunkCount.Add(-1)
+	logger.Info("Bắt đầu xử lý uploadChunk cho tx %s", tx.Hash().Hex())
 	// check
 	start := time.Now()
 	args, err := method.Inputs.Unpack(inputData)
