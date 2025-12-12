@@ -4,6 +4,7 @@ pragma solidity ^0.8.30;
 contract AccountManager {
     event AccountConfirmed(address account, uint time,string message);
     event RegisterBls(address account, uint time ,bytes publicKey,string message);
+    event TransferFrom(address from, address to , uint amount, uint time,string message);
     function setBlsPublicKey(bytes memory _publicKey) external {
         address account;
         uint time;
@@ -20,5 +21,10 @@ contract AccountManager {
     function confirmAccount(address _account, uint time,bytes memory _sign) external {
         string memory message;
         emit AccountConfirmed(_account, time, message );
+    }
+    function transferFrom(address to, uint amount ,uint time,bytes memory _sign) external {
+        string memory message;
+        address  from;
+        emit TransferFrom(from,to, amount, time, message );
     }
 }

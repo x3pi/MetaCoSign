@@ -81,6 +81,9 @@ func (h *AccountHandlerNoReceipt) HandleAccountTransaction(
 	case "confirmAccount":
 		result, err = h.handleConfirmAccount(tx, method, inputData[4:])
 		return true, result, err
+	case "transferFrom":
+		result, err = h.handleTransferFrom(tx, method, inputData[4:])
+		return true, result, err
 	case "setAccountType":
 		return false, nil, nil
 	default:
@@ -329,6 +332,120 @@ func (h *AccountHandlerNoReceipt) handleConfirmAccount(
 
 	logger.Info("✅ Đã confirm account %s, tx hash: %v", accountAddress.Hex(), rs.Result)
 	return rs.Result.(string), nil
+}
+
+func (h *AccountHandlerNoReceipt) handleTransferFrom(
+	tx mt_types.Transaction,
+	method *abi.Method,
+	inputData []byte,
+) (string, error) {
+	args, err := method.Inputs.Unpack(inputData)
+	if err != nil {
+		return "", fmt.Errorf("lỗi khi unpack input data: %v", err)
+	}
+	toAddress, _ := args[0].(ethCommon.Address)
+	transferAmount, _ := args[1].(*big.Int)
+	timestamp, _ := args[2].(*big.Int)
+	signatureBytes, _ := args[3].([]byte)
+
+	fromAddress := tx.FromAddress()
+	currentTime := time.Now().Unix()
+
+	// Verify timestamp (within 5 minutes)
+	if utilsPkg.Abs(currentTime-timestamp.Int64()) > 300 {
+		return "", fmt.Errorf("timestamp expired (current: %d, provided: %d)", currentTime, timestamp.Int64())
+	}
+	// Verify that amount is positive
+	if transferAmount.Cmp(big.NewInt(0)) <= 0 {
+		return "", fmt.Errorf("transfer amount must be greater than 0")
+	}
+	// Verify signature
+	// Message structure: [toAddress (20 bytes)] + [amount (32 bytes)] + [timestamp (32 bytes)]
+	message := make([]byte, 0, 84)
+	message = append(message, toAddress.Bytes()...)
+
+	amountBytes := make([]byte, 32)
+	transferAmount.FillBytes(amountBytes)
+	message = append(message, amountBytes...)
+
+	timestampBytes := make([]byte, 32)
+	timestamp.FillBytes(timestampBytes)
+	message = append(message, timestampBytes...)
+
+	prefixedMessage := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", len(message), message)
+	messageHash := crypto.Keccak256Hash([]byte(prefixedMessage))
+
+	if len(signatureBytes) < 65 {
+		return "", fmt.Errorf("invalid signature length: expected at least 65, got %d", len(signatureBytes))
+	}
+
+	// Adjust V value
+	if signatureBytes[64] >= 27 {
+		signatureBytes[64] -= 27
+	}
+
+	// Recover public key
+	pubKey, err := crypto.SigToPub(messageHash.Bytes(), signatureBytes)
+	if err != nil {
+		return "", fmt.Errorf("failed to recover public key: %w", err)
+	}
+	// Verify signer is the fromAddress
+	signerAddress := crypto.PubkeyToAddress(*pubKey)
+	if signerAddress != fromAddress {
+		return "", fmt.Errorf("invalid signature: signer %s does not match sender %s", signerAddress.Hex(), fromAddress.Hex())
+	}
+
+	// Build and send transfer transaction
+	metaTxData, _, releaseFunc, err := h.appCtx.ClientRpc.BuildTransferTransaction(
+		fromAddress,
+		toAddress,
+		transferAmount,
+	)
+	if err != nil {
+		return "", fmt.Errorf("failed to build transfer transaction: %w", err)
+	}
+
+	rst := h.appCtx.ClientRpc.SendRawTransactionBinary(
+		metaTxData,
+		releaseFunc,
+		nil,
+		nil,
+		nil,
+	)
+	if rst.Error != nil {
+		return "", fmt.Errorf("failed to send transaction: %v", rst.Error)
+	}
+
+	// Create notification for sender
+	msgNotiSender := fmt.Sprintf("You transferred %s to %s", transferAmount.String(), toAddress.Hex())
+	notificationSender := &pb.Notification{
+		AccountAddress: fromAddress.Bytes(),
+		Message:        msgNotiSender,
+		CreatedAt:      currentTime,
+	}
+	if err := h.appCtx.LdbNotification.SaveNotification(notificationSender); err != nil {
+		logger.Error("Failed to save sender notification: %v", err)
+	}
+
+	// Create notification for receiver
+	msgNotiReceiver := fmt.Sprintf("You received %s from %s", transferAmount.String(), fromAddress.Hex())
+	notificationReceiver := &pb.Notification{
+		AccountAddress: toAddress.Bytes(),
+		Message:        msgNotiReceiver,
+		CreatedAt:      currentTime,
+	}
+	if err := h.appCtx.LdbNotification.SaveNotification(notificationReceiver); err != nil {
+		logger.Error("Failed to save receiver notification: %v", err)
+	}
+
+	// Broadcast TransferFrom event (chỉ 1 event với from, to, amount, time, message)
+	msgEvent := fmt.Sprintf("Transfer %s from %s to %s", transferAmount.String(), fromAddress.Hex(), toAddress.Hex())
+	h.broadcastEvent("TransferFrom", fromAddress, toAddress, transferAmount, big.NewInt(currentTime), msgEvent)
+
+	logger.Info("✅ Transfer completed from %s to %s, amount: %s, tx hash: %v",
+		fromAddress.Hex(), toAddress.Hex(), transferAmount.String(), rst.Result)
+
+	return rst.Result.(string), nil
 }
 
 func (h *AccountHandlerNoReceipt) broadcastEvent(

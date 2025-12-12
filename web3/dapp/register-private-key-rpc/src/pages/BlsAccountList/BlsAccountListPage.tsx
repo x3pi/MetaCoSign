@@ -55,6 +55,11 @@ function BlsAccountListPage() {
   );
   const [showTransactionList, setShowTransactionList] = useState(false);
   const [selectedAddressForTx, setSelectedAddressForTx] = useState<string>("");
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [selectedAddressForTransfer, setSelectedAddressForTransfer] =
+    useState<string>("");
+  const [transferAmount, setTransferAmount] = useState<string>("");
+  const [isTransferring, setIsTransferring] = useState(false);
 
   // Load accounts callback
   const loadAccounts = useCallback(async () => {
@@ -270,6 +275,101 @@ function BlsAccountListPage() {
     }
   };
 
+  const handleTransferToAccount = async () => {
+    if (!walletClient || !publicClient) {
+      setError("Wallet not connected");
+      return;
+    }
+    if (!selectedAddressForTransfer) {
+      setError("No recipient selected");
+      return;
+    }
+    if (!transferAmount || parseFloat(transferAmount) <= 0) {
+      setError("Please enter a valid amount");
+      return;
+    }
+
+    setIsTransferring(true);
+    setError("");
+
+    try {
+      const account = walletClient.account;
+      if (!account) {
+        throw new Error("No account connected");
+      }
+
+      const now = Math.floor(Date.now() / 1000);
+      const timestamp = BigInt(now);
+      const amount = BigInt(Math.floor(parseFloat(transferAmount) * 1e18)); // Convert to wei
+
+      // Create message: toAddress + amount + timestamp
+      const message = encodePacked(
+        ["address", "uint256", "uint256"],
+        [selectedAddressForTransfer as Hex, amount, timestamp]
+      );
+
+      // Sign the message
+      const signature = await walletClient.signMessage({
+        account: account.address,
+        message: { raw: message },
+      });
+
+      // Encode function data for transferFrom
+      const data = encodeFunctionData({
+        abi: contracts.AccountManager.abi,
+        functionName: "transferFrom",
+        args: [selectedAddressForTransfer as Hex, amount, timestamp, signature as Hex],
+      });
+
+      // Get nonce
+      const nonce = await publicClient.getTransactionCount({
+        address: account.address,
+        blockTag: "pending",
+      });
+
+      // Estimate gas
+      const gasLimit = await publicClient.estimateGas({
+        account: account.address,
+        to: contracts.AccountManager.address,
+        data: data,
+        value: 0n,
+      });
+
+      // Send transaction
+      const txHash = await walletClient.sendTransaction({
+        account: account.address,
+        to: contracts.AccountManager.address,
+        data: data,
+        value: 0n,
+        nonce: nonce,
+        gas: gasLimit,
+        gasPrice: 0n,
+        chain: chain991,
+      });
+
+      // Wait for transaction
+      const receipt = await publicClient.waitForTransactionReceipt({
+        hash: txHash,
+      });
+
+      if (receipt.status === "success") {
+        setShowTransferModal(false);
+        setTransferAmount("");
+        setSelectedAddressForTransfer("");
+        alert(
+          `Successfully transferred ${transferAmount} to ${selectedAddressForTransfer}!`
+        );
+      } else {
+        throw new Error("Transaction failed");
+      }
+    } catch (err) {
+      console.error("Error transferring:", err);
+      setError(err instanceof Error ? err.message : "Failed to transfer");
+    } finally {
+      setIsTransferring(false);
+    }
+  };
+
   const formatDate = (timestamp: bigint) => {
     return new Date(Number(timestamp) * 1000).toLocaleString();
   };
@@ -424,6 +524,20 @@ function BlsAccountListPage() {
                         )}
                       </AppButton>
                     )}
+                    {account.isConfirmed && (
+                      <AppButton
+                        onClick={() => {
+                          setSelectedAddressForTransfer(
+                            bytesToAddress(account.address)
+                          );
+                          setShowTransferModal(true);
+                        }}
+                        size="sm"
+                        appVariant="primary"
+                      >
+                        Transfer
+                      </AppButton>
+                    )}
                     <AppButton
                       onClick={() => {
                         setShowTransactionList(true);
@@ -475,6 +589,75 @@ function BlsAccountListPage() {
           </AppButton>
         </div>
       </PageCard>
+
+      {/* Transfer Modal */}
+      {showTransferModal && selectedAddressForTransfer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-card border border-border rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold mb-4">Transfer to Account</h3>
+            <div className="space-y-4">
+              <div>
+                <Label className="text-sm font-semibold mb-2">
+                  Recipient Address
+                </Label>
+                <div className="text-xs font-mono text-app-muted break-all">
+                  {selectedAddressForTransfer}
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="amount" className="text-sm font-semibold mb-2">
+                  Amount (in tokens)
+                </Label>
+                <input
+                  id="amount"
+                  type="number"
+                  step="0.000001"
+                  min="0"
+                  value={transferAmount}
+                  onChange={(e) => setTransferAmount(e.target.value)}
+                  className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                  placeholder="Enter amount"
+                  disabled={isTransferring}
+                />
+              </div>
+              {error && (
+                <Alert variant="destructive" className="text-sm">
+                  {error}
+                </Alert>
+              )}
+              <div className="flex gap-2">
+                <AppButton
+                  onClick={handleTransferToAccount}
+                  disabled={isTransferring || !transferAmount}
+                  className="flex-1"
+                  appVariant="primary"
+                >
+                  {isTransferring ? (
+                    <>
+                      <LoadingSpinnerIcon />
+                      <span className="ml-2">Transferring...</span>
+                    </>
+                  ) : (
+                    "Transfer"
+                  )}
+                </AppButton>
+                <AppButton
+                  onClick={() => {
+                    setShowTransferModal(false);
+                    setTransferAmount("");
+                    setError("");
+                  }}
+                  disabled={isTransferring}
+                  className="flex-1"
+                  appVariant="outline"
+                >
+                  Cancel
+                </AppButton>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Transaction List Modal */}
       {showTransactionList && selectedAddressForTx && (

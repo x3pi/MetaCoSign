@@ -152,9 +152,11 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
           const sigAccountConfirmed =
             "AccountConfirmed(address,uint256,string)";
           const sigRegisterBls = "RegisterBls(address,uint256,bytes,string)";
+          const sigTransferFrom = "TransferFrom(address,address,uint256,uint256,string)";
 
           const topicRegisterBls = keccak256(toHex(sigRegisterBls));
           const topicAccountConfirmed = keccak256(toHex(sigAccountConfirmed));
+          const topicTransferFrom = keccak256(toHex(sigTransferFrom));
 
           ws.send(
             JSON.stringify({
@@ -185,6 +187,21 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
               ],
             })
           );
+
+          ws.send(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: 3,
+              method: "eth_subscribe",
+              params: [
+                "logs",
+                {
+                  address: contracts.AccountManager.address,
+                  topics: [[topicTransferFrom]],
+                },
+              ],
+            })
+          );
         };
 
         ws.onmessage = (event) => {
@@ -203,6 +220,9 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
                 });
                 const args = decoded.args as {
                   account?: string;
+                  from?: string; // For TransferFrom event
+                  to?: string; // For TransferFrom event
+                  amount?: bigint; // For TransferFrom event
                   time?: bigint;
                   message?: string;
                   publicKey?: string;
@@ -211,19 +231,34 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
                 let notifMessage = "";
                 let notifTitle = "";
                 // console.log("🔍 Decoded event:", decoded.eventName, args);
+                
+                // For TransferFrom event, check if connected account is sender or receiver
+                let shouldShowNotification = false;
+                if (decoded.eventName === "TransferFrom") {
+                  const fromAddr = args.from?.toLowerCase();
+                  const toAddr = args.to?.toLowerCase();
+                  const connectedAddr = connectedAccount.toLowerCase();
+                  
+                  // Show notification if user is either sender or receiver
+                  shouldShowNotification = (fromAddr === connectedAddr || toAddr === connectedAddr);
+                } else {
+                  // For other events, check account field
+                  const eventAddress = args.account?.toLowerCase();
+                  shouldShowNotification = (eventAddress === connectedAccount.toLowerCase());
+                }
+                
                 console.log(
-                  "event account",
-                  args.account?.toLowerCase(),
-                  "owner account:",
-                  connectedAccount.toLowerCase(),
-                  "is oke: ",
-                  args.account?.toLowerCase() !== connectedAccount.toLowerCase()
+                  "event:",
+                  decoded.eventName,
+                  "should show:",
+                  shouldShowNotification
                 );
-                if (
-                  args.account?.toLowerCase() !== connectedAccount.toLowerCase()
-                ) {
+                
+                // Only show notification if it's relevant to the connected account
+                if (!shouldShowNotification) {
                   return;
                 }
+                
                 // Check event name
                 if (decoded.eventName === "AccountConfirmed") {
                   console.log("name account confirmed");
@@ -237,13 +272,18 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
                     ? `${args.publicKey.slice(0, 10)}...`
                     : "";
                   notifMessage = `${args.message} (Key: ${shortKey})`;
+                } else if (decoded.eventName === "TransferFrom") {
+                  console.log("Transfer event received");
+                  notifTitle = "Transfer";
+                  // Message already contains the right text from backend
+                  notifMessage = args.message || "Transfer completed";
                 } else {
                   return;
                 }
 
                 // Create notification
                 const newNotification: Notification = {
-                  id: args.id || `${args.account}-${Date.now()}`,
+                  id: args.id || `${connectedAccount}-${Date.now()}`,
                   createdAt: Number(args.time || Date.now()),
                   message: args.message || notifMessage,
                 };

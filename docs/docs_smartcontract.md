@@ -27,6 +27,34 @@ Các sự kiện được emit ra blockchain để frontend hoặc các dịch v
 
 ---
 
+### `TransferFrom`
+Được bắn ra khi có giao dịch chuyển tiền từ một tài khoản sang tài khoản khác. Cả người gửi và người nhận đều lắng nghe sự kiện này để cập nhật trạng thái real-time.
+
+**Parameters:**
+- `from` (`address`): Địa chỉ ví người gửi tiền.
+- `to` (`address`): Địa chỉ ví người nhận tiền.
+- `amount` (`uint256`): Số tiền chuyển (tính bằng wei).
+- `time` (`uint256`): Thời điểm thực hiện giao dịch (timestamp).
+- `message` (`string`): Thông báo mô tả giao dịch.
+
+**Example:**
+```json
+{
+  "from": "0xAAA...",
+  "to": "0xBBB...",
+  "amount": "100000000000000000000",
+  "time": "1234567890",
+  "message": "Transfer 100 from 0xAAA... to 0xBBB..."
+}
+```
+
+**Frontend Handling:**
+- Nếu connected account = `from` → Hiển thị "You transferred X to 0x..."
+- Nếu connected account = `to` → Hiển thị "You received X from 0x..."
+- Nếu không phải cả hai → Bỏ qua event
+
+---
+
 ## 2. Functions (Hàm)
 
 ### `setBlsPublicKey`
@@ -92,6 +120,44 @@ function confirmAccount(address _account, uint time, bytes memory _sign) externa
 - `_account` (`address`): Địa chỉ ví của người dùng cần xác nhận.
 - `time` (`uint`): Thời điểm xác nhận.
 - `_sign` (`bytes`): Chữ ký xác thực của Admin để cấp quyền duyệt.
+
+---
+
+### `transferFrom`
+Chuyển tiền từ tài khoản người dùng đến địa chỉ nhận.
+
+```solidity
+function transferFrom(address to, uint amount, uint time, bytes memory _sign) external
+```
+
+**Parameters:**
+- `to` (`address`): Địa chỉ ví người nhận tiền.
+- `amount` (`uint`): Số tiền cần chuyển (tính bằng wei).
+- `time` (`uint`): Thời điểm thực hiện giao dịch (timestamp).
+- `_sign` (`bytes`): Chữ ký xác thực của người gửi.
+
+**Chữ ký (Signature) cấu trúc:**
+```typescript
+// Frontend tính chữ ký từ message:
+const message = encodePacked(
+  ["address", "uint256", "uint256"],
+  [toAddress, amount, timestamp]
+);
+const signature = await walletClient.signMessage({
+  account: account.address,
+  message: { raw: message }
+});
+```
+
+**Message structure:**
+- `toAddress` (20 bytes): Địa chỉ người nhận
+- `amount` (32 bytes): Số tiền chuyển (uint256)
+- `timestamp` (32 bytes): Thời gian thực hiện (uint256)
+
+**Validation:**
+- Timestamp phải nằm trong vòng **5 phút** (300 giây) so với hiện tại
+- Amount phải lớn hơn 0
+- Chữ ký phải hợp lệ và khớp với sender
 
 ---
 

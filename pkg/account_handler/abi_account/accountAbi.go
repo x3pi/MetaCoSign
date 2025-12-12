@@ -58,6 +58,43 @@ const AccountABI = `[
 		"type": "event"
 	},
 	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": false,
+				"internalType": "address",
+				"name": "from",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "address",
+				"name": "to",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "amount",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "time",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "string",
+				"name": "message",
+				"type": "string"
+			}
+		],
+		"name": "TransferFrom",
+		"type": "event"
+	},
+	{
 		"inputs": [
 			{
 				"internalType": "address",
@@ -163,6 +200,34 @@ const AccountABI = `[
 			}
 		],
 		"name": "setBlsPublicKey",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "to",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "amount",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "time",
+				"type": "uint256"
+			},
+			{
+				"internalType": "bytes",
+				"name": "_sign",
+				"type": "bytes"
+			}
+		],
+		"name": "transferFrom",
 		"outputs": [],
 		"stateMutability": "nonpayable",
 		"type": "function"
