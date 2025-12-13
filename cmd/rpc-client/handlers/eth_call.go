@@ -37,7 +37,6 @@ func processEthCallParams(appCtx *app.Context, id interface{}, callObjectRaw jso
 			logger.Error("Failed to get account handler: %v", err)
 			return utils.MakeInternalError(id, "Failed to get account handler: "+err.Error())
 		}
-
 		// Handle eth_call cho account operations
 		result, err := accountHandler.HandleEthCall(context.Background(), decoded.Payload)
 		if err != nil {

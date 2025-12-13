@@ -22,7 +22,6 @@ message PendingTransaction {
     uint64 original_gas_price = 6;
 }
 
-
 message Notification {
     string id = 1;                    // Auto-increment ID (per user)
     bytes account_address = 2;        // Địa chỉ account nhận notification

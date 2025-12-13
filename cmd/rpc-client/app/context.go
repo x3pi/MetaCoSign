@@ -37,6 +37,9 @@ type Context struct {
 	LdbBlsWallet    *ldb_storage.LevelDBStorage
 	LdbNotification *storage.NotificationStorage
 
+	// Contract Free Gas Storage
+	LdbContractFreeGas *storage.ContractFreeGasStorage
+
 	// Node BLS keys
 	NodeBlsPrivateKey common.PrivateKey
 	NodeBlsPublicKey  common.PublicKey
@@ -81,18 +84,28 @@ func New(cfg *config.Config, tcpCfg *tcp_config.ClientConfig) (*Context, error) 
 	}
 	ldbNotification := storage.NewNotificationStorage(db)
 
+	// 6. Initialize LevelDB for Contract Free Gas
+	ldbContractFreeGas, err := ldb_storage.NewLevelDBStorage(cfg.LdbContractFreeGasPath)
+	if err != nil {
+		pkStore.Close()
+		ldbBlsWallets.Close()
+		return nil, fmt.Errorf("failed to initialize Contract Free Gas LevelDB: %w", err)
+	}
+	contractFreeGasStorage := storage.NewContractFreeGasStorage(ldbContractFreeGas)
+	contractFreeGasStorage.AddContract(ethCommon.HexToAddress(cfg.ContractsInterceptor[0]))
 	subInterceptor := ws_interceptor.NewSubscriptionInterceptor(cfg)
 	ctx := &Context{
-		ClientRpc:         clientRpc,
-		PKS:               pkStore,
-		ClientTcp:         clientTcp,
-		Cfg:               cfg,
-		TcpCfg:            tcpCfg,
-		LdbBlsWallet:      ldbBlsWallets,
-		LdbNotification:   ldbNotification,
-		NodeBlsPrivateKey: keyPair.PrivateKey(),
-		NodeBlsPublicKey:  keyPair.PublicKey(),
-		SubInterceptor:    subInterceptor,
+		ClientRpc:          clientRpc,
+		PKS:                pkStore,
+		ClientTcp:          clientTcp,
+		Cfg:                cfg,
+		TcpCfg:             tcpCfg,
+		LdbBlsWallet:       ldbBlsWallets,
+		LdbNotification:    ldbNotification,
+		LdbContractFreeGas: contractFreeGasStorage,
+		NodeBlsPrivateKey:  keyPair.PrivateKey(),
+		NodeBlsPublicKey:   keyPair.PublicKey(),
+		SubInterceptor:     subInterceptor,
 	}
 	return ctx, nil
 }

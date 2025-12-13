@@ -84,6 +84,12 @@ func (h *AccountHandlerNoReceipt) HandleAccountTransaction(
 	case "transferFrom":
 		result, err = h.handleTransferFrom(tx, method, inputData[4:])
 		return true, result, err
+	case "addContractFreeGas":
+		result, err = h.handleAddContractFreeGas(tx, method, inputData[4:])
+		return true, result, err
+	case "removeContractFreeGas":
+		result, err = h.handleRemoveContractFreeGas(tx, method, inputData[4:])
+		return true, result, err
 	case "setAccountType":
 		return false, nil, nil
 	default:
@@ -105,6 +111,8 @@ func (h *AccountHandlerNoReceipt) HandleEthCall(ctx context.Context, data []byte
 		return h.handleGetAllAccount(method, data[4:])
 	case "getNotifications": // ✅ THÊM
 		return h.handleGetNotifications(method, data[4:])
+	case "getAllContractFreeGas":
+		return h.handleGetAllContractFreeGas(method, data[4:])
 
 	default:
 		return nil, fmt.Errorf("unsupported eth_call method: %s", method.Name)
@@ -190,39 +198,18 @@ func (h *AccountHandlerNoReceipt) handleConfirmAccount(
 	timestamp, _ := args[1].(*big.Int)
 	signatureBytes, _ := args[2].([]byte)
 
+	// Verify timestamp
+	if err := h.verifyTimestamp(timestamp); err != nil {
+		return "", err
+	}
+
+	// Build and verify signature
+	message := buildMessageWithTimestamp(accountAddress.Bytes(), timestamp)
+	if err := h.verifyOwnerSignature(message, signatureBytes); err != nil {
+		return "", err
+	}
+
 	currentTime := time.Now().Unix()
-	if utilsPkg.Abs(currentTime-timestamp.Int64()) > 300 {
-		return "", fmt.Errorf("timestamp expired (current: %d, provided: %d)", currentTime, timestamp.Int64())
-	}
-	message := make([]byte, 0, 52) // 20 bytes address + 32 bytes uint256
-	message = append(message, accountAddress.Bytes()...)
-	timestampBytes := make([]byte, 32)
-	timestamp.FillBytes(timestampBytes)
-	message = append(message, timestampBytes...)
-
-	prefixedMessage := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", len(message), message)
-	messageHash := crypto.Keccak256Hash([]byte(prefixedMessage))
-	if len(signatureBytes) < 65 {
-		return "", fmt.Errorf(
-			"invalid signature length: expected at least 65, got %d",
-			len(signatureBytes),
-		)
-	}
-	// Adjust V value (Ethereum uses 27/28, crypto.Ecrecover expects 0/1)
-	if signatureBytes[64] >= 27 {
-		signatureBytes[64] -= 27
-	}
-	// Recover public key
-	pubKey, err := crypto.SigToPub(messageHash.Bytes(), signatureBytes)
-	if err != nil {
-		return "", fmt.Errorf("failed to recover public key: %w", err)
-	}
-
-	// Get signer address
-	signerAddress := crypto.PubkeyToAddress(*pubKey)
-	if signerAddress != ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress) {
-		return "", fmt.Errorf("invalid signature: signer %s is not authorized", signerAddress.Hex())
-	}
 
 	pendingTx, err := h.storage.GetPendingTransaction(accountAddress)
 	if err != nil {
@@ -269,14 +256,14 @@ func (h *AccountHandlerNoReceipt) handleConfirmAccount(
 	if err != nil {
 		return "", fmt.Errorf("error checking private key store: %w", err)
 	}
-	logger.Info("Rebuilding transaction for account %s, exists in PKS: %v", fromAddress.Hex(), exists)
 	if !exists {
-		bTx, mtTx, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTx(ethTx)
+		bTx, mtTx, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTx(ethTx, h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas)
 	} else {
 		senderPkString, _ := h.appCtx.PKS.GetPrivateKey(fromAddress)
 		keyPair := bls.NewKeyPair(ethCommon.FromHex(senderPkString))
 		bTx, mtTx, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(
 			ethTx,
+			h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas,
 			keyPair.PrivateKey(),
 		)
 	}
@@ -301,7 +288,7 @@ func (h *AccountHandlerNoReceipt) handleConfirmAccount(
 		nil,
 		nil,
 	)
-	if rs.Error != nil {
+	if rst.Error != nil {
 		return "", fmt.Errorf("failed to send transaction: %v", rst.Error)
 	}
 	// Cập nhật trạng thái confirmed
@@ -351,46 +338,34 @@ func (h *AccountHandlerNoReceipt) handleTransferFrom(
 	fromAddress := tx.FromAddress()
 	currentTime := time.Now().Unix()
 
-	// Verify timestamp (within 5 minutes)
-	if utilsPkg.Abs(currentTime-timestamp.Int64()) > 300 {
-		return "", fmt.Errorf("timestamp expired (current: %d, provided: %d)", currentTime, timestamp.Int64())
+	// Verify timestamp
+	if err := h.verifyTimestamp(timestamp); err != nil {
+		return "", err
 	}
+
 	// Verify that amount is positive
 	if transferAmount.Cmp(big.NewInt(0)) <= 0 {
 		return "", fmt.Errorf("transfer amount must be greater than 0")
 	}
-	// Verify signature
-	// Message structure: [toAddress (20 bytes)] + [amount (32 bytes)] + [timestamp (32 bytes)]
-	message := make([]byte, 0, 84)
-	message = append(message, toAddress.Bytes()...)
 
+	// Build message: [toAddress (20 bytes)] + [amount (32 bytes)] + [timestamp (32 bytes)]
 	amountBytes := make([]byte, 32)
 	transferAmount.FillBytes(amountBytes)
-	message = append(message, amountBytes...)
 
 	timestampBytes := make([]byte, 32)
 	timestamp.FillBytes(timestampBytes)
+
+	message := make([]byte, 0, 84)
+	message = append(message, toAddress.Bytes()...)
+	message = append(message, amountBytes...)
 	message = append(message, timestampBytes...)
 
-	prefixedMessage := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", len(message), message)
-	messageHash := crypto.Keccak256Hash([]byte(prefixedMessage))
-
-	if len(signatureBytes) < 65 {
-		return "", fmt.Errorf("invalid signature length: expected at least 65, got %d", len(signatureBytes))
-	}
-
-	// Adjust V value
-	if signatureBytes[64] >= 27 {
-		signatureBytes[64] -= 27
-	}
-
-	// Recover public key
-	pubKey, err := crypto.SigToPub(messageHash.Bytes(), signatureBytes)
+	// Verify signature is from fromAddress (not owner)
+	signerAddress, err := h.recoverSignerAddress(message, signatureBytes)
 	if err != nil {
-		return "", fmt.Errorf("failed to recover public key: %w", err)
+		return "", err
 	}
-	// Verify signer is the fromAddress
-	signerAddress := crypto.PubkeyToAddress(*pubKey)
+
 	if signerAddress != fromAddress {
 		return "", fmt.Errorf("invalid signature: signer %s does not match sender %s", signerAddress.Hex(), fromAddress.Hex())
 	}
@@ -631,56 +606,259 @@ func (h *AccountHandlerNoReceipt) handleGetNotifications(
 	}
 	return result, nil
 }
+
+// ========== SIGNATURE VERIFICATION HELPERS ==========
+
+// verifyTimestamp kiểm tra timestamp có hợp lệ không (trong vòng 5 phút)
+func (h *AccountHandlerNoReceipt) verifyTimestamp(timestamp *big.Int) error {
+	currentTime := time.Now().Unix()
+	if utilsPkg.Abs(currentTime-timestamp.Int64()) > 300 {
+		return fmt.Errorf("timestamp expired (current: %d, provided: %d)", currentTime, timestamp.Int64())
+	}
+	return nil
+}
+
+// recoverSignerAddress phục hồi địa chỉ người ký từ message và signature
+func (h *AccountHandlerNoReceipt) recoverSignerAddress(message []byte, signatureBytes []byte) (ethCommon.Address, error) {
+	if len(signatureBytes) < 65 {
+		return ethCommon.Address{}, fmt.Errorf("invalid signature length: expected at least 65, got %d", len(signatureBytes))
+	}
+
+	// Create Ethereum signed message
+	prefixedMessage := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", len(message), message)
+	messageHash := crypto.Keccak256Hash([]byte(prefixedMessage))
+
+	// Adjust V value (Ethereum uses 27/28, crypto.Ecrecover expects 0/1)
+	signature := make([]byte, 65)
+	copy(signature, signatureBytes)
+	if signature[64] >= 27 {
+		signature[64] -= 27
+	}
+
+	// Recover public key
+	pubKey, err := crypto.SigToPub(messageHash.Bytes(), signature)
+	if err != nil {
+		return ethCommon.Address{}, fmt.Errorf("failed to recover public key: %w", err)
+	}
+
+	return crypto.PubkeyToAddress(*pubKey), nil
+}
+
+// verifyOwnerSignature kiểm tra chữ ký có phải của owner không
+func (h *AccountHandlerNoReceipt) verifyOwnerSignature(message []byte, signatureBytes []byte) error {
+	signerAddress, err := h.recoverSignerAddress(message, signatureBytes)
+	if err != nil {
+		return err
+	}
+
+	ownerAddress := ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress)
+	if signerAddress != ownerAddress {
+		return fmt.Errorf("invalid signature: signer %s is not owner %s", signerAddress.Hex(), ownerAddress.Hex())
+	}
+
+	return nil
+}
+
+// buildMessageWithTimestamp tạo message từ data và timestamp
+func buildMessageWithTimestamp(data []byte, timestamp *big.Int) []byte {
+	timestampBytes := make([]byte, 32)
+	timestamp.FillBytes(timestampBytes)
+
+	message := make([]byte, 0, len(data)+32)
+	message = append(message, data...)
+	message = append(message, timestampBytes...)
+
+	return message
+}
+
+// verifySignature - hàm cũ giữ lại để tương thích với getAllAccount
 func (h *AccountHandlerNoReceipt) verifySignature(
 	signBytes []byte,
 	blsPublicKeyBytes []byte,
 	timestamp *big.Int,
 ) (bool, error) {
-	// ✅ 1. Verify timestamp (trong vòng 5 phút)
-	currentTime := time.Now().Unix()
-	if utilsPkg.Abs(currentTime-timestamp.Int64()) > 300 {
-		return false, fmt.Errorf(
-			"timestamp expired (current: %d, provided: %d)",
-			currentTime,
-			timestamp.Int64(),
-		)
+	// Verify timestamp
+	if err := h.verifyTimestamp(timestamp); err != nil {
+		return false, err
 	}
-	// ✅ 2. Check signature length
-	if len(signBytes) < 65 {
-		return false, fmt.Errorf(
-			"invalid signature length: expected at least 65, got %d",
-			len(signBytes),
-		)
+
+	// Build message
+	message := buildMessageWithTimestamp(blsPublicKeyBytes, timestamp)
+
+	// Verify signature
+	if err := h.verifyOwnerSignature(message, signBytes); err != nil {
+		return false, err
 	}
-	// Message structure: [blsPublicKey (48 bytes)] + [timestamp (32 bytes)]
-	message := make([]byte, 0, len(blsPublicKeyBytes)+32)
-	message = append(message, blsPublicKeyBytes...)
+
+	return true, nil
+}
+
+// ========== CONTRACT FREE GAS HANDLERS ==========
+
+func (h *AccountHandlerNoReceipt) handleAddContractFreeGas(
+	tx mt_types.Transaction,
+	method *abi.Method,
+	inputData []byte,
+) (string, error) {
+	logger.Info("Handling addContractFreeGas for tx %s", tx.Hash().Hex())
+
+	// Unpack input data
+	args, err := method.Inputs.Unpack(inputData)
+	if err != nil {
+		return "", fmt.Errorf("failed to unpack input: %w", err)
+	}
+
+	contractAddress, _ := args[0].(ethCommon.Address)
+	timestamp, _ := args[1].(*big.Int)
+	signatureBytes, _ := args[2].([]byte)
+
+	// Verify sender is owner
+	fromAddress := tx.FromAddress()
+	ownerAddress := ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress)
+	if fromAddress != ownerAddress {
+		return "", fmt.Errorf("only owner can add contract free gas, sender: %s, owner: %s", fromAddress.Hex(), ownerAddress.Hex())
+	}
+
+	// Verify timestamp
+	if err := h.verifyTimestamp(timestamp); err != nil {
+		return "", err
+	}
+	// Build and verify signature
+	message := buildMessageWithTimestamp(contractAddress.Bytes(), timestamp)
+	if err := h.verifyOwnerSignature(message, signatureBytes); err != nil {
+		return "", err
+	}
+	// Add contract to storage
+	if err := h.appCtx.LdbContractFreeGas.AddContract(contractAddress); err != nil {
+		return "", fmt.Errorf("failed to add contract: %w", err)
+	}
+
+	logger.Info("✅ Added contract %s to free gas list", contractAddress.Hex())
+	return tx.Hash().Hex(), nil
+}
+
+func (h *AccountHandlerNoReceipt) handleRemoveContractFreeGas(
+	tx mt_types.Transaction,
+	method *abi.Method,
+	inputData []byte,
+) (string, error) {
+	logger.Info("Handling removeContractFreeGas for tx %s", tx.Hash().Hex())
+
+	// Unpack input data
+	args, err := method.Inputs.Unpack(inputData)
+	if err != nil {
+		return "", fmt.Errorf("failed to unpack input: %w", err)
+	}
+
+	contractAddress, _ := args[0].(ethCommon.Address)
+	timestamp, _ := args[1].(*big.Int)
+	signatureBytes, _ := args[2].([]byte)
+
+	// Verify sender is owner
+	fromAddress := tx.FromAddress()
+	ownerAddress := ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress)
+	if fromAddress != ownerAddress {
+		return "", fmt.Errorf("only owner can remove contract free gas")
+	}
+
+	// Verify timestamp
+	if err := h.verifyTimestamp(timestamp); err != nil {
+		return "", err
+	}
+
+	// Build and verify signature
+	message := buildMessageWithTimestamp(contractAddress.Bytes(), timestamp)
+	if err := h.verifyOwnerSignature(message, signatureBytes); err != nil {
+		return "", err
+	}
+
+	// Remove contract from storage
+	if err := h.appCtx.LdbContractFreeGas.RemoveContract(contractAddress); err != nil {
+		return "", fmt.Errorf("failed to remove contract: %w", err)
+	}
+
+	logger.Info("✅ Removed contract %s from free gas list", contractAddress.Hex())
+	return tx.Hash().Hex(), nil
+}
+
+func (h *AccountHandlerNoReceipt) handleGetAllContractFreeGas(
+	method *abi.Method,
+	inputData []byte,
+) (interface{}, error) {
+	logger.Info("Handling getAllContractFreeGas")
+
+	// Unpack input data
+	args, err := method.Inputs.Unpack(inputData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unpack input: %w", err)
+	}
+
+	page, _ := args[0].(*big.Int)
+	pageSize, _ := args[1].(*big.Int)
+	timestamp, _ := args[2].(*big.Int)
+	signatureBytes, _ := args[3].([]byte)
+
+	// Verify timestamp
+	if err := h.verifyTimestamp(timestamp); err != nil {
+		return nil, err
+	}
+
+	// Build message: page (32 bytes) + pageSize (32 bytes) + timestamp (32 bytes)
+	pageBytes := make([]byte, 32)
+	page.FillBytes(pageBytes)
+
+	pageSizeBytes := make([]byte, 32)
+	pageSize.FillBytes(pageSizeBytes)
 
 	timestampBytes := make([]byte, 32)
 	timestamp.FillBytes(timestampBytes)
+
+	message := make([]byte, 0, 96)
+	message = append(message, pageBytes...)
+	message = append(message, pageSizeBytes...)
 	message = append(message, timestampBytes...)
 
-	prefixedMessage := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", len(message), message)
-	messageHash := crypto.Keccak256Hash([]byte(prefixedMessage))
-	// ✅ 5. Adjust V value (Ethereum uses 27/28, crypto.Ecrecover expects 0/1)
-	signature := make([]byte, 65)
-	copy(signature, signBytes)
-	if signature[64] >= 27 {
-		signature[64] -= 27
+	// Verify signature
+	if err := h.verifyOwnerSignature(message, signatureBytes); err != nil {
+		return nil, err
 	}
-	pubKey, err := crypto.SigToPub(messageHash.Bytes(), signature)
+
+	// Parse page và pageSize từ big.Int
+	pageInt := int(page.Int64())
+	pageSizeInt := int(pageSize.Int64())
+
+	// Validate pagination parameters
+	if pageInt < 0 {
+		return nil, fmt.Errorf("page must be >= 0")
+	}
+	if pageSizeInt <= 0 || pageSizeInt > 100 {
+		return nil, fmt.Errorf("pageSize must be between 1 and 100")
+	}
+
+	// Lấy contracts từ LevelDB
+	contracts, total, err := h.appCtx.LdbContractFreeGas.GetContracts(pageInt, pageSizeInt)
 	if err != nil {
-		return false, fmt.Errorf("failed to recover public key: %w", err)
+		return nil, fmt.Errorf("failed to get contracts: %w", err)
 	}
 
-	// ✅ 7. Get signer address
-	signerAddress := crypto.PubkeyToAddress(*pubKey)
+	// Calculate total pages
+	totalPages := (total + pageSizeInt - 1) / pageSizeInt
 
-	if signerAddress != ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress) {
-		return false, fmt.Errorf(
-			"invalid signature: signer %s is not authorized",
-			signerAddress.Hex(),
-		)
+	// Convert contracts to JSON-serializable format
+	contractList := make([]map[string]interface{}, 0, len(contracts))
+	for _, contract := range contracts {
+		contractList = append(contractList, map[string]interface{}{
+			"contract_address": contract.ContractAddress,
+			"added_at":         contract.AddedAt,
+		})
 	}
-	return true, nil
+
+	// Trả về kết quả
+	return map[string]interface{}{
+		"contracts":   contractList,
+		"total":       total,
+		"page":        pageInt,
+		"page_size":   pageSizeInt,
+		"total_pages": totalPages,
+	}, nil
 }

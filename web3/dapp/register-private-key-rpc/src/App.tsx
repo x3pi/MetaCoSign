@@ -8,6 +8,7 @@ import MetaMaskSigner from "./pages/MetaMaskSigner/MetaMaskSigner";
 import HomePage from "./pages/Home/HomePage";
 import AccountTypeManagerPage from "./pages/SetAccountType/AccountTypeManagerPage";
 import BlsAccountListPage from "./pages/BlsAccountList/BlsAccountListPage";
+import ContractFreeGasPage from "./pages/ContractFreeGas/ContractFreeGasPage";
 import { MobileMenuProvider } from "./contexts/MobileMenuContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { NotificationProvider } from "./contexts/NotificationContext";
@@ -24,6 +25,7 @@ function App() {
     { path: "/account-type", label: "AccountType" },
     { path: "/register-rpc", label: "Register BLS Rpc" },
     { path: "/accounts", label: "Account List" },
+    { path: "/contract-free-gas", label: "Contract Free Gas" },
   ];
 
   return (
@@ -47,6 +49,7 @@ function App() {
                   <Route path="account-type" element={<AccountTypeManagerPage />} />
                   <Route path="register-rpc" element={<MetaMaskSigner />} />
                   <Route path="accounts" element={<BlsAccountListPage />} />
+                  <Route path="contract-free-gas" element={<ContractFreeGasPage />} />
                   <Route path="*" element={<h1>Not found</h1>} />
                 </Routes>
               </main>

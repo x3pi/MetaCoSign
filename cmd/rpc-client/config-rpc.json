@@ -11,6 +11,7 @@
   "app_pepper": "your_unique_secret_pepper_here",
   "ldb_bls_wallet_path": "./db/bls_wallets",
   "ldb_bls_account_noti": "./db/bls_account_noti",
+  "ldb_contract_free_gas": "./db/ldb_contract_free_gas",
   "owner_rpc_address":"0x0b143e894a600114c4a3729874214e5fc5ea9cbc",
   "contracts_interceptor": ["0x00000000000000000000000000000000D844bb55"],
   "reward_amount": 1000000000000000000

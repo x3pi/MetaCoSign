@@ -98,6 +98,29 @@ const AccountABI = `[
 		"inputs": [
 			{
 				"internalType": "address",
+				"name": "contractAddress",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "time",
+				"type": "uint256"
+			},
+			{
+				"internalType": "bytes",
+				"name": "_sign",
+				"type": "bytes"
+			}
+		],
+		"name": "addContractFreeGas",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
 				"name": "_account",
 				"type": "address"
 			},
@@ -158,6 +181,34 @@ const AccountABI = `[
 	{
 		"inputs": [
 			{
+				"internalType": "uint256",
+				"name": "page",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "pageSize",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "time",
+				"type": "uint256"
+			},
+			{
+				"internalType": "bytes",
+				"name": "_sign",
+				"type": "bytes"
+			}
+		],
+		"name": "getAllContractFreeGas",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
 				"internalType": "address",
 				"name": "_account",
 				"type": "address"
@@ -174,6 +225,29 @@ const AccountABI = `[
 			}
 		],
 		"name": "getNotifications",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "contractAddress",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "time",
+				"type": "uint256"
+			},
+			{
+				"internalType": "bytes",
+				"name": "_sign",
+				"type": "bytes"
+			}
+		],
+		"name": "removeContractFreeGas",
 		"outputs": [],
 		"stateMutability": "nonpayable",
 		"type": "function"

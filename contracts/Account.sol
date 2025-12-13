@@ -27,4 +27,8 @@ contract AccountManager {
         address  from;
         emit TransferFrom(from,to, amount, time, message );
     }
+    function addContractFreeGas(address contractAddress ,bytes memory _sign) external {
+    }
+    function removeContractFreeGas(address contractAddress ,bytes memory _sign) external {
+    }
 }

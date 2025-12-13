@@ -335,3 +335,13 @@ You received 100 from 0xAAA...
 2. Xem danh sách thông báo
 3. Click vào thông báo để xem chi tiết
 4. Các thông báo được lưu vào database
+
+
+## Xem danh sách 
+
+![View Transaction](./images/contractFree.png)
+### Mục đích:
+Xem và quản lý của các hợp đồng đã đăng ký được nạp tiền khi đủ tiền giao dịch ở hợp đồng.
+
+### Lưu ý:
+- Khi số tiền của user đạt tới 1 ngưỡng ví dụ 0.001 thì sẻ tự động chuyển chuyển một lượng tiền ```extra_account ``` (được cấu hình ở rpc)cho cho user 

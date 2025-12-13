@@ -22,8 +22,12 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/gorilla/websocket"
+	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/client-tcp/config"
+	cfgCom "github.com/meta-node-blockchain/meta-node/cmd/rpc-client/config"
+
 	"github.com/meta-node-blockchain/meta-node/pkg/bls"
 	"github.com/meta-node-blockchain/meta-node/pkg/state"
+	"github.com/meta-node-blockchain/meta-node/pkg/storage"
 	"github.com/meta-node-blockchain/meta-node/pkg/utils"
 	"google.golang.org/protobuf/proto"
 
@@ -728,8 +732,10 @@ func (c *ClientRPC) BuildTransactionWithDeviceKey(
 
 func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTx(
 	ethTx *types.Transaction,
+	cfg *config.ClientConfig,
+	cfgCom *cfgCom.Config,
+	ldbContractFree *storage.ContractFreeGasStorage,
 ) ([]byte, mt_types.Transaction, func(), error) {
-
 	sg := types.NewCancunSigner(ethTx.ChainId())
 	fromAddress, err := sg.Sender(ethTx)
 	if err != nil {
@@ -745,6 +751,29 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTx(
 		}
 		if !bytes.Equal(as.PublicKeyBls(), c.KeyPair.BytesPublicKey()) {
 			return nil, nil, nil, fmt.Errorf("lỗi tài khoản chưa đăng ký private key bls với rpc")
+		}
+	}
+	if !cfg.DisableFreeGas {
+		exist, err := ldbContractFree.HasContract(*ethTx.To())
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("lỗi khi kiểm tra contract free gas: %v", err)
+		}
+		if exist {
+			if as.Balance().Cmp(big.NewInt(10000000000000000)) < 0 && as.Nonce() != 0 {
+				metaTxData, _, releaseFunc, err := c.BuildTransferTransaction(common.HexToAddress(cfgCom.OwnerRpcAddress), fromAddress, cfg.ExtraAmount)
+				rst := c.SendRawTransactionBinary(
+					metaTxData,
+					releaseFunc,
+					nil,
+					nil,
+					nil,
+				)
+				if rst.Error != nil {
+					return nil, nil, nil, fmt.Errorf("failed to send native coin: %v", err)
+				}
+			}
+		} else {
+			return nil, nil, nil, fmt.Errorf("Contract is not allowed: %v", err)
 		}
 	}
 
@@ -783,6 +812,9 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTx(
 
 func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(
 	ethTx *types.Transaction,
+	cfg *config.ClientConfig,
+	cfgCom *cfgCom.Config,
+	ldbContractFree *storage.ContractFreeGasStorage,
 	private mt_common.PrivateKey,
 ) ([]byte, mt_types.Transaction, func(), error) {
 
@@ -796,7 +828,29 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey lỗi khi get acccount state: %v", err) // Cập nhật thông báo lỗi
 	}
-
+	if !cfg.DisableFreeGas {
+		exist, err := ldbContractFree.HasContract(*ethTx.To())
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("lỗi khi kiểm tra contract free gas: %v", err)
+		}
+		if exist {
+			if as.Balance().Cmp(big.NewInt(10000000000000000)) < 0 && as.Nonce() != 0 {
+				metaTxData, _, releaseFunc, err := c.BuildTransferTransaction(common.HexToAddress(cfgCom.OwnerRpcAddress), fromAddress, cfg.ExtraAmount)
+				rst := c.SendRawTransactionBinary(
+					metaTxData,
+					releaseFunc,
+					nil,
+					nil,
+					nil,
+				)
+				if rst.Error != nil {
+					return nil, nil, nil, fmt.Errorf("failed to send native coin: %v", err)
+				}
+			}
+		} else {
+			return nil, nil, nil, fmt.Errorf("Contract is not allowed: %v", err)
+		}
+	}
 	deviceKey, err := c.GetDeviceKey(as.LastHash())
 	if err != nil {
 		logger.Info("lỗi khi get deviceKey", err)

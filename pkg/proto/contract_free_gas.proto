@@ -1,0 +1,19 @@
+syntax = "proto3";
+package proto;
+
+option go_package = "github.com/meta-node-blockchain/meta-node/pkg/proto";
+
+// ContractFreeGasData lưu thông tin contract được miễn phí gas (chỉ lưu address)
+message ContractFreeGasData {
+    bytes contract_address = 1;  // 20 bytes (Ethereum address)
+    int64 added_at = 2;          // Unix timestamp khi thêm vào
+}
+
+// ContractFreeGasList dùng cho pagination response
+message ContractFreeGasList {
+    repeated ContractFreeGasData contracts = 1;
+    int32 total = 2;
+    int32 page = 3;
+    int32 page_size = 4;
+    int32 total_pages = 5;
+}

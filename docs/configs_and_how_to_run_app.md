@@ -13,11 +13,15 @@ file `config-client-tcp.json`
   "parent_connection_type:": "client",
   "owner_file_storage_address":"0x7d03201fee4675987894617138e5ee7e038a6b39",
   "pk_admin_file_storage":"87d931eaa2f76709f2615586e0d560ca9b80f247c9cc431e197ba3e7167db623",
-  "bls_admin_storage":"2b3aa0f620d2d73c046cd93eb64f2eb687a95b22e278500aa251c8c9dda1203b"
+  "bls_admin_storage":"2b3aa0f620d2d73c046cd93eb64f2eb687a95b22e278500aa251c8c9dda1203b",
+  "extra_account": 1000000000000000000,
+  "disable_free_gas": true
 }
 ```
 ### Giải thích các trường quan trọng:
 - **`parent_connection_address`**: Ip đến chain .
+- **`extra_account`**: Số tiền gửi thêm khi user k đủ tiền giao dịch trên chain .
+- **`disable_free_gas`**: user tự trả phí nếu k đủ gas.
 
 file `config-rpc.json` tại `cmd/rpc-client` (hoặc cập nhật cấu hình tương ứng) với nội dung sau:
 
@@ -39,7 +43,7 @@ file `config-rpc.json` tại `cmd/rpc-client` (hoặc cập nhật cấu hình t
   "contracts_interceptor": [
     "0x00000000000000000000000000000000D844bb55"
   ],
-  "reward_amount": 1000000000000000000
+  "reward_amount": 1000000000000000000,
 }
 ```
 ### Giải thích các trường quan trọng:
