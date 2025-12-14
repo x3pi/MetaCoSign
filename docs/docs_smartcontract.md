@@ -172,3 +172,43 @@ function getNotifications(address _account, uint page, uint pageSize) external
 - `_account` (`address`): Địa chỉ ví người dùng muốn xem thông báo.
 - `page` (`uint`): Số thứ tự trang cần xem.
 - `pageSize` (`uint`): Số lượng thông báo trên mỗi trang.
+
+
+
+```solidity
+function addContractFreeGas(address contractAddress, uint time, bytes memory _sign) external
+```
+
+**Parameters:**
+- `contractAddress` (address): Địa chỉ của contract cần thêm vào danh sách Free Gas.
+- `time` (uint): Mốc thời gian (timestamp) dùng để xác thực chữ ký.
+- `_sign` (bytes): Chữ ký xác thực quyền thực hiện thao tác này.
+
+---
+
+### removeContractFreeGas
+Loại bỏ một smart contract khỏi danh sách được hỗ trợ miễn phí gas.
+
+```solidity
+function removeContractFreeGas(address contractAddress, uint time, bytes memory _sign) external
+```
+
+**Parameters:**
+- `contractAddress` (address): Địa chỉ của contract cần xóa khỏi danh sách Free Gas.
+- `time` (uint): Mốc thời gian (timestamp) dùng để xác thực chữ ký.
+- `_sign` (bytes): Chữ ký xác thực quyền thực hiện thao tác này.
+
+---
+
+### getAllContractFreeGas
+Lấy danh sách các smart contract đang được hỗ trợ miễn phí gas (có phân trang).
+
+```solidity
+function getAllContractFreeGas(uint256 page, uint256 pageSize, uint256 time, bytes memory _sign) external
+```
+
+**Parameters:**
+- `page` (uint256): Số thứ tự trang cần xem.
+- `pageSize` (uint256): Số lượng contract hiển thị trên mỗi trang.
+- `time` (uint256): Mốc thời gian (timestamp) dùng để xác thực chữ ký.
+- `_sign` (bytes): Chữ ký xác thực quyền thực hiện thao tác này.
