@@ -2,6 +2,7 @@ package rpc_client
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -157,6 +158,7 @@ func NewClientRPC(urlHTTP, urlWS, privateKey string, chainId *big.Int) (*ClientR
 		TLSHandshakeTimeout:   60 * time.Second,  // Tăng thời gian handshake TLS
 		ExpectContinueTimeout: 10 * time.Second,
 		ResponseHeaderTimeout: 240 * time.Second, // Thêm timeout cho header
+		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
 		DialContext: (&net.Dialer{
 			Timeout:   240 * time.Second,
 			KeepAlive: 240 * time.Second,

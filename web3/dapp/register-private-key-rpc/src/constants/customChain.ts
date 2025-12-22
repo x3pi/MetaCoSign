@@ -1,9 +1,9 @@
 // src/customChain.ts
 import { type Chain } from "viem";
-// export const GO_BACKEND_RPC_URL = window.location.origin;
-// export const WSS_RPC = window.location.origin.replace(/^http/, "ws");
-export const WSS_RPC = "ws://192.168.1.234:8545";
-export const GO_BACKEND_RPC_URL = "http://192.168.1.234:8545";
+export const GO_BACKEND_RPC_URL = window.location.origin;
+export const WSS_RPC = window.location.origin.replace(/^http/, "ws");
+// export const WSS_RPC = "ws://192.168.1.234:8545";
+// export const GO_BACKEND_RPC_URL = "http://192.168.1.234:8545";
 // const GO_BACKEND_RPC_URL = "https://rpc-proxy-sequoia.iqnb.com:8446";
 // export const WSS_RPC = "wss://rpc-proxy-sequoia.iqnb.com:8446";
 

@@ -144,6 +144,7 @@ const ContractFreeGasPage = () => {
         functionName: "addContractFreeGas",
         args: [newContractAddress as Hex, timestamp, signature],
         chain: walletClient.chain,
+        gas: 500000n,
       });
 
       // Wait for transaction
@@ -198,17 +199,18 @@ const ContractFreeGasPage = () => {
       });
 
       // Call removeContractFreeGas
-      const hash = await walletClient.writeContract({
+      await walletClient.writeContract({
         account,
         address: CONTRACT_ADDRESS,
- abi: contracts.AccountManager.abi,
+        abi: contracts.AccountManager.abi,
         functionName: "removeContractFreeGas",
         args: [contractAddress as Hex, timestamp, signature],
         chain: walletClient.chain,
+        gas: 500000n,
       });
 
       // Wait for transaction
-      await publicClient.waitForTransactionReceipt({ hash });
+      // await publicClient.waitForTransactionReceipt({ hash });
 
       setSuccess(`Contract ${contractAddress} removed successfully!`);
 
