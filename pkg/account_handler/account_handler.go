@@ -115,7 +115,7 @@ func (h *AccountHandlerNoReceipt) HandleEthCall(ctx context.Context, data []byte
 		return h.handleGetAllContractFreeGas(method, data[4:])
 
 	default:
-		return nil, fmt.Errorf("unsupported eth_call method: %s", method.Name)
+		return nil, nil
 	}
 }
 

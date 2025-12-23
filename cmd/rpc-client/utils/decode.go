@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	ethCommon "github.com/ethereum/go-ethereum/common"
+	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	"github.com/meta-node-blockchain/meta-node/pkg/rpc_client"
 )
 
@@ -96,6 +97,7 @@ func DecodeHexPooled(hexStr string) ([]byte, func(), error) {
 func DecodeCallObject(raw json.RawMessage) (rpc_client.DecodedCallObject, error) {
 	var schema rpc_client.CallObjectSchema
 	if err := json.Unmarshal(raw, &schema); err != nil {
+		logger.Error("Failed to unmarshal call object JSON: %v, raw: %s", err, string(raw))
 		return rpc_client.DecodedCallObject{}, err
 	}
 
@@ -116,6 +118,7 @@ func DecodeCallObject(raw json.RawMessage) (rpc_client.DecodedCallObject, error)
 		}
 		data, err := DecodeHexString(payloadHex)
 		if err != nil {
+			logger.Error("Failed to decode hex string for call object: %v, hex: %s", err, payloadHex)
 			return rpc_client.DecodedCallObject{}, err
 		}
 		payload = data

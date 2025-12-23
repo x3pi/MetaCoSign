@@ -65,8 +65,10 @@ func (p *RpcReverseProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 
 	case "eth_estimateGas":
+		logger.Info("eth_estimateGas body: %v", string(body))
 		callParam := gjson.GetBytes(body, "params.0")
 		if !callParam.Exists() {
+			logger.Info("Cannot unmarshal params for eth_estimateGas")
 			resp := utils.MakeInvalidParamError(id, "Cannot unmarshal params for eth_estimateGas")
 			utils.WriteJSON(w, resp)
 			return

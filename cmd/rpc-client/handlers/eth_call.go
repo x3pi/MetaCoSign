@@ -26,7 +26,6 @@ func HandleEthCallRaw(appCtx *app.Context, callParam json.RawMessage, id interfa
 }
 
 func processEthCallParams(appCtx *app.Context, id interface{}, callObjectRaw json.RawMessage) rpc_client.JSONRPCResponse {
-	logger.Info("Processing eth_call with params: %s", string(callObjectRaw))
 	decoded, err := utils.DecodeCallObject(callObjectRaw)
 	if err != nil {
 		return utils.MakeInvalidParamError(id, "Invalid eth_call parameter")
@@ -43,21 +42,23 @@ func processEthCallParams(appCtx *app.Context, id interface{}, callObjectRaw jso
 			// logger.Error("Account handler eth_call error: %v", err)
 			return utils.MakeInternalError(id, "Account handler error: "+err.Error())
 		}
+		if result != nil && err == nil {
+			// Encode result thành JSON hex string
+			jsonBytes, err := json.Marshal(result)
+			if err != nil {
+				return utils.MakeInternalError(id, "Failed to encode result: "+err.Error())
+			}
 
-		// Encode result thành JSON hex string
-		jsonBytes, err := json.Marshal(result)
-		if err != nil {
-			return utils.MakeInternalError(id, "Failed to encode result: "+err.Error())
-		}
-
-		// Convert JSON to hex string (0x...)
-		hexResult := "0x" + ethCommon.Bytes2Hex(jsonBytes)
-		return rpc_client.JSONRPCResponse{
-			Jsonrpc: "2.0",
-			Result:  hexResult,
-			Id:      id,
+			// Convert JSON to hex string (0x...)
+			hexResult := "0x" + ethCommon.Bytes2Hex(jsonBytes)
+			return rpc_client.JSONRPCResponse{
+				Jsonrpc: "2.0",
+				Result:  hexResult,
+				Id:      id,
+			}
 		}
 	}
+
 	var bTx []byte
 	var buildErr error
 

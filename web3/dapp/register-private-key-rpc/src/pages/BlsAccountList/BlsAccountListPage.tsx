@@ -326,7 +326,7 @@ function BlsAccountListPage() {
         address: account.address,
         blockTag: "pending",
       });
-
+      
       // Estimate gas
       const gasLimit = await publicClient.estimateGas({
         account: account.address,

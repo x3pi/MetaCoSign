@@ -86,7 +86,6 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 
 	if tx != nil {
 		if tx.ToAddress() == ethCommon.HexToAddress(appCtx.Cfg.ContractsInterceptor[0]) {
-			logger.Info("1. ___Intercepted transaction to account contract: %s", tx.ToAddress().Hex())
 			accountHandler, err := account_handler.GetAccountHandler(appCtx)
 			if err != nil {
 				return utils.MakeInternalError(id, "Failed to get account: "+err.Error())

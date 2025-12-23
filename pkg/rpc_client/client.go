@@ -515,11 +515,10 @@ func (c *ClientRPC) SendEstimateGas(input hexutil.Bytes) JSONRPCResponse {
 		Method:  "eth_estimateGas",
 		Params:  []interface{}{input.String()},
 	}
-
 	response := c.SendHTTPRequest(request)
 	return *response
-}
 
+}
 func resolveUint64Param(value string, defaultVal uint64, field string) (uint64, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -755,7 +754,20 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTx(
 			return nil, nil, nil, fmt.Errorf("lỗi tài khoản chưa đăng ký private key bls với rpc")
 		}
 	}
-	if !cfg.DisableFreeGas {
+	logger.Info("BuildTransactionWithDeviceKeyFromEthTx ethTx: %v", ethTx)
+	logger.Info("BuildTransactionWithDeviceKeyFromEthTx cfg: %v", cfg)
+	logger.Info("BuildTransactionWithDeviceKeyFromEthTx cfgCom: %v", cfgCom)
+	logger.Info("BuildTransactionWithDeviceKeyFromEthTx ldbContractFree: %v", ldbContractFree)
+	logger.Info("BuildTransactionWithDeviceKeyFromEthTx as: %v", as)
+	logger.Info("BuildTransactionWithDeviceKeyFromEthTx fromAddress: %v", fromAddress)
+	logger.Info("BuildTransactionWithDeviceKeyFromEthTx c.KeyPair: %v", c.KeyPair)
+	logger.Info("BuildTransactionWithDeviceKeyFromEthTx c.KeyPair.BytesPublicKey(): %v", c.KeyPair.BytesPublicKey())
+	if cfg == nil {
+		return nil, nil, nil, fmt.Errorf("cfg is nil")
+	}
+	logger.Info("BuildTransactionWithDeviceKeyFromEthTx DisableFreeGas: %v, ethx ", cfg.DisableFreeGas, *ethTx)
+	if !cfg.DisableFreeGas && ethTx.To() != nil {
+		logger.Info("BuildTransactionWithDeviceKeyFromEthTx HasContract: %v , ldb %v", *ethTx.To(), ldbContractFree)
 		exist, err := ldbContractFree.HasContract(*ethTx.To())
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("lỗi khi kiểm tra contract free gas: %v", err)
@@ -830,7 +842,7 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey lỗi khi get acccount state: %v", err) // Cập nhật thông báo lỗi
 	}
-	if !cfg.DisableFreeGas {
+	if !cfg.DisableFreeGas && ethTx.To() != nil {
 		exist, err := ldbContractFree.HasContract(*ethTx.To())
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("lỗi khi kiểm tra contract free gas: %v", err)

@@ -6,6 +6,7 @@ import (
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/app"
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/models"
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/utils"
+	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	"github.com/meta-node-blockchain/meta-node/pkg/rpc_client"
 )
 
@@ -18,9 +19,12 @@ func HandleEstimateGas(appCtx *app.Context, req models.JSONRPCRequestRaw) rpc_cl
 }
 
 func HandleEstimateGasRaw(appCtx *app.Context, callParam json.RawMessage, id interface{}) rpc_client.JSONRPCResponse {
+	logger.Info("___ 2.  HandleEstimateGasRaw %v", string(callParam))
 	decoded, err := utils.DecodeCallObject(callParam)
+	logger.Info("___ 2.  Decoded: %v", decoded)
 	if err != nil {
-		return utils.MakeInvalidParamError(id, "Invalid eth_estimateGas parameter")
+		logger.Error("Failed to decode call object for eth_estimateGas: %v, raw: %s", err, string(callParam))
+		return utils.MakeInvalidParamError(id, "Invalid eth_estimateGas parameter: "+err.Error())
 	}
 
 	var bTx []byte
@@ -31,11 +35,10 @@ func HandleEstimateGasRaw(appCtx *app.Context, callParam json.RawMessage, id int
 	} else {
 		bTx, buildErr = appCtx.ClientRpc.BuildCallTransaction(decoded)
 	}
-
 	if buildErr != nil {
-		return utils.MakeInternalError(id, "Failed to build transaction for estimateGas")
+		logger.Error("Failed to build transaction for estimateGas: %v", buildErr)
+		return utils.MakeInternalError(id, "Failed to build transaction for estimateGas: "+buildErr.Error())
 	}
-
 	rs := appCtx.ClientRpc.SendEstimateGas(bTx)
 	rs.Id = id
 	return rs
