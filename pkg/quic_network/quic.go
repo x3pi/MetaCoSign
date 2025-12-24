@@ -88,8 +88,6 @@ func CreateQuicConnection(serverAddr string) (quic.Connection, error) {
 			time.Sleep(retryDelay)
 		}
 	}
-
-	// Trả về lỗi cuối cùng nếu tất cả retry đều thất bại
 	return nil, fmt.Errorf("không thể kết nối QUIC đến %s sau %d lần thử: %v", serverAddr, maxRetries, err)
 }
 

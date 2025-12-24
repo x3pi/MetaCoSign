@@ -405,6 +405,7 @@ func (h *FileHandlerNoReceipt) sendChunk(
 			currentConn = newConn
 		}
 	}
+	h.isInitialized = false
 	return fmt.Errorf("❌❌ [file: %s, chunk: %d] không thể gửi chunk sau %d lần thử: %v",
 		fileKey, chunkIndex, MAX_SEND_RETRIES, lastErr)
 }
@@ -521,7 +522,6 @@ func (h *FileHandlerNoReceipt) initializeServerCacheAndPools(tx types.Transactio
 	var wg sync.WaitGroup
 	wg.Add(CONNECTION_POOL_SIZE * 2)
 	var connErr error
-
 	for i := 0; i < CONNECTION_POOL_SIZE; i++ {
 		go func(idx int) { // Server 1
 			defer wg.Done()
@@ -551,6 +551,6 @@ func (h *FileHandlerNoReceipt) initializeServerCacheAndPools(tx types.Transactio
 	if connErr != nil {
 		return fmt.Errorf("lỗi khi tạo connection pools: %v", connErr)
 	}
-	logger.Info("[Init] FileHandler: Khởi tạo server cache và connection pools thành công.") // <<< LOG
+	logger.Info("[Init] FileHandler: Khởi tạo server cache và connection pools thành công. %v", h.cachedRustServers) // <<< LOG
 	return nil
 }

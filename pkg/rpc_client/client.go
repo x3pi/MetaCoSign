@@ -754,20 +754,10 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTx(
 			return nil, nil, nil, fmt.Errorf("lỗi tài khoản chưa đăng ký private key bls với rpc")
 		}
 	}
-	logger.Info("BuildTransactionWithDeviceKeyFromEthTx ethTx: %v", ethTx)
-	logger.Info("BuildTransactionWithDeviceKeyFromEthTx cfg: %v", cfg)
-	logger.Info("BuildTransactionWithDeviceKeyFromEthTx cfgCom: %v", cfgCom)
-	logger.Info("BuildTransactionWithDeviceKeyFromEthTx ldbContractFree: %v", ldbContractFree)
-	logger.Info("BuildTransactionWithDeviceKeyFromEthTx as: %v", as)
-	logger.Info("BuildTransactionWithDeviceKeyFromEthTx fromAddress: %v", fromAddress)
-	logger.Info("BuildTransactionWithDeviceKeyFromEthTx c.KeyPair: %v", c.KeyPair)
-	logger.Info("BuildTransactionWithDeviceKeyFromEthTx c.KeyPair.BytesPublicKey(): %v", c.KeyPair.BytesPublicKey())
 	if cfg == nil {
 		return nil, nil, nil, fmt.Errorf("cfg is nil")
 	}
-	logger.Info("BuildTransactionWithDeviceKeyFromEthTx DisableFreeGas: %v, ethx ", cfg.DisableFreeGas, *ethTx)
 	if !cfg.DisableFreeGas && ethTx.To() != nil {
-		logger.Info("BuildTransactionWithDeviceKeyFromEthTx HasContract: %v , ldb %v", *ethTx.To(), ldbContractFree)
 		exist, err := ldbContractFree.HasContract(*ethTx.To())
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("lỗi khi kiểm tra contract free gas: %v", err)
