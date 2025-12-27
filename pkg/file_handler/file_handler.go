@@ -334,7 +334,7 @@ func (h *FileHandlerNoReceipt) HandleUploadChunk(
 	if err != nil {
 		return nil, fmt.Errorf("không thể lấy/tạo kết nối cho chunk %d: %v", chunkIndexInt, err)
 	}
-	err = h.sendChunk(conn, isServer1, poolIndex, fileKeyStr, chunkIndexInt, chunkData, fileInfo.Signature, merkleProofHashes, merkleRoot)
+	err = h.sendCsendChunk(conn, isServer1, poolIndex, fileKeyStr, chunkIndexInt, chunkData, fileInfo.Signature, merkleProofHashes, merkleRoot)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send chunk %d: %v", chunkIndexInt, err)
 	}

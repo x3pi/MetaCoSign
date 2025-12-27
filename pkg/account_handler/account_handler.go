@@ -280,16 +280,24 @@ func (h *AccountHandlerNoReceipt) handleConfirmAccount(
 	if rs.Error != nil {
 		return "", fmt.Errorf("failed to send transaction: %v", rs.Error)
 	}
-	metaTxData, _, releaseFunc, err := h.appCtx.ClientRpc.BuildTransferTransaction(ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress), ethCommon.Address(pendingTx.Address), h.appCtx.Cfg.RewardAmount)
-	rst := h.appCtx.ClientRpc.SendRawTransactionBinary(
-		metaTxData,
-		releaseFunc,
-		nil,
-		nil,
-		nil,
-	)
-	if rst.Error != nil {
-		return "", fmt.Errorf("failed to send transaction: %v", rst.Error)
+	if h.appCtx.Cfg.RewardAmount != nil && h.appCtx.Cfg.RewardAmount.Cmp(big.NewInt(0)) > 0 {
+		metaTxData, _, releaseFunc, err := h.appCtx.ClientRpc.BuildTransferTransaction(ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress), ethCommon.Address(pendingTx.Address), h.appCtx.Cfg.RewardAmount)
+		if err != nil {
+			logger.Error("Failed to build reward transfer transaction: %v", err)
+		} else {
+			rst := h.appCtx.ClientRpc.SendRawTransactionBinary(
+				metaTxData,
+				releaseFunc,
+				nil,
+				nil,
+				nil,
+			)
+			if rst.Error != nil {
+				logger.Error("Failed to send reward transaction: %v", rst.Error)
+			} else {
+				logger.Info("✅ Reward transfer sent successfully, tx hash: %v", rst.Result)
+			}
+		}
 	}
 	// Cập nhật trạng thái confirmed
 	if err := h.storage.MarkAccountConfirmed(

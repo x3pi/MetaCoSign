@@ -10,7 +10,6 @@ import (
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/utils"
 	"github.com/meta-node-blockchain/meta-node/pkg/account_handler"
 	"github.com/meta-node-blockchain/meta-node/pkg/bls"
-	"github.com/meta-node-blockchain/meta-node/pkg/file_handler"
 
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	"github.com/meta-node-blockchain/meta-node/pkg/rpc_client"
@@ -131,33 +130,33 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 			return utils.MakeInternalError(id, "method notfound in abi")
 
 		}
-		fileAbi, _ := file_handler.GetFileAbi()
-		name, _ := fileAbi.ParseMethodName(tx)
-		if !(tx.ToAddress() == file_handler.PredictContractAddress(ethCommon.HexToAddress(appCtx.ClientTcp.GetClientContext().Config.OwnerFileStorageAddress)) && name == "uploadChunk") {
-			rs := appCtx.ClientRpc.SendRawTransactionBinary(bTx, releaseTx, decodedTxBytes, releaseDecodedOnce, nil)
-			releaseDecodedOnce()
-			rs.Id = id
-			return rs
-		} else {
-			fileHandler, err := file_handler.GetFileHandlerTCP(appCtx.ClientTcp, appCtx.TcpCfg)
-			if err != nil {
-				return utils.MakeInternalError(id, "Failed to build transaction: "+err.Error())
-			}
-			isPrevent, err := fileHandler.HandleFileTransactionNoReceipt(context.Background(), tx)
-			if err != nil {
-				return utils.MakeInternalError(id, "Failed to build transaction: "+err.Error())
-			}
-			if isPrevent {
-				releaseDecodedOnce()
-				releaseTx()
-				return rpc_client.JSONRPCResponse{
-					Jsonrpc: "2.0",
-					Result:  tx.Hash().Hex(),
-					Id:      id,
-				}
-			}
-			return utils.MakeInternalError(id, "Failed to build transaction: "+err.Error())
-		}
+		// fileAbi, _ := file_handler.GetFileAbi()
+		// name, _ := fileAbi.ParseMethodName(tx)
+		// if !(tx.ToAddress() == file_handler.PredictContractAddress(ethCommon.HexToAddress(appCtx.ClientTcp.GetClientContext().Config.OwnerFileStorageAddress)) && name == "uploadChunk") {
+		rs := appCtx.ClientRpc.SendRawTransactionBinary(bTx, releaseTx, decodedTxBytes, releaseDecodedOnce, nil)
+		releaseDecodedOnce()
+		rs.Id = id
+		return rs
+		// } else {
+		// 	fileHandler, err := file_handler.GetFileHandlerTCP(appCtx.ClientTcp, appCtx.TcpCfg)
+		// 	if err != nil {
+		// 		return utils.MakeInternalError(id, "Failed to build transaction: "+err.Error())
+		// 	}
+		// 	isPrevent, err := fileHandler.HandleFileTransactionNoReceipt(context.Background(), tx)
+		// 	if err != nil {
+		// 		return utils.MakeInternalError(id, "Failed to build transaction: "+err.Error())
+		// 	}
+		// 	if isPrevent {
+		// 		releaseDecodedOnce()
+		// 		releaseTx()
+		// 		return rpc_client.JSONRPCResponse{
+		// 			Jsonrpc: "2.0",
+		// 			Result:  tx.Hash().Hex(),
+		// 			Id:      id,
+		// 		}
+		// 	}
+		// 	return utils.MakeInternalError(id, "Failed to build transaction: "+err.Error())
+		// }
 
 	} else {
 		return utils.MakeInternalError(id, "null transaction: "+err.Error())

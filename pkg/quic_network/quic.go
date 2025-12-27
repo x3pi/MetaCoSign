@@ -65,6 +65,7 @@ func readFrameWithLength(stream quic.Stream) ([]byte, error) {
 func CreateQuicConnection(serverAddr string) (quic.Connection, error) {
 	tlsConf := &tls.Config{
 		InsecureSkipVerify: true,
+		NextProtos:         []string{"file-storage-v1"}, // ✅ THÊM ALPN
 	}
 
 	var conn quic.Connection

@@ -693,7 +693,9 @@ func (c *ClientRPC) BuildTransactionWithDeviceKey(
 		if len(as.PublicKeyBls()) == 0 {
 			return nil, nil, nil, fmt.Errorf("lỗi tài khoản chưa đăng ký public key bls trên chain")
 		}
+
 		if !bytes.Equal(as.PublicKeyBls(), c.KeyPair.BytesPublicKey()) {
+			logger.Info("lỗi tài khoản chưa đăng ký private key bls với rpc: %x orgiginal %x", as.PublicKeyBls(), c.KeyPair.BytesPublicKey())
 			return nil, nil, nil, fmt.Errorf("lỗi tài khoản chưa đăng ký private key bls với rpc")
 		}
 	}
@@ -751,6 +753,8 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTx(
 			return nil, nil, nil, fmt.Errorf("lỗi tài khoản chưa đăng ký public key bls trên chain")
 		}
 		if !bytes.Equal(as.PublicKeyBls(), c.KeyPair.BytesPublicKey()) {
+			logger.Info("lỗi tài khoản chưa đăng ký private key bls với rpc: %x orgiginal %x", as.PublicKeyBls(), c.KeyPair.BytesPublicKey())
+
 			return nil, nil, nil, fmt.Errorf("lỗi tài khoản chưa đăng ký private key bls với rpc")
 		}
 	}
