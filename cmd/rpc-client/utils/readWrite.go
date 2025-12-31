@@ -23,7 +23,47 @@ func ExtractRequestID(body []byte) interface{} {
 
 func WriteJSON(w http.ResponseWriter, resp rpc_client.JSONRPCResponse) {
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		logger.Error("Failed to encode JSON response: %v", err)
+
+	// Đảm bảo Result luôn là string (không phải interface{}) để tránh serialize thành null
+	// Đặc biệt quan trọng cho robot transactions
+	if resp.Result != nil {
+		if resultStr, ok := resp.Result.(string); ok && len(resultStr) > 0 {
+			// Đảm bảo Result là string trước khi serialize
+			resp.Result = resultStr
+			if resultStr[:2] == "0x" {
+				logger.Info("📤 [WriteJSON] Sending response: id=%v, result=%s (type=string, len=%d)",
+					resp.Id, resultStr, len(resultStr))
+			}
+		} else {
+			// Nếu Result không phải string, log warning
+			logger.Warn("⚠️ [WriteJSON] Result is not string: id=%v, type=%T, value=%v",
+				resp.Id, resp.Result, resp.Result)
+		}
+	} else if resp.Error == nil {
+		logger.Warn("⚠️ [WriteJSON] Response has no Result and no Error: id=%v", resp.Id)
+	}
+
+	// Marshal JSON để kiểm tra output trước khi gửi
+	jsonBytes, err := json.Marshal(resp)
+	if err != nil {
+		logger.Error("❌ [WriteJSON] Failed to marshal JSON response: %v, id=%v", err, resp.Id)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Log JSON output để debug (chỉ cho robot transactions với txHash)
+	if resp.Result != nil {
+		if resultStr, ok := resp.Result.(string); ok && len(resultStr) > 0 && resultStr[:2] == "0x" {
+			logger.Info("📤 [WriteJSON] JSON output: %s", string(jsonBytes))
+		}
+	}
+
+	// Gửi response
+	if _, err := w.Write(jsonBytes); err != nil {
+		logger.Error("❌ [WriteJSON] Failed to write response: %v, id=%v", err, resp.Id)
+	} else {
+		if resp.Result != nil {
+			logger.Debug("✅ [WriteJSON] Response sent successfully: id=%v", resp.Id)
+		}
 	}
 }

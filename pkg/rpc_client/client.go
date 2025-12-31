@@ -519,6 +519,25 @@ func (c *ClientRPC) SendEstimateGas(input hexutil.Bytes) JSONRPCResponse {
 	return *response
 
 }
+
+// SendDeployContract calls eth_deployContract RPC method to get runtime bytecode from constructor bytecode
+// Note: This method calls directly to the chain RPC server (rpc_server_url) to execute DeployContract
+// Method eth_deployContract is automatically registered in backend.go with namespace "eth"
+func (c *ClientRPC) SendDeployContract(constructorBytecode hexutil.Bytes) JSONRPCResponse {
+	// Gọi trực tiếp đến chain RPC server với method eth_deployContract
+	// Method này đã được đăng ký tự động trong backend.go với namespace "eth"
+	// (DeployContract -> eth_deployContract)
+	request := &JSONRPCRequest{
+		Jsonrpc: "2.0",
+		Method:  "eth_deployContract",
+		Params:  []interface{}{constructorBytecode.String()},
+		Id:      1,
+	}
+
+	// SendHTTPRequest đã gọi đến c.UrlHTTP (chain RPC server)
+	response := c.SendHTTPRequest(request)
+	return *response
+}
 func resolveUint64Param(value string, defaultVal uint64, field string) (uint64, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -738,6 +757,7 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTx(
 	cfg *config.ClientConfig,
 	cfgCom *cfgCom.Config,
 	ldbContractFree *storage.ContractFreeGasStorage,
+	nonce uint64, // Nonce để cập nhật (nếu > 0 thì cập nhật, nếu = 0 thì dùng nonce từ account state)
 ) ([]byte, mt_types.Transaction, func(), error) {
 	sg := types.NewCancunSigner(ethTx.ChainId())
 	fromAddress, err := sg.Sender(ethTx)
@@ -803,6 +823,10 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTx(
 	}
 	transaction.UpdateRelatedAddresses(bRelatedAddresses)
 	transaction.UpdateDeriver(deviceKey, newDeviceKey)
+	// Cập nhật nonce nếu được truyền vào (nonce > 0), nếu không thì dùng nonce từ account state
+	if nonce > 0 {
+		transaction.SetNonce(nonce)
+	}
 	transaction.SetSign(c.KeyPair.PrivateKey())
 
 	// Create TransactionWithDeviceKey
@@ -824,6 +848,7 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(
 	cfgCom *cfgCom.Config,
 	ldbContractFree *storage.ContractFreeGasStorage,
 	private mt_common.PrivateKey,
+	nonce uint64, // Nonce để cập nhật (nếu > 0 thì cập nhật, nếu = 0 thì dùng nonce từ account state)
 ) ([]byte, mt_types.Transaction, func(), error) {
 
 	sg := types.NewCancunSigner(ethTx.ChainId())
@@ -878,6 +903,10 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(
 	}
 	transaction.UpdateRelatedAddresses(bRelatedAddresses)
 	transaction.UpdateDeriver(deviceKey, newDeviceKey)
+	// Cập nhật nonce nếu được truyền vào (nonce > 0), nếu không thì dùng nonce từ account state
+	if nonce > 0 {
+		transaction.SetNonce(nonce)
+	}
 	transaction.SetSign(private)
 	// Create TransactionWithDeviceKey
 	transactionWithDeviceKey := &mt_proto.TransactionWithDeviceKey{
@@ -964,64 +993,6 @@ func (c *ClientRPC) BuildTransferTransaction(
 
 	return data, txx, release, nil
 }
-
-// // SendTransferTransaction gửi giao dịch chuyển tiền
-// func (c *ClientRPC) SendTransferTransaction(
-// 	fromAddress common.Address,
-// 	toAddress common.Address,
-// 	amount *big.Int,
-// ) (string, error) {
-// 	// Build transaction
-// 	metaTxData, _, releaseFunc, err := c.BuildTransferTransaction(fromAddress, toAddress, amount)
-// 	if err != nil {
-// 		return "", fmt.Errorf("lỗi build transaction: %w", err)
-// 	}
-// 	defer releaseFunc()
-
-// 	// Tạo Ethereum transaction tương ứng (để có thể dùng binary endpoint)
-// 	ethTx := types.NewTx(&types.LegacyTx{
-// 		To:       &toAddress,
-// 		Value:    amount,
-// 		Gas:      21000,
-// 		GasPrice: big.NewInt(int64(mt_common.MINIMUM_BASE_FEE)),
-// 		Data:     []byte{},
-// 	})
-
-// 	// Sign eth transaction
-// 	signer := types.NewCancunSigner(c.ChainId)
-// 	// Tạo một private key tạm từ BLS private key để sign eth tx
-// 	ethPrivKey, err := crypto.GenerateKey()
-// 	if err != nil {
-// 		return "", fmt.Errorf("lỗi tạo eth private key: %w", err)
-// 	}
-// 	signedEthTx, err := types.SignTx(ethTx, signer, ethPrivKey)
-// 	if err != nil {
-// 		return "", fmt.Errorf("lỗi sign eth transaction: %w", err)
-// 	}
-
-// 	ethTxData, err := signedEthTx.MarshalBinary()
-// 	if err != nil {
-// 		return "", fmt.Errorf("lỗi marshal eth transaction: %w", err)
-// 	}
-
-// 	// Send using binary endpoint
-// 	response := c.SendRawTransactionBinary(
-// 		metaTxData, releaseFunc,
-// 		ethTxData, nil,
-// 		c.KeyPair.BytesPublicKey(),
-// 	)
-
-// 	if response.Error != nil {
-// 		return "", fmt.Errorf("lỗi send transaction: %s", response.Error.Message)
-// 	}
-
-// 	txHash, ok := response.Result.(string)
-// 	if !ok {
-// 		return "", fmt.Errorf("response result không phải string: %v", response.Result)
-// 	}
-
-// 	return txHash, nil
-// }
 
 func marshalProtoMessage(msg proto.Message) ([]byte, func(), error) {
 	bufPtr := protoBytesPool.Get().(*[]byte)

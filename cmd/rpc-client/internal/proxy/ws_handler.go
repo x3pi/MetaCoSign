@@ -22,7 +22,39 @@ var upgrader = websocket.Upgrader{
 	WriteBufferSize: 65536, // 64KB
 }
 
-func (p *RpcReverseProxy) ServeWebSocket(w http.ResponseWriter, r *http.Request, targetURL string) {
+// ServeWebSocketWithoutInterceptor - WebSocket không có interceptor, forward trực tiếp lên chain
+func (p *RpcReverseProxy) ServeWebSocketWithoutInterceptor(w http.ResponseWriter, r *http.Request, targetURL string) {
+	// Upgrade HTTP connection to WebSocket
+	clientConn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		logger.Error("WebSocket upgrade failed for %s: %v", r.RemoteAddr, err)
+		return
+	}
+	defer clientConn.Close()
+
+	clientWriter := ws_writer.NewWebSocketWriter(clientConn)
+	// Validate target URL
+	if targetURL == "" {
+		logger.Error("Target WebSocket URL not configured for client %s", clientConn.RemoteAddr())
+		_ = clientWriter.WriteCloseMessage(websocket.CloseInternalServerErr, "Target WebSocket URL not configured")
+		return
+	}
+	// Connect to upstream WebSocket server
+	targetConn, err := p.dialUpstreamWebSocket(targetURL, r, clientConn.RemoteAddr().String())
+	if err != nil {
+		logger.Error("Failed to connect to upstream WebSocket %s: %v", targetURL, err)
+		_ = clientWriter.WriteCloseMessage(websocket.CloseGoingAway, fmt.Sprintf("Failed to connect to upstream: %v", err))
+		return
+	}
+	defer targetConn.Close()
+
+	targetWriter := ws_writer.NewWebSocketWriter(targetConn)
+	// Proxy bidirectional traffic - không có interceptor
+	p.proxyWebSocketTrafficWithoutInterceptor(clientConn, targetConn, clientWriter, targetWriter, r)
+}
+
+// ServeWebSocketWithInterceptor - WebSocket có interceptor, chặn lại và trả về RPC
+func (p *RpcReverseProxy) ServeWebSocketWithInterceptor(w http.ResponseWriter, r *http.Request, targetURL string) {
 	// Upgrade HTTP connection to WebSocket
 	clientConn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -51,8 +83,13 @@ func (p *RpcReverseProxy) ServeWebSocket(w http.ResponseWriter, r *http.Request,
 	defer targetConn.Close()
 
 	targetWriter := ws_writer.NewWebSocketWriter(targetConn)
-	// Proxy bidirectional traffic
+	// Proxy bidirectional traffic - có interceptor
 	p.proxyWebSocketTraffic(clientConn, targetConn, clientWriter, targetWriter, r)
+}
+
+// ServeWebSocket - Alias cho backward compatibility, mặc định dùng interceptor
+func (p *RpcReverseProxy) ServeWebSocket(w http.ResponseWriter, r *http.Request, targetURL string) {
+	p.ServeWebSocketWithInterceptor(w, r, targetURL)
 }
 
 // dialUpstreamWebSocket establishes connection to upstream WebSocket server
@@ -115,7 +152,6 @@ func (p *RpcReverseProxy) handleDialError(err error, resp *http.Response, target
 
 // proxyWebSocketTraffic handles bidirectional message forwarding
 func (p *RpcReverseProxy) proxyWebSocketTraffic(
-
 	clientConn, targetConn *websocket.Conn,
 	clientWriter, targetWriter *ws_writer.WebSocketWriter,
 	r *http.Request,
@@ -179,7 +215,115 @@ func (p *RpcReverseProxy) proxyWebSocketTraffic(
 	}
 }
 
-// proxyClientToUpstream handles Client → Upstream traffic with RPC routing
+// proxyClientToUpstreamWithoutInterceptor handles Client → Upstream traffic WITHOUT interceptor (forward trực tiếp)
+func (p *RpcReverseProxy) proxyClientToUpstreamWithoutInterceptor(
+	clientConn, targetConn *websocket.Conn,
+	clientWriter, targetWriter *ws_writer.WebSocketWriter,
+	errChan chan<- error,
+	quit <-chan struct{},
+) {
+	for {
+		select {
+		case <-quit:
+			return
+		default:
+		}
+		// Read JSON-RPC request from client
+		var req models.JSONRPCRequestRaw
+		if err := clientConn.SetReadDeadline(time.Now().Add(180 * time.Second)); err != nil {
+			logger.Warn("Error setting read deadline: %v", err)
+		}
+		readErr := clientConn.ReadJSON(&req)
+		_ = clientConn.SetReadDeadline(time.Time{})
+
+		if readErr != nil {
+			if !isExpectedCloseError(readErr) {
+				logger.Error("Error reading from client %s: %v", clientConn.RemoteAddr(), readErr)
+				select {
+				case errChan <- fmt.Errorf("client read error: %w", readErr):
+				case <-quit:
+				}
+			}
+			return
+		}
+		// Forward tất cả requests trực tiếp lên chain, không có interceptor
+		if err := targetWriter.WriteJSON(req); err != nil {
+			logger.Error("Error writing to upstream for client %s: %v", clientConn.RemoteAddr(), err)
+			select {
+			case errChan <- fmt.Errorf("upstream write error: %w", err):
+			case <-quit:
+			}
+			return
+		}
+	}
+}
+
+// proxyWebSocketTrafficWithoutInterceptor handles bidirectional message forwarding WITHOUT interceptor
+func (p *RpcReverseProxy) proxyWebSocketTrafficWithoutInterceptor(
+	clientConn, targetConn *websocket.Conn,
+	clientWriter, targetWriter *ws_writer.WebSocketWriter,
+	r *http.Request,
+) {
+	ctx := r.Context()
+	errChan := make(chan error, 2)
+	quit := make(chan struct{})
+	var wg sync.WaitGroup
+
+	wg.Add(2)
+
+	// Goroutine 1: Client → Upstream (forward trực tiếp, không có interceptor)
+	go func() {
+		defer wg.Done()
+		p.proxyClientToUpstreamWithoutInterceptor(clientConn, targetConn, clientWriter, targetWriter, errChan, quit)
+	}()
+
+	// Goroutine 2: Upstream → Client (passthrough)
+	go func() {
+		defer wg.Done()
+		p.proxyUpstreamToClient(targetConn, clientWriter, errChan, quit)
+	}()
+
+	// Wait for error or context cancellation
+	var finalError error
+	select {
+	case err := <-errChan:
+		finalError = err
+	case err := <-errChan:
+		if finalError == nil {
+			finalError = err
+		}
+	case <-ctx.Done():
+		finalError = ctx.Err()
+	}
+
+	close(quit)
+
+	// Send close message to client
+	if finalError != nil {
+		if !isExpectedCloseError(finalError) {
+			logger.Error("WebSocket proxy error for %s: %v", clientConn.RemoteAddr(), finalError)
+			_ = clientWriter.WriteCloseMessage(websocket.CloseInternalServerErr, "Proxy error")
+		}
+	} else {
+		_ = clientWriter.WriteCloseMessage(websocket.CloseNormalClosure, "Connection closing normally")
+	}
+
+	// Wait for goroutines to finish
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		logger.Debug("WebSocket goroutines finished for %s", clientConn.RemoteAddr())
+	case <-time.After(5 * time.Second):
+		logger.Warn("Timeout waiting for WebSocket goroutines for %s", clientConn.RemoteAddr())
+	}
+}
+
+// proxyClientToUpstream handles Client → Upstream traffic with RPC routing (WITH interceptor)
 func (p *RpcReverseProxy) proxyClientToUpstream(
 	clientConn, targetConn *websocket.Conn,
 	clientWriter, targetWriter *ws_writer.WebSocketWriter,
@@ -229,7 +373,6 @@ func (p *RpcReverseProxy) proxyClientToUpstream(
 		// Try to handle RPC method locally
 		rpcResp, handled := p.RouteWebSocketMessage(req)
 		if handled && rpcResp != nil {
-			// Send response back to client
 			if err := clientWriter.WriteJSON(rpcResp); err != nil {
 				logger.Error("Error writing RPC response to client %s: %v", clientConn.RemoteAddr(), err)
 				select {
@@ -291,48 +434,6 @@ func (p *RpcReverseProxy) proxyUpstreamToClient(
 			return
 		}
 	}
-}
-
-func (p *RpcReverseProxy) HandleTriggerEvent(w http.ResponseWriter, r *http.Request) {
-	idStr := r.URL.Query().Get("id")
-	msg := r.URL.Query().Get("msg")
-	contractAddr := r.URL.Query().Get("contract")
-	if contractAddr == "" {
-		contractAddr = p.AppCtx.Cfg.ContractsInterceptor[0] // 0x2ea1b43129C47Ab568F88FE5A76AF0DfD65B3D3a
-	}
-	if idStr == "" {
-		idStr = "123"
-	}
-	if msg == "" {
-		msg = "Test event from RPC Proxy"
-	}
-
-	// Parse ID
-	var idNum uint64
-	if _, err := fmt.Sscanf(idStr, "%d", &idNum); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid id parameter: %v", err), http.StatusBadRequest)
-		return
-	}
-	isMonitored := false
-	for _, monitored := range p.AppCtx.Cfg.ContractsInterceptor {
-		if strings.EqualFold(contractAddr, monitored) {
-			isMonitored = true
-			break
-		}
-	}
-
-	if !isMonitored {
-		http.Error(w, fmt.Sprintf("Contract %s is not in monitored list", contractAddr), http.StatusBadRequest)
-		return
-	}
-	logger.Info("🌐 HTTP Trigger: contract=%s, id=%d, msg=%s", contractAddr, idNum, msg)
-	if err := p.TriggerFakePingEvent(contractAddr, idNum, msg); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to trigger event: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Event triggered successfully!"))
 }
 
 // isExpectedCloseError checks if error is an expected close error

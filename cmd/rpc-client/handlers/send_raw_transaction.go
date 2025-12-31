@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 
 	ethCommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -11,6 +12,7 @@ import (
 	"github.com/meta-node-blockchain/meta-node/pkg/account_handler"
 	"github.com/meta-node-blockchain/meta-node/pkg/bls"
 	"github.com/meta-node-blockchain/meta-node/pkg/file_handler"
+	robothandler "github.com/meta-node-blockchain/meta-node/pkg/robot_handler"
 
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	"github.com/meta-node-blockchain/meta-node/pkg/rpc_client"
@@ -70,11 +72,11 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 		tx mt_types.Transaction
 	)
 	if !exists {
-		bTx, tx, releaseTx, buildErr = appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTx(ethTx, appCtx.TcpCfg, appCtx.Cfg, appCtx.LdbContractFreeGas)
+		bTx, tx, releaseTx, buildErr = appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTx(ethTx, appCtx.TcpCfg, appCtx.Cfg, appCtx.LdbContractFreeGas, 0) // nonce = 0: dùng nonce từ account state
 	} else {
 		senderPkString, _ := appCtx.PKS.GetPrivateKey(fromAddress)
 		keyPair := bls.NewKeyPair(ethCommon.FromHex(senderPkString))
-		bTx, tx, releaseTx, buildErr = appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(ethTx, appCtx.TcpCfg, appCtx.Cfg, appCtx.LdbContractFreeGas, keyPair.PrivateKey())
+		bTx, tx, releaseTx, buildErr = appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(ethTx, appCtx.TcpCfg, appCtx.Cfg, appCtx.LdbContractFreeGas, keyPair.PrivateKey(), 0) // nonce = 0: dùng nonce từ account state
 	}
 	if buildErr != nil {
 		releaseDecodedOnce()
@@ -128,8 +130,88 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 				rs.Id = id
 				return rs
 			}
-			return utils.MakeInternalError(id, "method notfound in abi")
+			return utils.MakeInternalError(id, "method notfound in abi account")
 
+		}
+		if tx.ToAddress() == ethCommon.HexToAddress(appCtx.Cfg.ContractsInterceptor[1]) {
+			txHash := tx.Hash().Hex()
+			logger.Info("🔵 [sendRawTransaction] Robot contract detected - txHash=%s, from=%s, to=%s, nonce=%d, id=%v",
+				txHash, tx.FromAddress().Hex(), tx.ToAddress().Hex(), tx.GetNonce(), id)
+			robotHandler, err := robothandler.GetRobotHandler(appCtx)
+			if err != nil {
+				logger.Error("❌ [sendRawTransaction] Failed to get robot handler: %v, id=%v", err, id)
+				return utils.MakeInternalError(id, "Failed to get robot handler: "+err.Error())
+			}
+			logger.Info("🔵 [sendRawTransaction] Calling HandleRobotTransaction: txHash=%s, id=%v", txHash, id)
+			handled, result, err := robotHandler.HandleRobotTransaction(
+				context.Background(),
+				tx,
+				rawTransactionHex,
+			)
+			logger.Info("🔵 [sendRawTransaction] HandleRobotTransaction response: txHash=%s, id=%v, handled=%v, result=%v (type=%T), err=%v",
+				txHash, id, handled, result, result, err)
+			if handled {
+				releaseDecodedOnce()
+				if releaseTx != nil {
+					releaseTx()
+				}
+				if err != nil {
+					logger.Error("❌ [sendRawTransaction] Robot handler transaction error: %v", err)
+					return rpc_client.JSONRPCResponse{
+						Jsonrpc: "2.0",
+						Error: &rpc_client.JSONRPCError{
+							Code:    -1,
+							Message: err.Error(),
+						},
+						Id: id,
+					}
+				}
+				// Luôn trả về transaction hash (string) để viem có thể parse được
+				// ĐẢM BẢO KHÔNG BAO GIỜ NULL
+				txHash := tx.Hash().Hex()
+				var finalResult string
+				if result != nil {
+					// Nếu result đã là string (txHash), dùng luôn
+					if txHashStr, ok := result.(string); ok && txHashStr != "" {
+						finalResult = txHashStr
+						logger.Info("✅ [sendRawTransaction] Using txHash from result: %s", finalResult)
+					} else {
+						// Nếu là object hoặc empty string, lấy txHash từ transaction
+						finalResult = txHash
+						logger.Warn("⚠️ [sendRawTransaction] Result is not valid string (type=%T, value=%v), using tx.Hash(): %s",
+							result, result, finalResult)
+					}
+				} else {
+					finalResult = txHash
+					logger.Warn("⚠️ [sendRawTransaction] Result is nil, using tx.Hash(): %s", finalResult)
+				}
+
+				// Đảm bảo finalResult không bao giờ empty
+				if finalResult == "" {
+					finalResult = txHash
+					logger.Error("❌ [sendRawTransaction] finalResult is empty, using tx.Hash(): %s", finalResult)
+				}
+
+				logger.Info("✅ [sendRawTransaction] Sending response: txHash=%s, id=%v (type=%T), jsonrpc=%s",
+					finalResult, id, finalResult, "2.0")
+				response := rpc_client.JSONRPCResponse{
+					Jsonrpc: "2.0",
+					Result:  finalResult,
+					Id:      id,
+				}
+				// Log JSON response để debug
+				responseJSON, _ := json.Marshal(response)
+				logger.Info("✅ [sendRawTransaction] Response JSON: %s", string(responseJSON))
+				logger.Info("✅ [sendRawTransaction] Response created: Jsonrpc=%s, Result=%s, Id=%v",
+					response.Jsonrpc, response.Result, response.Id)
+				return response
+			} else if !handled && err == nil {
+				rs := appCtx.ClientRpc.SendRawTransactionBinary(bTx, releaseTx, decodedTxBytes, releaseDecodedOnce, nil)
+				releaseDecodedOnce()
+				rs.Id = id
+				return rs
+			}
+			return utils.MakeInternalError(id, "method notfound in abi robot")
 		}
 		fileAbi, _ := file_handler.GetFileAbi()
 		name, _ := fileAbi.ParseMethodName(tx)

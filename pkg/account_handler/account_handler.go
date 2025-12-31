@@ -257,7 +257,7 @@ func (h *AccountHandlerNoReceipt) handleConfirmAccount(
 		return "", fmt.Errorf("error checking private key store: %w", err)
 	}
 	if !exists {
-		bTx, mtTx, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTx(ethTx, h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas)
+		bTx, mtTx, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTx(ethTx, h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas, 0) // nonce = 0: dùng nonce từ account state
 	} else {
 		senderPkString, _ := h.appCtx.PKS.GetPrivateKey(fromAddress)
 		keyPair := bls.NewKeyPair(ethCommon.FromHex(senderPkString))
@@ -265,6 +265,7 @@ func (h *AccountHandlerNoReceipt) handleConfirmAccount(
 			ethTx,
 			h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas,
 			keyPair.PrivateKey(),
+			0, // nonce = 0: dùng nonce từ account state
 		)
 	}
 	if buildErr != nil {
@@ -324,7 +325,6 @@ func (h *AccountHandlerNoReceipt) handleConfirmAccount(
 		return "", fmt.Errorf("Failed to save notification: %v", err)
 	}
 	h.broadcastEvent("AccountConfirmed", accountAddress, big.NewInt(currentTime), msgNoti)
-
 	logger.Info("✅ Đã confirm account %s, tx hash: %v", accountAddress.Hex(), rs.Result)
 	return rs.Result.(string), nil
 }

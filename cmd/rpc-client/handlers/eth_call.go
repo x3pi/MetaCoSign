@@ -58,7 +58,6 @@ func processEthCallParams(appCtx *app.Context, id interface{}, callObjectRaw jso
 			}
 		}
 	}
-
 	var bTx []byte
 	var buildErr error
 

@@ -132,13 +132,24 @@ func setupHTTPServer(rpcProxy *proxy.RpcReverseProxy, cfg *config.Config, logsDi
 
 	mux.HandleFunc("/debug/logs/list", setup.HandleRPCLogList(logsDir))
 	mux.HandleFunc("/debug/logs/content", setup.HandleRPCLogContent(logsDir))
-	mux.HandleFunc("/trigger-event", rpcProxy.HandleTriggerEvent)
 	distPath := "./dist"
 	mux.Handle("/register-bls-key/", spaHandler(distPath, "/register-bls-key/"))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// WebSocket upgrade handling
 		if websocket.IsWebSocketUpgrade(r) {
 			var finalTargetURL string
+			// Interceptor WebSocket endpoint - có interceptor, chặn lại
+			if strings.HasPrefix(r.URL.Path, "/interceptor") {
+				finalTargetURL = rpcProxy.AppCtx.ClientRpc.UrlWS
+				logger.Debug("Routing WebSocket upgrade for %s to INTERCEPTOR target %s", r.URL.Path, finalTargetURL)
+				if finalTargetURL == "" {
+					logger.Error("WebSocket upgrade requested for %s, but target URL is empty", r.URL.Path)
+					http.Error(w, "Target WebSocket endpoint is not configured", http.StatusServiceUnavailable)
+					return
+				}
+				rpcProxy.ServeWebSocketWithInterceptor(w, r, finalTargetURL)
+				return
+			}
 			// Readonly WebSocket endpoint
 			if strings.HasPrefix(r.URL.Path, "/readonly") {
 				if rpcProxy.ReadonlyWSSServerURL != "" {
@@ -153,9 +164,9 @@ func setupHTTPServer(rpcProxy *proxy.RpcReverseProxy, cfg *config.Config, logsDi
 					return
 				}
 			} else {
-				// Default WebSocket endpoint
+				// Default WebSocket endpoint - KHÔNG có interceptor, forward trực tiếp lên chain
 				finalTargetURL = rpcProxy.AppCtx.ClientRpc.UrlWS
-				logger.Debug("Routing WebSocket upgrade for %s to DEFAULT target %s", r.URL.Path, finalTargetURL)
+				logger.Debug("Routing WebSocket upgrade for %s to DEFAULT (no interceptor) target %s", r.URL.Path, finalTargetURL)
 			}
 
 			if finalTargetURL == "" {
@@ -163,7 +174,8 @@ func setupHTTPServer(rpcProxy *proxy.RpcReverseProxy, cfg *config.Config, logsDi
 				http.Error(w, "Target WebSocket endpoint is not configured", http.StatusServiceUnavailable)
 				return
 			}
-			rpcProxy.ServeWebSocket(w, r, finalTargetURL)
+			// Default route: không có interceptor, forward trực tiếp
+			rpcProxy.ServeWebSocketWithoutInterceptor(w, r, finalTargetURL)
 			return
 		}
 

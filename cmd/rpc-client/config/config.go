@@ -11,24 +11,25 @@ import (
 )
 
 type Config struct {
-	RPCServerURL           string   `json:"rpc_server_url"`
-	WSSServerURL           string   `json:"wss_server_url"`
-	ReadonlyRPCServerURL   string   `json:"readonly_rpc_server_url"`
-	ReadonlyWSSServerURL   string   `json:"readonly_wss_server_url"`
-	PrivateKey             string   `json:"private_key"`
-	ServerPort             string   `json:"server_port"`
-	HTTPSPort              string   `json:"https_port"`
-	CertFile               string   `json:"cert_file"`
-	KeyFile                string   `json:"key_file"`
-	ChainId                *big.Int `json:"chain_id"`
-	MasterPassword         string   `json:"master_password"`
-	AppPepper              string   `json:"app_pepper"`
-	LdbBlsWalletsPath      string   `json:"ldb_bls_wallet_path"`
-	LdbNotificationPath    string   `json:"ldb_bls_account_noti"`
-	LdbContractFreeGasPath string   `json:"ldb_contract_free_gas"`
-	OwnerRpcAddress        string   `json:"owner_rpc_address"`
-	ContractsInterceptor   []string `json:"contracts_interceptor"` // Địa chỉ contract dùng để intercept
-	RewardAmount           *big.Int `json:"reward_amount"`         // Số lượng reward cho mỗi giao dịch được intercept
+	RPCServerURL            string   `json:"rpc_server_url"`
+	WSSServerURL            string   `json:"wss_server_url"`
+	ReadonlyRPCServerURL    string   `json:"readonly_rpc_server_url"`
+	ReadonlyWSSServerURL    string   `json:"readonly_wss_server_url"`
+	PrivateKey              string   `json:"private_key"`
+	ServerPort              string   `json:"server_port"`
+	HTTPSPort               string   `json:"https_port"`
+	CertFile                string   `json:"cert_file"`
+	KeyFile                 string   `json:"key_file"`
+	ChainId                 *big.Int `json:"chain_id"`
+	MasterPassword          string   `json:"master_password"`
+	AppPepper               string   `json:"app_pepper"`
+	LdbBlsWalletsPath       string   `json:"ldb_bls_wallet_path"`
+	LdbNotificationPath     string   `json:"ldb_bls_account_noti"`
+	LdbContractFreeGasPath  string   `json:"ldb_contract_free_gas"`
+	LdbArtifactRegistryPath string   `json:"ldb_artifact_registry"`
+	OwnerRpcAddress         string   `json:"owner_rpc_address"`
+	ContractsInterceptor    []string `json:"contracts_interceptor"` // Địa chỉ contract dùng để intercept
+	RewardAmount            *big.Int `json:"reward_amount"`         // Số lượng reward cho mỗi giao dịch được intercept
 }
 
 func Load(path string, tcpCfgPath string) (*Config, *tcp_config.ClientConfig, error) {

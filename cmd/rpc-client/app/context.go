@@ -40,6 +40,9 @@ type Context struct {
 	// Contract Free Gas Storage
 	LdbContractFreeGas *storage.ContractFreeGasStorage
 
+	// Artifact Registry Storage
+	// LdbArtifactRegistry *storage.ArtifactRegistryStorage
+
 	// Node BLS keys
 	NodeBlsPrivateKey common.PrivateKey
 	NodeBlsPublicKey  common.PublicKey
