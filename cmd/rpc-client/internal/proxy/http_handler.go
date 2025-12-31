@@ -30,18 +30,8 @@ func (p *RpcReverseProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer releaseBody()
 
-	// Log request body preview để debug
-	if len(body) > 0 {
-		bodyPreview := string(body)
-		if len(bodyPreview) > 200 {
-			bodyPreview = bodyPreview[:200] + "..."
-		}
-		logger.Info("📥 [http_handler] Request body preview: %s", bodyPreview)
-	}
-
 	methodResult := gjson.GetBytes(body, "method")
 	if !methodResult.Exists() {
-		logger.Info("📥 [http_handler] No method in request, forwarding to upstream")
 		r.Body = io.NopCloser(bytes.NewReader(body))
 		p.ReverseProxy.ServeHTTP(w, r)
 		return
@@ -49,46 +39,21 @@ func (p *RpcReverseProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	method := methodResult.String()
 	id := utils.ExtractRequestID(body)
-	logger.Info("📥 [http_handler] Parsed request: method=%s, id=%v (type=%T)", method, id, id)
 
 	switch method {
 	case "eth_sendRawTransaction":
 		rawTx := gjson.GetBytes(body, "params.0")
 		if !rawTx.Exists() {
-			logger.Warn("⚠️ [http_handler] eth_sendRawTransaction missing params: id=%v", id)
 			resp := utils.MakeInvalidParamError(id, "Invalid params for sendRawTransaction")
 			utils.WriteJSON(w, resp)
 			return
 		}
-		rawTxStr := rawTx.String()
-		// Log một phần của rawTx để debug (không log toàn bộ vì quá dài)
-		if len(rawTxStr) > 100 {
-			logger.Info("🔵 [http_handler] Received eth_sendRawTransaction request: id=%v, rawTx preview=%s... (len=%d)", id, rawTxStr[:100], len(rawTxStr))
-		} else {
-			logger.Info("🔵 [http_handler] Received eth_sendRawTransaction request: id=%v, rawTx=%s (len=%d)", id, rawTxStr, len(rawTxStr))
-		}
-
-		// Log trước khi xử lý
-		logger.Info("🔵 [http_handler] Processing eth_sendRawTransaction: id=%v", id)
-
 		resp := handlers.ProcessSendRawTransaction(
 			p.AppCtx,
-			rawTxStr,
+			rawTx.String(),
 			id,
 		)
-
-		logger.Info("🔵 [http_handler] ProcessSendRawTransaction response: id=%v, hasResult=%v, hasError=%v, result=%v (type=%T), error=%v",
-			id, resp.Result != nil, resp.Error != nil, resp.Result, resp.Result, resp.Error)
-
-		// Log JSON response trước khi gửi
-		if resp.Result != nil {
-			if resultStr, ok := resp.Result.(string); ok {
-				logger.Info("🔵 [http_handler] Sending response with result: id=%v, result=%s (len=%d)", id, resultStr, len(resultStr))
-			}
-		}
-
 		utils.WriteJSON(w, resp)
-		logger.Info("🔵 [http_handler] Response sent for eth_sendRawTransaction: id=%v", id)
 		return
 
 	case "net_version":

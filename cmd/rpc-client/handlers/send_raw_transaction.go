@@ -134,22 +134,20 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 
 		}
 		if tx.ToAddress() == ethCommon.HexToAddress(appCtx.Cfg.ContractsInterceptor[1]) {
-			txHash := tx.Hash().Hex()
-			logger.Info("🔵 [sendRawTransaction] Robot contract detected - txHash=%s, from=%s, to=%s, nonce=%d, id=%v",
-				txHash, tx.FromAddress().Hex(), tx.ToAddress().Hex(), tx.GetNonce(), id)
+			logger.Info("🔵 [sendRawTransaction] Robot contract detected - txHash=%s, method=%s",
+				tx.Hash().Hex(), "emitSentence or createSession")
 			robotHandler, err := robothandler.GetRobotHandler(appCtx)
 			if err != nil {
-				logger.Error("❌ [sendRawTransaction] Failed to get robot handler: %v, id=%v", err, id)
+				logger.Error("❌ [sendRawTransaction] Failed to get robot handler: %v", err)
 				return utils.MakeInternalError(id, "Failed to get robot handler: "+err.Error())
 			}
-			logger.Info("🔵 [sendRawTransaction] Calling HandleRobotTransaction: txHash=%s, id=%v", txHash, id)
 			handled, result, err := robotHandler.HandleRobotTransaction(
 				context.Background(),
 				tx,
 				rawTransactionHex,
 			)
-			logger.Info("🔵 [sendRawTransaction] HandleRobotTransaction response: txHash=%s, id=%v, handled=%v, result=%v (type=%T), err=%v",
-				txHash, id, handled, result, result, err)
+			logger.Info("🔵 [sendRawTransaction] HandleRobotTransaction response: handled=%v, result=%v (type=%T), err=%v",
+				handled, result, result, err)
 			if handled {
 				releaseDecodedOnce()
 				if releaseTx != nil {
