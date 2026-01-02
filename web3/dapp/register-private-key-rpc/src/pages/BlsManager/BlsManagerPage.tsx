@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useWallet } from "~/contexts/WalletContext";
-import { isAddress, encodeFunctionData, TransactionExecutionError } from "viem";
+import { isAddress, encodeFunctionData, TransactionExecutionError, hexToString } from "viem";
 import type { Hex } from "viem";
 import { chain991 } from "~/constants/customChain";
 import { contracts } from "~/constants/contracts";
@@ -34,7 +34,7 @@ function BlsManagerPage() {
     setStatusMessage: setWalletStatusMessage,
   } = useWallet();
 
-  const [publicKeyInput, setPublicKeyInput] = useState<string>("0x86d5de6f7c9c13cc0d959a553cc0e4853ba5faae45a28da9bddc8ef8e104eb5d3dece8dfaa24f11b4243ec27537e3184");
+  const [publicKeyInput, setPublicKeyInput] = useState<string>("");
   const [pageStatus, setPageStatus] = useState<string>("");
   const [pageError, setPageError] = useState<string>("");
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
@@ -49,6 +49,41 @@ function BlsManagerPage() {
       setPageStatus("");
     }
   }, [walletError, walletStatus]);
+
+  // Load public key from backend when connected
+  useEffect(() => {
+    const loadPublicKey = async () => {
+      if (!publicClient || !connectedAccount || !isOnCorrectChain) {
+        return;
+      }
+
+      try {
+        const callData = encodeFunctionData({
+          abi: AccountManagerAbi,
+          functionName: "getPublickeyBls",
+          args: [],
+        });
+
+        const result = await publicClient.call({
+          to: PREDEFINED_CONTRACT_ADDRESS,
+          data: callData,
+        });
+        console.log("result",result)
+        if (result.data && result.data !== "0x") {
+          const publicKeyHex = result.data as Hex;
+          const jsonString = hexToString(publicKeyHex);
+          const publicKeyString = JSON.parse(jsonString) as string;
+          setPublicKeyInput(publicKeyString);
+          console.log("data",publicKeyHex, "parsed:", publicKeyString)
+        }
+      } catch (err) {
+        console.error("Error loading public key:", err);
+        // Don't show error to user, just use default value
+      }
+    };
+
+    loadPublicKey();
+  }, [publicClient, connectedAccount, isOnCorrectChain]);
 
   const handleSetPublicKey = async () => {
     clearWalletError();
@@ -84,7 +119,7 @@ function BlsManagerPage() {
 
     try {
       const finalContractAddress = PREDEFINED_CONTRACT_ADDRESS;
-      const finalPublicKeyInput = publicKeyInput.trim() as Hex;
+      const finalPublicKeyInput = publicKeyInput?.trim() as Hex;
       const finalConnectedAccount = connectedAccount as `0x${string}`;
 
       setPageStatus("Encoding function data...");

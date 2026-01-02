@@ -13,7 +13,8 @@
   "ldb_bls_account_noti": "./db/bls_account_noti",
   "ldb_contract_free_gas": "./db/ldb_contract_free_gas",
   "ldb_artifact_registry": "./db/ldb_artifact_registry",
+  "ldb_robot_transaction": "./db/ldb_robot_transaction",
   "owner_rpc_address": "0x0b143e894a600114c4a3729874214e5fc5ea9cbc",
-  "contracts_interceptor": ["0x00000000000000000000000000000000D844bb55","0x78affC3e85CB90e5bFd567703A4bF81Ae81b64A6"],
+  "contracts_interceptor": ["0x00000000000000000000000000000000D844bb55","0x68dC15a5734fBd4155158A444F5644d88D98f616"],
   "reward_amount": 1000000000000000000
 }

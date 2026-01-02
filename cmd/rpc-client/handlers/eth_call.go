@@ -10,6 +10,7 @@ import (
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/utils"
 	"github.com/meta-node-blockchain/meta-node/pkg/account_handler"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
+	robothandler "github.com/meta-node-blockchain/meta-node/pkg/robot_handler"
 	"github.com/meta-node-blockchain/meta-node/pkg/rpc_client"
 )
 
@@ -49,6 +50,33 @@ func processEthCallParams(appCtx *app.Context, id interface{}, callObjectRaw jso
 				return utils.MakeInternalError(id, "Failed to encode result: "+err.Error())
 			}
 
+			// Convert JSON to hex string (0x...)
+			hexResult := "0x" + ethCommon.Bytes2Hex(jsonBytes)
+			return rpc_client.JSONRPCResponse{
+				Jsonrpc: "2.0",
+				Result:  hexResult,
+				Id:      id,
+			}
+		}
+	}
+	// robot contract
+	if decoded.HasTo && decoded.ToAddress == ethCommon.HexToAddress(appCtx.Cfg.ContractsInterceptor[1]) {
+		robotHandler, err := robothandler.GetRobotHandler(appCtx)
+		if err != nil {
+			logger.Error("Failed to get robot handler: %v", err)
+			return utils.MakeInternalError(id, "Failed to get robot handler: "+err.Error())
+		}
+		result, err := robotHandler.HandleEthCall(context.Background(), decoded.Payload)
+		if err != nil {
+			// logger.Error("Account handler eth_call error: %v", err)
+			return utils.MakeInternalError(id, "Robot handler error: "+err.Error())
+		}
+		if result != nil && err == nil {
+			// Encode result thành JSON hex string
+			jsonBytes, err := json.Marshal(result)
+			if err != nil {
+				return utils.MakeInternalError(id, "Failed to encode result robot: "+err.Error())
+			}
 			// Convert JSON to hex string (0x...)
 			hexResult := "0x" + ethCommon.Bytes2Hex(jsonBytes)
 			return rpc_client.JSONRPCResponse{

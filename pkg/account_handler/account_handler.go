@@ -113,6 +113,8 @@ func (h *AccountHandlerNoReceipt) HandleEthCall(ctx context.Context, data []byte
 		return h.handleGetNotifications(method, data[4:])
 	case "getAllContractFreeGas":
 		return h.handleGetAllContractFreeGas(method, data[4:])
+	case "getPublickeyBls":
+		return h.handleGetPublickeyBls(method, data[4:])
 
 	default:
 		return nil, nil
@@ -869,4 +871,21 @@ func (h *AccountHandlerNoReceipt) handleGetAllContractFreeGas(
 		"page_size":   pageSizeInt,
 		"total_pages": totalPages,
 	}, nil
+}
+
+func (h *AccountHandlerNoReceipt) handleGetPublickeyBls(
+	method *abi.Method,
+	inputData []byte,
+) (interface{}, error) {
+	// Lấy public key từ KeyPair
+	publicKeyString := h.appCtx.ClientRpc.KeyPair.PublicKey().String()
+
+	// Đảm bảo có prefix "0x" nếu chưa có
+	if !strings.HasPrefix(publicKeyString, "0x") {
+		publicKeyString = "0x" + publicKeyString
+	}
+
+	logger.Info("✅ getPublickeyBls returning public key: %s", publicKeyString)
+	// Trả về string trực tiếp (sẽ được JSON marshal thành "0x...")
+	return publicKeyString, nil
 }

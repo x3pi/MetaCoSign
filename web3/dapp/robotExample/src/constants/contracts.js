@@ -9,7 +9,7 @@ import RobotAbi from "../abi/robotAbi.json";
 export const contracts = {
   RobotManager: {
     abi: RobotAbi,
-    address: "0x78affC3e85CB90e5bFd567703A4bF81Ae81b64A6",
+    address: "0x68dC15a5734fBd4155158A444F5644d88D98f616",
   },
 
   // Thêm các contracts khác ở đây nếu cần

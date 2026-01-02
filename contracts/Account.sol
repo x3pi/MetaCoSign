@@ -15,6 +15,8 @@ contract AccountManager {
     }
     function getAllAccount(bytes memory _sign, bytes memory _publicKeyBls, uint _time, uint _page, uint _pageSize, bool _isConfirm) external {
     }
+    function getPublickeyBls() external {
+    }
     function getNotifications(address _account,uint page, uint pageSize)external { 
 
     }
@@ -32,5 +34,6 @@ contract AccountManager {
     function removeContractFreeGas(address contractAddress ,uint time,bytes memory _sign) external {
     }
     function getAllContractFreeGas(uint256 page, uint256 pageSize, uint256 time, bytes memory _sign) external {
+
     }
 }

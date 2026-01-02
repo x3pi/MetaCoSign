@@ -228,6 +228,13 @@
 		"type": "function"
 	},
 	{
+		"inputs": [],
+		"name": "getPublickeyBls",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
 		"inputs": [
 			{
 				"internalType": "address",

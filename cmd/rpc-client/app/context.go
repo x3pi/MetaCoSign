@@ -40,6 +40,9 @@ type Context struct {
 	// Contract Free Gas Storage
 	LdbContractFreeGas *storage.ContractFreeGasStorage
 
+	// Transaction Storage
+	LdbRobotTransaction *storage.RobotTransaction
+
 	// Artifact Registry Storage
 	// LdbArtifactRegistry *storage.ArtifactRegistryStorage
 
@@ -96,19 +99,34 @@ func New(cfg *config.Config, tcpCfg *tcp_config.ClientConfig) (*Context, error) 
 	}
 	contractFreeGasStorage := storage.NewContractFreeGasStorage(ldbContractFreeGas)
 	contractFreeGasStorage.AddContract(ethCommon.HexToAddress(cfg.ContractsInterceptor[0]))
+
+	// 7. Initialize LevelDB for Transaction Storage
+	var transactionStorage *storage.RobotTransaction
+	if cfg.LdbRobotTransactionPath != "" {
+		txDB, err := leveldb.OpenFile(cfg.LdbRobotTransactionPath, nil)
+		if err != nil {
+			pkStore.Close()
+			ldbBlsWallets.Close()
+			return nil, fmt.Errorf("lỗi mở LevelDB transaction tại '%s': %w", cfg.LdbRobotTransactionPath, err)
+		}
+		transactionStorage = storage.NewTransactionStorage(txDB)
+		logger.Info("✅ Transaction storage initialized at: %s", cfg.LdbRobotTransactionPath)
+	}
+
 	subInterceptor := ws_interceptor.NewSubscriptionInterceptor(cfg)
 	ctx := &Context{
-		ClientRpc:          clientRpc,
-		PKS:                pkStore,
-		ClientTcp:          clientTcp,
-		Cfg:                cfg,
-		TcpCfg:             tcpCfg,
-		LdbBlsWallet:       ldbBlsWallets,
-		LdbNotification:    ldbNotification,
-		LdbContractFreeGas: contractFreeGasStorage,
-		NodeBlsPrivateKey:  keyPair.PrivateKey(),
-		NodeBlsPublicKey:   keyPair.PublicKey(),
-		SubInterceptor:     subInterceptor,
+		ClientRpc:           clientRpc,
+		PKS:                 pkStore,
+		ClientTcp:           clientTcp,
+		Cfg:                 cfg,
+		TcpCfg:              tcpCfg,
+		LdbBlsWallet:        ldbBlsWallets,
+		LdbNotification:     ldbNotification,
+		LdbContractFreeGas:  contractFreeGasStorage,
+		LdbRobotTransaction: transactionStorage,
+		NodeBlsPrivateKey:   keyPair.PrivateKey(),
+		NodeBlsPublicKey:    keyPair.PublicKey(),
+		SubInterceptor:      subInterceptor,
 	}
 	return ctx, nil
 }
@@ -128,6 +146,13 @@ func (ctx *Context) Close() error {
 
 	if ctx.LdbBlsWallet != nil {
 		ctx.LdbBlsWallet.Close()
+	}
+
+	if ctx.LdbRobotTransaction != nil {
+		if err := ctx.LdbRobotTransaction.Close(); err != nil {
+			logger.Error("Failed to close TransactionStorage: %v", err)
+			errors = append(errors, err)
+		}
 	}
 
 	if len(errors) > 0 {

@@ -768,6 +768,7 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTx(
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("BuildTransactionWithDeviceKeyFromEthTx lỗi khi get acccount state %v: %v", fromAddress, err)
 	}
+	logger.Info("None account state: %v", as.Nonce())
 	if ethTx.To() == nil || *ethTx.To() != utils.GetAddressSelector(mt_common.ACCOUNT_SETTING_ADDRESS_SELECT) {
 		if len(as.PublicKeyBls()) == 0 {
 			return nil, nil, nil, fmt.Errorf("lỗi tài khoản chưa đăng ký public key bls trên chain")

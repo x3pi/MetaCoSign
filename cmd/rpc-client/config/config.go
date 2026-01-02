@@ -27,6 +27,7 @@ type Config struct {
 	LdbNotificationPath     string   `json:"ldb_bls_account_noti"`
 	LdbContractFreeGasPath  string   `json:"ldb_contract_free_gas"`
 	LdbArtifactRegistryPath string   `json:"ldb_artifact_registry"`
+	LdbRobotTransactionPath string   `json:"ldb_robot_transaction"` // Path cho transaction storage
 	OwnerRpcAddress         string   `json:"owner_rpc_address"`
 	ContractsInterceptor    []string `json:"contracts_interceptor"` // Địa chỉ contract dùng để intercept
 	RewardAmount            *big.Int `json:"reward_amount"`         // Số lượng reward cho mỗi giao dịch được intercept

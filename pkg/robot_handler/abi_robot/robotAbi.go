@@ -2,146 +2,208 @@ package abi_robot
 
 const RobotABI = `[
 	{
-		"anonymous": false,
+		"inputs": [],
+		"stateMutability": "nonpayable",
+		"type": "constructor"
+	},
+	{
 		"inputs": [
 			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "sessionId",
-				"type": "uint256"
-			},
-			{
-				"indexed": false,
-				"internalType": "bytes",
-				"name": "requestData",
-				"type": "bytes"
-			},
-			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "timestamp",
-				"type": "uint256"
+				"internalType": "address",
+				"name": "target",
+				"type": "address"
 			}
 		],
-		"name": "AIRequest",
-		"type": "event"
+		"name": "AddressEmptyCode",
+		"type": "error"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "implementation",
+				"type": "address"
+			}
+		],
+		"name": "ERC1967InvalidImplementation",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "ERC1967NonPayable",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "FailedCall",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "InvalidInitialization",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "NotInitializing",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "UUPSUnauthorizedCallContext",
+		"type": "error"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "bytes32",
+				"name": "slot",
+				"type": "bytes32"
+			}
+		],
+		"name": "UUPSUnsupportedProxiableUUID",
+		"type": "error"
 	},
 	{
 		"anonymous": false,
 		"inputs": [
 			{
 				"indexed": false,
-				"internalType": "uint256",
+				"internalType": "bytes32",
 				"name": "sessionId",
-				"type": "uint256"
+				"type": "bytes32"
 			},
 			{
 				"indexed": false,
-				"internalType": "uint256",
-				"name": "sentenceIndex",
-				"type": "uint256"
-			},
-			{
-				"indexed": false,
-				"internalType": "string",
-				"name": "sentence",
-				"type": "string"
-			},
-			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "timestamp",
-				"type": "uint256"
-			}
-		],
-		"name": "SentenceEmitted",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "sessionId",
-				"type": "uint256"
+				"internalType": "bytes32",
+				"name": "actionId",
+				"type": "bytes32"
 			},
 			{
 				"indexed": false,
 				"internalType": "address",
-				"name": "robot",
+				"name": "operator",
 				"type": "address"
 			},
 			{
 				"indexed": false,
-				"internalType": "uint256",
-				"name": "timestamp",
-				"type": "uint256"
-			}
-		],
-		"name": "SessionCreated",
-		"type": "event"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "uint256",
-				"name": "sessionId",
-				"type": "uint256"
-			},
-			{
-				"internalType": "address",
-				"name": "robotAddress",
-				"type": "address"
-			},
-			{
 				"internalType": "bytes",
-				"name": "requestData",
+				"name": "data",
 				"type": "bytes"
 			}
 		],
-		"name": "createSession",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
+		"name": "EmitSentence",
+		"type": "event"
 	},
 	{
+		"anonymous": false,
 		"inputs": [
 			{
-				"internalType": "uint256",
-				"name": "sessionId",
-				"type": "uint256"
-			},
-			{
-				"internalType": "uint256",
-				"name": "sentenceIndex",
-				"type": "uint256"
-			},
-			{
-				"internalType": "string",
-				"name": "sentence",
-				"type": "string"
+				"indexed": false,
+				"internalType": "uint64",
+				"name": "version",
+				"type": "uint64"
 			}
 		],
-		"name": "emitSentence",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
+		"name": "Initialized",
+		"type": "event"
 	},
 	{
+		"anonymous": false,
 		"inputs": [
 			{
-				"internalType": "uint256",
-				"name": "sessionId",
-				"type": "uint256"
+				"indexed": true,
+				"internalType": "address",
+				"name": "implementation",
+				"type": "address"
 			}
 		],
-		"name": "getSessionSentences",
+		"name": "Upgraded",
+		"type": "event"
+	},
+	{
+		"inputs": [],
+		"name": "UPGRADE_INTERFACE_VERSION",
 		"outputs": [
 			{
-				"internalType": "string[]",
+				"internalType": "string",
 				"name": "",
-				"type": "string[]"
+				"type": "string"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "bytes32",
+				"name": "sessionId",
+				"type": "bytes32"
+			},
+			{
+				"internalType": "bytes32",
+				"name": "actionId",
+				"type": "bytes32"
+			},
+			{
+				"internalType": "bytes",
+				"name": "data",
+				"type": "bytes"
+			}
+		],
+		"name": "dispatch",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "bytes32",
+				"name": "txHash",
+				"type": "bytes32"
+			}
+		],
+		"name": "getDataByTxhash",
+		"outputs": [],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "getOwnerList",
+		"outputs": [
+			{
+				"internalType": "address[]",
+				"name": "",
+				"type": "address[]"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "initialize",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"name": "ownerList",
+		"outputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
 			}
 		],
 		"stateMutability": "view",
@@ -153,56 +215,66 @@ const RobotABI = `[
 				"internalType": "address",
 				"name": "",
 				"type": "address"
-			},
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
 			}
 		],
-		"name": "robotSessions",
+		"name": "owners",
 		"outputs": [
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			}
-		],
-		"name": "sessions",
-		"outputs": [
-			{
-				"internalType": "address",
-				"name": "robotAddress",
-				"type": "address"
-			},
-			{
-				"internalType": "uint256",
-				"name": "sessionId",
-				"type": "uint256"
-			},
-			{
-				"internalType": "uint256",
-				"name": "createdAt",
-				"type": "uint256"
-			},
 			{
 				"internalType": "bool",
-				"name": "isActive",
+				"name": "",
 				"type": "bool"
 			}
 		],
 		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "proxiableUUID",
+		"outputs": [
+			{
+				"internalType": "bytes32",
+				"name": "",
+				"type": "bytes32"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "_owner",
+				"type": "address"
+			},
+			{
+				"internalType": "bool",
+				"name": "_status",
+				"type": "bool"
+			}
+		],
+		"name": "setOwner",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "newImplementation",
+				"type": "address"
+			},
+			{
+				"internalType": "bytes",
+				"name": "data",
+				"type": "bytes"
+			}
+		],
+		"name": "upgradeToAndCall",
+		"outputs": [],
+		"stateMutability": "payable",
 		"type": "function"
 	}
 ]`

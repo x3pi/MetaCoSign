@@ -11,9 +11,12 @@ import {
   createPublicClient,
   http,
   encodeFunctionData,
+  decodeFunctionResult,
   decodeEventLog,
   keccak256,
   toHex,
+  stringToHex,
+  hexToString,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { contracts } from "~/constants/contracts";
@@ -108,35 +111,104 @@ export function RobotProvider({ children }) {
     }
   }, []);
 
-  // Create session
-  const createSession = useCallback(
-    async (sessionId, robotAddress, requestData) => {
+  // Dispatch function - calls dispatch(bytes32 sessionId, bytes32 actionId, bytes calldata data)
+  const dispatch = useCallback(
+    async (sessionId, actionId, data) => {
+      // Validate inputs
       if (!walletClientRef.current || !publicClientRef.current) {
         throw new Error("Wallet not connected");
       }
 
+      if (sessionId === null || sessionId === undefined) {
+        console.error("❌ [dispatch] Session ID is null/undefined");
+        throw new Error("Session ID is required");
+      }
+      if (actionId === null || actionId === undefined) {
+        console.error("❌ [dispatch] Action ID is null/undefined");
+        throw new Error("Action ID is required");
+      }
+      if (data === null || data === undefined) {
+        console.error("❌ [dispatch] Data is null/undefined");
+        throw new Error("Data is required");
+      }
+
       setIsLoading(true);
       setError(null);
-
+      
       try {
-        const data = encodeFunctionData({
+        // Convert sessionId to bytes32 (32 bytes = 64 hex chars + 0x = 66 chars total)
+        let sessionIdBytes32;
+        if (typeof sessionId === "string") {
+          if (sessionId.startsWith("0x")) {
+            // Already hex, ensure it's exactly 32 bytes (64 hex chars)
+            const hexPart = sessionId.slice(2);
+            sessionIdBytes32 = `0x${hexPart.padStart(64, "0").slice(0, 64)}`;
+          } else {
+            // Convert string to hex, then pad/truncate to 32 bytes
+            const hexStr = stringToHex(sessionId).slice(2);
+            sessionIdBytes32 = `0x${hexStr.padStart(64, "0").slice(0, 64)}`;
+          }
+        } else {
+          // Number, convert to hex and pad to 32 bytes
+          sessionIdBytes32 = `0x${sessionId.toString(16).padStart(64, "0").slice(0, 64)}`;
+        }
+
+        // Convert actionId to bytes32
+        let actionIdBytes32;
+        if (typeof actionId === "string") {
+          if (actionId.startsWith("0x")) {
+            const hexPart = actionId.slice(2);
+            actionIdBytes32 = `0x${hexPart.padStart(64, "0").slice(0, 64)}`;
+          } else {
+            const hexStr = stringToHex(actionId).slice(2);
+            actionIdBytes32 = `0x${hexStr.padStart(64, "0").slice(0, 64)}`;
+          }
+        } else {
+          actionIdBytes32 = `0x${actionId.toString(16).padStart(64, "0").slice(0, 64)}`;
+        }
+
+        // Convert data to bytes (can be any length)
+        let dataBytes;
+        if (typeof data === "string") {
+          if (data.startsWith("0x")) {
+            dataBytes = data;
+          } else {
+            // Convert text to hex
+            dataBytes = stringToHex(data);
+          }
+        } else {
+          dataBytes = `0x${data.toString(16)}`;
+        }
+
+        const encodedData = encodeFunctionData({
           abi: contracts.RobotManager.abi,
-          functionName: "createSession",
-          args: [sessionId, robotAddress, toHex(requestData)],
+          functionName: "dispatch",
+          args: [sessionIdBytes32, actionIdBytes32, dataBytes],
         });
 
-        const hash = await walletClientRef.current.sendTransaction({
-          to: contracts.RobotManager.address,
-          data,
-        });
-
-        // Wait for transaction receipt
-        // await publicClientRef.current.waitForTransactionReceipt({ hash });
+        let hash;
+        try {
+          hash = await walletClientRef.current.sendTransaction({
+            to: contracts.RobotManager.address,
+            data: encodedData,
+          });
+          console.log(`✅ [dispatch] Transaction sent successfully: hash=${hash}`);
+        } catch (sendErr) {
+          console.error(`❌ [dispatch] sendTransaction error:`, sendErr);
+          console.error(`❌ [dispatch] Error details:`, {
+            name: sendErr?.name,
+            message: sendErr?.message,
+            cause: sendErr?.cause,
+            stack: sendErr?.stack,
+          });
+          throw sendErr;
+        }
 
         return hash;
       } catch (err) {
         const errorMsg =
-          err instanceof Error ? err.message : "Failed to create session";
+          err instanceof Error ? err.message : "Failed to dispatch";
+        console.error(`❌ [dispatch] Error:`, err);
         setError(errorMsg);
         throw new Error(errorMsg);
       } finally {
@@ -146,88 +218,62 @@ export function RobotProvider({ children }) {
     []
   );
 
-  // Emit sentence
-  const emitSentence = useCallback(
-    async (sessionId, sentenceIndex, sentence) => {
-      // Validate inputs
-      if (!walletClientRef.current || !publicClientRef.current) {
+  // Get data by txHash
+  const getDataByTxhash = useCallback(
+    async (txHash) => {
+      if (  !publicClientRef.current) {
         throw new Error("Wallet not connected");
-      }
-
-      if (sessionId === null || sessionId === undefined) {
-        console.error("❌ [emitSentence] Session ID is null/undefined");
-        throw new Error("Session ID is required");
-      }
-      if (sentenceIndex === null || sentenceIndex === undefined) {
-        console.error("❌ [emitSentence] Sentence Index is null/undefined");
-        throw new Error("Sentence Index is required");
-      }
-      if (sentence === null || sentence === undefined || sentence.trim() === "") {
-        console.error("❌ [emitSentence] Sentence is null/undefined/empty");
-        throw new Error("Sentence is required");
       }
 
       setIsLoading(true);
       setError(null);
-      
+
       try {
-        console.log(`🔵 [emitSentence] Encoding function data: sessionId=${sessionId}, sentenceIndex=${sentenceIndex}, sentence=${sentence}`);
-        
-        const data = encodeFunctionData({
+        // Convert txHash to bytes (32 bytes for bytes32)
+        let txHashBytes;
+        if (typeof txHash === "string") {
+          // Remove 0x prefix if present
+          const cleanHash = txHash.startsWith("0x") ? txHash.slice(2) : txHash;
+          // Convert hex string to bytes32
+          txHashBytes = `0x${cleanHash.padStart(64, "0")}`;
+        } else {
+          throw new Error("txHash must be a string");
+        }
+        console.log("txHashBytes", txHashBytes);
+        // Encode function call
+        const encodedData = encodeFunctionData({
           abi: contracts.RobotManager.abi,
-          functionName: "emitSentence",
-          args: [sessionId, sentenceIndex, sentence],
+          functionName: "getDataByTxhash",
+          args: [txHashBytes],
         });
 
-        console.log(`🔵 [emitSentence] Sending index ${sentenceIndex} transaction with data: ${data}`);
+        // Call contract (view function)
+        const result = await publicClientRef.current.call({
+          to: contracts.RobotManager.address,
+          data: encodedData,
+        });
 
-        // Wrap sendTransaction để handle response tốt hơn
-        let hash;
-        try {
-          hash = await walletClientRef.current.sendTransaction({
-            to: contracts.RobotManager.address,
-            data,
-          });
-          console.log(`✅ [emitSentence] index ${sentenceIndex} transaction sent successfully: hash=${hash}`);
-        } catch (sendErr) {
-          // Nếu lỗi là "Cannot convert null to a BigInt", có thể là do response parsing
-          // Thử log chi tiết hơn
-          console.error(`❌ [emitSentence] sendTransaction error at index ${sentenceIndex}:`, sendErr);
-          console.error(`❌ [emitSentence] Error details:`, {
-            name: sendErr?.name,
-            message: sendErr?.message,
-            cause: sendErr?.cause,
-            stack: sendErr?.stack,
-          });
-          
-          // Nếu error có request/response info, log ra
-          if (sendErr?.request) {
-            console.error(`❌ [emitSentence] Request that failed:`, sendErr.request);
-          }
-          if (sendErr?.response) {
-            console.error(`❌ [emitSentence] Response that failed:`, sendErr.response);
-          }
-          
-          throw sendErr;
+        if (!result.data || result.data === "0x") {
+          throw new Error("No data returned from contract");
         }
 
-        // Wait for transaction receipt
-        // await publicClientRef.current.waitForTransactionReceipt({ hash });
-
-        return hash;
+        // Backend trả về JSON hex string (eth_call.go marshal object thành JSON hex)
+        // Decode hex → JSON string → parse JSON
+        const jsonStr = hexToString(result.data);
+        const data = JSON.parse(jsonStr);
+        console.log("✅ [getDataByTxhash] Data retrieved:", data);
+        return data;
       } catch (err) {
         const errorMsg =
-          err instanceof Error ? err.message : "Failed to emit sentence";
-        console.error(`❌ [emitSentence] Error index ${sentenceIndex}:`, err);
-        console.error(`❌ [emitSentence] Error message index ${sentenceIndex}:`, errorMsg);
-        console.error(`❌ [emitSentence] Error stack index ${sentenceIndex}:`, err instanceof Error ? err.stack : "No stack");
+          err instanceof Error ? err.message : "Failed to get data by txHash";
+        console.error(`❌ [getDataByTxhash] Error:`, err);
         setError(errorMsg);
         throw new Error(errorMsg);
       } finally {
         setIsLoading(false);
       }
     },
-    []
+    [ !publicClientRef.current]
   );
 
   // Clear events
@@ -246,16 +292,11 @@ export function RobotProvider({ children }) {
 
   // Helper function to subscribe to events
   const subscribeToEvents = (ws, source) => {
-    // Calculate event topic hashes
-    const sigSessionCreated = "SessionCreated(uint256,address,uint256)";
-    const sigSentenceEmitted = "SentenceEmitted(uint256,uint256,string,uint256)";
-    const sigAIRequest = "AIRequest(uint256,bytes,uint256)";
+    // Calculate event topic hash for EmitSentence
+    const sigEmitSentence = "EmitSentence(bytes32,bytes32,address,bytes)";
+    const topicEmitSentence = keccak256(toHex(sigEmitSentence));
 
-    const topicSessionCreated = keccak256(toHex(sigSessionCreated));
-    const topicSentenceEmitted = keccak256(toHex(sigSentenceEmitted));
-    const topicAIRequest = keccak256(toHex(sigAIRequest));
-
-    // Subscribe to SessionCreated events
+    // Subscribe to EmitSentence events from UniversalRobotBus
     ws.send(
       JSON.stringify({
         jsonrpc: "2.0",
@@ -265,39 +306,7 @@ export function RobotProvider({ children }) {
           "logs",
           {
             address: contracts.RobotManager.address,
-            topics: [[topicSessionCreated]],
-          },
-        ],
-      })
-    );
-
-    // Subscribe to SentenceEmitted events
-    ws.send(
-      JSON.stringify({
-        jsonrpc: "2.0",
-        id: 2,
-        method: "eth_subscribe",
-        params: [
-          "logs",
-          {
-            address: contracts.RobotManager.address,
-            topics: [[topicSentenceEmitted]],
-          },
-        ],
-      })
-    );
-
-    // Subscribe to AIRequest events
-    ws.send(
-      JSON.stringify({
-        jsonrpc: "2.0",
-        id: 3,
-        method: "eth_subscribe",
-        params: [
-          "logs",
-          {
-            address: contracts.RobotManager.address,
-            topics: [[topicAIRequest]],
+            topics: [[topicEmitSentence]],
           },
         ],
       })
@@ -322,35 +331,29 @@ export function RobotProvider({ children }) {
             });
 
             const args = decoded.args || {};
+            console.log(decoded)
+            // Create event object for EmitSentence
+            if (decoded.eventName === "EmitSentence") {
+              const robotEvent = {
+                id: `${log.transactionHash}-${log.logIndex}-${source}`,
+                eventName: decoded.eventName,
+                sessionId: args.sessionId || "0x0",
+                actionId: args.actionId || "0x0",
+                operator: args.operator || "",
+                data: args.data || "0x",
+                source: source, // "chain" or "interceptor"
+                timestamp: BigInt(Math.floor(Date.now() / 1000))
+                // Use current timestamp
+              };
 
-            // Create event object
-            const robotEvent = {
-              id: `${log.transactionHash}-${log.logIndex}-${source}`,
-              eventName: decoded.eventName,
-              sessionId: args.sessionId || BigInt(0),
-              timestamp: args.timestamp || BigInt(0),
-              source: source, // "chain" or "interceptor"
-              data: {},
-            };
-
-            // Extract event-specific data
-            if (decoded.eventName === "SessionCreated") {
-              robotEvent.data.robot = args.robot;
-            } else if (decoded.eventName === "SentenceEmitted") {
-              robotEvent.data.sentenceIndex = args.sentenceIndex;
-              robotEvent.data.sentence = args.sentence;
-            } else if (decoded.eventName === "AIRequest") {
-              robotEvent.data.requestData = args.requestData;
+              // Add to appropriate events list
+              if (source === "chain") {
+                setChainEvents((prev) => [robotEvent, ...prev]);
+              } else {
+                setInterceptorEvents((prev) => [robotEvent, ...prev]);
+              }
+              console.log(`🔔 Robot event received from ${source}:`, robotEvent);
             }
-
-            // Add to appropriate events list
-            if (source === "chain") {
-              setChainEvents((prev) => [robotEvent, ...prev]);
-            } else {
-              setInterceptorEvents((prev) => [robotEvent, ...prev]);
-            }
-
-            console.log(`🔔 Robot event received from ${source}:`, robotEvent);
           } catch (decodeErr) {
             console.error(`❌ Error decoding event from ${source}:`, decodeErr);
           }
@@ -514,8 +517,8 @@ export function RobotProvider({ children }) {
         isConnected: !!account,
         connectWallet,
         disconnectWallet,
-        createSession,
-        emitSentence,
+        dispatch,
+        getDataByTxhash,
         chainEvents,
         interceptorEvents,
         clearChainEvents,

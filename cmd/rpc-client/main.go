@@ -135,7 +135,6 @@ func setupHTTPServer(rpcProxy *proxy.RpcReverseProxy, cfg *config.Config, logsDi
 	distPath := "./dist"
 	mux.Handle("/register-bls-key/", spaHandler(distPath, "/register-bls-key/"))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// WebSocket upgrade handling
 		if websocket.IsWebSocketUpgrade(r) {
 			var finalTargetURL string
 			// Interceptor WebSocket endpoint - có interceptor, chặn lại

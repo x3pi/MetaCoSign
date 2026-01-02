@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 
 	ethCommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -85,7 +84,6 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 		}
 		return utils.MakeInternalError(id, "Failed to build transaction: "+buildErr.Error())
 	}
-
 	if tx != nil {
 		if tx.ToAddress() == ethCommon.HexToAddress(appCtx.Cfg.ContractsInterceptor[0]) {
 			accountHandler, err := account_handler.GetAccountHandler(appCtx)
@@ -134,7 +132,7 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 
 		}
 		if tx.ToAddress() == ethCommon.HexToAddress(appCtx.Cfg.ContractsInterceptor[1]) {
-			logger.Info("🔵 [sendRawTransaction] Robot contract detected - txHash=%s, method=%s",
+			logger.Info("🔵_____Robot contract detected - txHash=%s, method=%s",
 				tx.Hash().Hex(), "emitSentence or createSession")
 			robotHandler, err := robothandler.GetRobotHandler(appCtx)
 			if err != nil {
@@ -146,6 +144,7 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 				tx,
 				rawTransactionHex,
 			)
+			// Transaction đã được lưu trong robot_handler.handleDispatchImmediate
 			logger.Info("🔵 [sendRawTransaction] HandleRobotTransaction response: handled=%v, result=%v (type=%T), err=%v",
 				handled, result, result, err)
 			if handled {
@@ -197,11 +196,6 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 					Result:  finalResult,
 					Id:      id,
 				}
-				// Log JSON response để debug
-				responseJSON, _ := json.Marshal(response)
-				logger.Info("✅ [sendRawTransaction] Response JSON: %s", string(responseJSON))
-				logger.Info("✅ [sendRawTransaction] Response created: Jsonrpc=%s, Result=%s, Id=%v",
-					response.Jsonrpc, response.Result, response.Id)
 				return response
 			} else if !handled && err == nil {
 				rs := appCtx.ClientRpc.SendRawTransactionBinary(bTx, releaseTx, decodedTxBytes, releaseDecodedOnce, nil)

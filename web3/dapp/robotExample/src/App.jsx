@@ -8,8 +8,8 @@ function App() {
     isConnected,
     connectWallet,
     disconnectWallet,
-    createSession,
-    emitSentence,
+    dispatch,
+    getDataByTxhash,
     chainEvents,
     interceptorEvents,
     clearChainEvents,
@@ -22,11 +22,14 @@ function App() {
   // Form states
   const [privateKeyInput, setPrivateKeyInput] = useState("");
   const [sessionId, setSessionId] = useState("");
-  const [robotAddress, setRobotAddress] = useState("");
-  const [requestData, setRequestData] = useState("");
-  const [sentenceIndex, setSentenceIndex] = useState("");
-  const [sentence, setSentence] = useState("");
+  const [actionId, setActionId] = useState("");
+  const [data, setData] = useState("");
   const [activeTab, setActiveTab] = useState("chain"); // "chain" or "interceptor"
+  
+  // Get data by txHash states
+  const [txHashInput, setTxHashInput] = useState("");
+  const [txData, setTxData] = useState(null);
+  const [isLoadingTxData, setIsLoadingTxData] = useState(false);
   
   // Spam test states
   const [isSpamming, setIsSpamming] = useState(false);
@@ -50,71 +53,57 @@ function App() {
     connectWallet(keyToUse);
   };
 
-  const handleCreateSession = async (e) => {
+  const handleDispatch = async (e) => {
     e.preventDefault();
-    if (!sessionId || !robotAddress || !requestData) {
+    if (!sessionId || !actionId || !data) {
       alert("Please fill all fields");
       return;
     }
 
     try {
-      const hash = await createSession(
-        BigInt(sessionId),
-        robotAddress,
-        requestData
-      );
-      alert(`Session created! Transaction hash: ${hash}`);
-      // Reset form
-      setSessionId("");
-      setRobotAddress("");
-      setRequestData("");
+      console.log(`Dispatching sessionId=${sessionId}, actionId=${actionId}, data=${data}`);
+      const hash = await dispatch(sessionId, actionId, data);
+      console.log(`✅ Dispatch successful! Transaction hash: ${hash}`);
+      // Don't reset form to allow spam testing
     } catch (err) {
       alert(`Error: ${err.message}`);
     }
   };
 
-  const handleEmitSentence = async (e) => {
+  const handleGetDataByTxhash = async (e) => {
     e.preventDefault();
-    if (!sessionId || sentenceIndex === "" || !sentence) {
-      alert("Please fill all fields");
+    if (!txHashInput || txHashInput.trim() === "") {
+      alert("Please enter a transaction hash");
       return;
     }
 
+    setIsLoadingTxData(true);
+    setTxData(null);
     try {
-      console.log(`Emitting sentence ${sessionId} index ${sentenceIndex} with sentence ${sentence}`);
-      await emitSentence(
-        BigInt(sessionId),
-        BigInt(sentenceIndex),
-        sentence
-      );
-      // alert(`Sentence emitted! Transaction hash: ${hash}`);
-      // Reset form
-      // setSentenceIndex("");
-      // setSentence("");
+      const data = await getDataByTxhash(txHashInput.trim());
+      setTxData(data);
+      console.log("✅ Data retrieved:", data);
     } catch (err) {
       alert(`Error: ${err.message}`);
+      setTxData(null);
+    } finally {
+      setIsLoadingTxData(false);
     }
   };
 
-  // Spam 1000 emit sentence commands để test nonce
-  const handleSpamEmitSentence = async () => {
+  // Spam 1000 dispatch commands để test nonce
+  const handleSpamDispatch = async () => {
     // Validate input
     if (!sessionId || sessionId.trim() === "") {
       alert("Please fill Session ID field first");
       return;
     }
-    if (!sentence || sentence.trim() === "") {
-      alert("Please fill Sentence field first");
+    if (!actionId || actionId.trim() === "") {
+      alert("Please fill Action ID field first");
       return;
     }
-
-    // Validate sessionId is a valid number
-    let sessionIdNum;
-    try {
-      sessionIdNum = BigInt(sessionId.trim());
-    } catch (err) {
-      alert(`Invalid Session ID: ${sessionId}. Must be a valid number.`);
-      console.error("Invalid sessionId:", err);
+    if (!data || data.trim() === "") {
+      alert("Please fill Data field first");
       return;
     }
 
@@ -139,19 +128,20 @@ function App() {
 
         // Tạo batch promises
         for (let j = i; j < batchEnd; j++) {
-          // Validate inputs trước khi gọi
           try {
-            const sentenceIndex = BigInt(j);
-            const sentenceText = `${sentence} [${j}]`;
-            
-            console.log(`Spamming emit sentence sessionId=${sessionIdNum} index=${sentenceIndex} of ${total}`);
+            // Xử lý data: nếu là hex string thì giữ nguyên, nếu là text thì append index
+            let dataWithIndex;
+            if (data.startsWith("0x")) {
+              // Nếu là hex string, không append text vào (giữ nguyên hoặc có thể append hex index nếu cần)
+              // Để đơn giản, giữ nguyên data khi spam với hex string
+              dataWithIndex = data;
+            } else {
+              // Nếu là text, append index vào text
+              dataWithIndex = `${data} [${j}]`;
+            }
             
             batch.push(
-              emitSentence(
-                sessionIdNum,
-                sentenceIndex,
-                sentenceText
-              )
+              dispatch(sessionId, actionId, dataWithIndex)
                 .then((hash) => {
                   successCount++;
                   setSpamProgress((prev) => ({
@@ -174,11 +164,9 @@ function App() {
                     errors: [...prev.errors.slice(-9), errorObj], // Giữ lại 10 lỗi gần nhất
                   }));
                   console.error(`❌ Error at index ${j}:`, err);
-                  return 
                 })
             );
           } catch (validationErr) {
-            // Lỗi validation (BigInt conversion failed)
             const errorMsg = `Validation error: ${validationErr?.message || String(validationErr)}`;
             failedCount++;
             const errorObj = { index: j, error: errorMsg };
@@ -212,16 +200,6 @@ function App() {
       };
 
       console.log("✅ Spam test completed!", finalProgress);
-      console.log("📊 All errors:", allErrors);
-
-      alert(
-        `Spam test completed!\n` +
-        `Total: ${total}\n` +
-        `Success: ${successCount}\n` +
-        `Failed: ${failedCount}\n` +
-        `Check console for error details.`
-      );
-
       setSpamProgress(finalProgress);
     } catch (err) {
       console.error("❌ Spam test error:", err);
@@ -291,95 +269,43 @@ function App() {
           </div>
         )}
 
-        {/* Create Session Section */}
+        {/* Dispatch Section */}
         {isConnected && (
           <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-            <h2 className="text-2xl font-semibold mb-4">Create Session</h2>
-            <form onSubmit={handleCreateSession} className="space-y-4">
+            <h2 className="text-2xl font-semibold mb-4">Dispatch</h2>
+            <form onSubmit={handleDispatch} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Session ID (uint256)
+                  Session ID (bytes32 - hex string)
                 </label>
                 <input
                   type="text"
                   value={sessionId}
                   onChange={(e) => setSessionId(e.target.value)}
-                  placeholder="e.g., 123456789"
+                  placeholder="e.g., 0x1234... or hex string"
                   className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Robot Address
+                  Action ID (bytes32 - hex string)
                 </label>
                 <input
                   type="text"
-                  value={robotAddress}
-                  onChange={(e) => setRobotAddress(e.target.value)}
-                  placeholder="0x..."
+                  value={actionId}
+                  onChange={(e) => setActionId(e.target.value)}
+                  placeholder="e.g., 0x5678... or hex string"
                   className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Request Data (string)
+                  Data (bytes - hex string or text)
                 </label>
                 <textarea
-                  value={requestData}
-                  onChange={(e) => setRequestData(e.target.value)}
-                  placeholder="Enter request data"
-                  rows={3}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
-              >
-                {isLoading ? "Processing..." : "Create Session"}
-              </button>
-            </form>
-          </div>
-        )}
-
-        {/* Emit Sentence Section */}
-        {isConnected && (
-          <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-            <h2 className="text-2xl font-semibold mb-4">Emit Sentence</h2>
-            <form onSubmit={handleEmitSentence} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Session ID (uint256)
-                </label>
-                <input
-                  type="text"
-                  value={sessionId}
-                  onChange={(e) => setSessionId(e.target.value)}
-                  placeholder="e.g., 123456789"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Sentence Index (uint256)
-                </label>
-                <input
-                  type="text"
-                  value={sentenceIndex}
-                  onChange={(e) => setSentenceIndex(e.target.value)}
-                  placeholder="e.g., 0"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Sentence (string)
-                </label>
-                <textarea
-                  value={sentence}
-                  onChange={(e) => setSentence(e.target.value)}
-                  placeholder="Enter sentence"
+                  value={data}
+                  onChange={(e) => setData(e.target.value)}
+                  placeholder="Enter data (text or hex string starting with 0x)"
                   rows={3}
                   className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
@@ -390,12 +316,12 @@ function App() {
                   disabled={isLoading || isSpamming}
                   className="flex-1 bg-purple-600 text-white py-2 px-4 rounded-md hover:bg-purple-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
                 >
-                  {isLoading ? "Processing..." : "Emit Sentence"}
+                  {isLoading ? "Processing..." : "Dispatch"}
                 </button>
                 <button
                   type="button"
-                  onClick={handleSpamEmitSentence}
-                  disabled={isLoading || isSpamming || !sessionId || !sentence}
+                  onClick={handleSpamDispatch}
+                  disabled={isLoading || isSpamming || !sessionId || !actionId || !data}
                   className="flex-1 bg-orange-600 text-white py-2 px-4 rounded-md hover:bg-orange-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
                 >
                   {isSpamming ? "Spamming..." : "🚀 Spam 1000x"}
@@ -444,6 +370,91 @@ function App() {
                     ))}
                   </div>
                 )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Get Data By TxHash Section */}
+        {isConnected && (
+          <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 className="text-2xl font-semibold mb-4">Get Data By TxHash</h2>
+            <form onSubmit={handleGetDataByTxhash} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Transaction Hash
+                </label>
+                <input
+                  type="text"
+                  value={txHashInput}
+                  onChange={(e) => setTxHashInput(e.target.value)}
+                  placeholder="0x..."
+                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={isLoadingTxData}
+                className="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+              >
+                {isLoadingTxData ? "Loading..." : "Get Data"}
+              </button>
+            </form>
+
+            {/* Display Transaction Data */}
+            {txData && (
+              <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-md">
+                <h3 className="text-lg font-semibold text-green-800 mb-2">
+                  Transaction Data
+                </h3>
+                <div className="space-y-2 text-sm">
+                  <div>
+                    <span className="font-semibold">TxHash:</span>{" "}
+                    <span className="font-mono">{txData.txHash}</span>
+                  </div>
+                  <div>
+                    <span className="font-semibold">From:</span>{" "}
+                    <span className="font-mono">{txData.fromAddress}</span>
+                  </div>
+                  <div>
+                    <span className="font-semibold">To:</span>{" "}
+                    <span className="font-mono">{txData.toAddress}</span>
+                  </div>
+                  <div>
+                    <span className="font-semibold">Created At:</span>{" "}
+                    {new Date(txData.createdAt * 1000).toLocaleString()}
+                  </div>
+                  <div>
+                    <span className="font-semibold">Raw Tx Hex:</span>{" "}
+                    <span className="font-mono text-xs break-all">
+                      {txData.rawTxHex}
+                    </span>
+                  </div>
+                  {txData.events && txData.events.length > 0 && (
+                    <div>
+                      <span className="font-semibold">Events:</span>
+                      <div className="mt-2 space-y-2">
+                        {txData.events.map((event, idx) => (
+                          <div
+                            key={idx}
+                            className="bg-white p-2 rounded border border-green-200"
+                          >
+                            <div className="text-xs">
+                              <span className="font-semibold">Data:</span>{" "}
+                              <span className="font-mono break-all">
+                                {event.data}
+                              </span>
+                            </div>
+                            <div className="text-xs mt-1">
+                              <span className="font-semibold">Created At:</span>{" "}
+                              {new Date(event.createdAt * 1000).toLocaleString()}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -558,6 +569,36 @@ function EventCard({ event, source }) {
     return new Date(Number(timestamp) * 1000).toLocaleString();
   };
 
+  const formatBytes32 = (bytes32) => {
+    if (!bytes32) return "N/A";
+    const str = typeof bytes32 === "string" ? bytes32 : bytes32.toString();
+    return str.length > 20 ? `${str.slice(0, 10)}...${str.slice(-8)}` : str;
+  };
+
+  const formatBytes = (bytes) => {
+    if (!bytes) return "N/A";
+    const str = typeof bytes === "string" ? bytes : bytes.toString();
+    if (str.startsWith("0x")) {
+      // Try to decode as UTF-8 if possible
+      try {
+        const hex = str.slice(2);
+        // Convert hex string to Uint8Array, then to UTF-8 string
+        const bytesArray = new Uint8Array(
+          hex.match(/.{1,2}/g)?.map((byte) => parseInt(byte, 16)) || []
+        );
+        const decoder = new TextDecoder("utf-8", { fatal: false });
+        const decoded = decoder.decode(bytesArray);
+        // Check if it's valid UTF-8 (no null bytes in the middle and not empty)
+        if (decoded && !decoded.includes("\x00") && decoded.length > 0) {
+          return decoded;
+        }
+      } catch {
+        // Not valid UTF-8, show hex
+      }
+    }
+    return str.length > 50 ? `${str.slice(0, 25)}...${str.slice(-25)}` : str;
+  };
+
   return (
     <div
       className={`border rounded-md p-4 hover:bg-gray-50 transition-colors ${
@@ -570,9 +611,7 @@ function EventCard({ event, source }) {
         <div className="flex items-center gap-2">
           <span
             className={`px-2 py-1 rounded text-xs font-semibold ${
-              event.eventName === "SessionCreated"
-                ? "bg-blue-100 text-blue-800"
-                : event.eventName === "SentenceEmitted"
+              event.eventName === "EmitSentence"
                 ? "bg-green-100 text-green-800"
                 : "bg-purple-100 text-purple-800"
             }`}
@@ -596,30 +635,23 @@ function EventCard({ event, source }) {
       <div className="space-y-1 text-sm">
         <p>
           <span className="font-medium">Session ID:</span>{" "}
-          {event.sessionId.toString()}
+          <span className="font-mono text-xs">{formatBytes32(event.sessionId)}</span>
         </p>
-        {event.data.robot && (
+        <p>
+          <span className="font-medium">Action ID:</span>{" "}
+          <span className="font-mono text-xs">{formatBytes32(event.actionId)}</span>
+        </p>
+        {event.operator && (
           <p>
-            <span className="font-medium">Robot:</span>{" "}
-            <span className="font-mono text-xs">{event.data.robot}</span>
+            <span className="font-medium">Operator:</span>{" "}
+            <span className="font-mono text-xs">{event.operator}</span>
           </p>
         )}
-        {event.data.sentenceIndex !== undefined && (
+        {event.data && (
           <p>
-            <span className="font-medium">Sentence Index:</span>{" "}
-            {event.data.sentenceIndex.toString()}
-          </p>
-        )}
-        {event.data.sentence && (
-          <p>
-            <span className="font-medium">Sentence:</span> {event.data.sentence}
-          </p>
-        )}
-        {event.data.requestData && (
-          <p>
-            <span className="font-medium">Request Data:</span>{" "}
+            <span className="font-medium">Data:</span>{" "}
             <span className="font-mono text-xs break-all">
-              {event.data.requestData}
+              {formatBytes(event.data)}
             </span>
           </p>
         )}

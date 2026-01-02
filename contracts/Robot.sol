@@ -1,59 +1,72 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.30;
+pragma solidity 0.8.30;
 
-contract RobotContract {
-    struct Session {
-        address robotAddress;
-        uint256 sessionId;
-        uint256 createdAt;
-        bool isActive;
-        string[] sentences; 
+
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+
+
+contract UniversalRobotBus is Initializable, UUPSUpgradeable {
+    // --- STORAGE ---
+    mapping(address => bool) public owners;
+    address[] public ownerList; // Thêm để dễ quản lý danh sách node 3060
+
+    // Event duy nhất mang tính tổng quát cao
+    event EmitSentence(
+        bytes32 sessionId,
+        bytes32 actionId,
+        address operator,
+        bytes data
+    );
+
+    modifier onlyOwner() {
+        require(owners[msg.sender], "Not owner");
+        _;
     }
-    
-    mapping(uint256 => Session) public sessions;
-    mapping(address => uint256[]) public robotSessions;
-    
-    event SessionCreated(uint256 sessionId, address robot, uint256 timestamp);
-    event SentenceEmitted(uint256 sessionId, uint256 sentenceIndex, string sentence, uint256 timestamp);
-    event AIRequest(uint256 sessionId, bytes requestData, uint256 timestamp);
-    
-    function createSession(
-        uint256 sessionId,
-        address robotAddress,
-        bytes calldata requestData
-    ) external {
-        require(!sessions[sessionId].isActive, "Session already exists");
 
-        // Cách tối ưu: Truy cập trực tiếp vào storage để tránh lỗi khởi tạo mảng
-        Session storage newSession = sessions[sessionId];
-        newSession.robotAddress = robotAddress;
-        newSession.sessionId = sessionId;
-        newSession.createdAt = block.timestamp;
-        newSession.isActive = true;
-        // Không cần khởi tạo sentences, nó mặc định là mảng rỗng
-
-        robotSessions[robotAddress].push(sessionId);
-
-        emit SessionCreated(sessionId, robotAddress, block.timestamp);
-        emit AIRequest(sessionId, requestData, block.timestamp);
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
     }
-    
-    function emitSentence(
-        uint256 sessionId,
-        uint256 sentenceIndex,
-        string calldata sentence
-    ) external {
-        require(sessions[sessionId].isActive, "Session not active");
-        // Lưu ý: msg.sender phải là robotAddress đã đăng ký
-        require(sessions[sessionId].robotAddress == msg.sender, "Unauthorized");
-        
-        sessions[sessionId].sentences.push(sentence);
-        
-        emit SentenceEmitted(sessionId, sentenceIndex, sentence, block.timestamp);
+
+    function initialize() public virtual initializer {
+        __UUPSUpgradeable_init();
+        owners[msg.sender] = true;
+        ownerList.push(msg.sender);
     }
-    
-    // Hàm view để lấy danh sách sentences (vì mapping public không trả về mảng trong struct)
-    function getSessionSentences(uint256 sessionId) external view returns (string[] memory) {
-        return sessions[sessionId].sentences;
+    // Hàm bắt buộc của UUPS, thêm virtual để sau này thay đổi cơ chế phân quyền nâng cấp
+    function _authorizeUpgrade(address newImplementation) internal virtual override onlyOwner {}
+
+    // --- CORE DISPATCHER ---
+    /**
+     * @dev Đã thêm virtual: Tương lai bạn có thể override để thêm:
+     * 1. Cơ chế thu phí (fee).
+     * 2. Kiểm tra điều kiện Robot (status check).
+     * 3. Ghi log bổ sung vào Storage thay vì chỉ emit Event.
+     */
+    function dispatch(
+        bytes32 sessionId,
+        bytes32 actionId,
+        bytes calldata data
+    ) external virtual onlyOwner {
+        _beforeDispatch(sessionId, actionId, data); // Hook để mở rộng
+        emit EmitSentence(sessionId, actionId, msg.sender, data);
+        _afterDispatch(sessionId, actionId, data);  // Hook để mở rộng
+    }
+
+    // --- HOOKS (Dùng để override ở các bản nâng cấp sau) ---
+    function _beforeDispatch(bytes32 sessionId, bytes32 actionId, bytes calldata data) internal virtual {}
+    function _afterDispatch(bytes32 sessionId, bytes32 actionId, bytes calldata data) internal virtual {}
+
+    // --- OWNER MANAGEMENT ---
+    function setOwner(address _owner, bool _status) external virtual onlyOwner {
+        owners[_owner] = _status;
+        if(_status) {
+            ownerList.push(_owner);
+        }
+    }
+    function getOwnerList() external view virtual returns (address[] memory) {
+        return ownerList;
     }
 }
