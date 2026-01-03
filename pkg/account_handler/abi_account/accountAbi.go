@@ -2,157 +2,117 @@ package abi_account
 
 const AccountABI = `[
 	{
-		"inputs": [],
-		"stateMutability": "nonpayable",
-		"type": "constructor"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "target",
-				"type": "address"
-			}
-		],
-		"name": "AddressEmptyCode",
-		"type": "error"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "implementation",
-				"type": "address"
-			}
-		],
-		"name": "ERC1967InvalidImplementation",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "ERC1967NonPayable",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "FailedCall",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "InvalidInitialization",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "NotInitializing",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "UUPSUnauthorizedCallContext",
-		"type": "error"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "bytes32",
-				"name": "slot",
-				"type": "bytes32"
-			}
-		],
-		"name": "UUPSUnsupportedProxiableUUID",
-		"type": "error"
-	},
-	{
 		"anonymous": false,
 		"inputs": [
 			{
 				"indexed": false,
-				"internalType": "bytes32",
-				"name": "sessionId",
-				"type": "bytes32"
-			},
-			{
-				"indexed": false,
-				"internalType": "bytes32",
-				"name": "actionId",
-				"type": "bytes32"
-			},
-			{
-				"indexed": false,
 				"internalType": "address",
-				"name": "operator",
+				"name": "account",
 				"type": "address"
 			},
 			{
 				"indexed": false,
-				"internalType": "bytes",
-				"name": "data",
-				"type": "bytes"
-			}
-		],
-		"name": "EmitSentence",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
+				"internalType": "uint256",
+				"name": "time",
+				"type": "uint256"
+			},
 			{
 				"indexed": false,
-				"internalType": "uint64",
-				"name": "version",
-				"type": "uint64"
-			}
-		],
-		"name": "Initialized",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": true,
-				"internalType": "address",
-				"name": "implementation",
-				"type": "address"
-			}
-		],
-		"name": "Upgraded",
-		"type": "event"
-	},
-	{
-		"inputs": [],
-		"name": "UPGRADE_INTERFACE_VERSION",
-		"outputs": [
-			{
 				"internalType": "string",
-				"name": "",
+				"name": "message",
 				"type": "string"
 			}
 		],
-		"stateMutability": "view",
-		"type": "function"
+		"name": "AccountConfirmed",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": false,
+				"internalType": "address",
+				"name": "account",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "time",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "bytes",
+				"name": "publicKey",
+				"type": "bytes"
+			},
+			{
+				"indexed": false,
+				"internalType": "string",
+				"name": "message",
+				"type": "string"
+			}
+		],
+		"name": "RegisterBls",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": false,
+				"internalType": "address",
+				"name": "from",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "address",
+				"name": "to",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "amount",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "time",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "string",
+				"name": "message",
+				"type": "string"
+			}
+		],
+		"name": "TransferFrom",
+		"type": "event"
 	},
 	{
 		"inputs": [
 			{
-				"internalType": "bytes32",
-				"name": "sessionId",
-				"type": "bytes32"
+				"internalType": "address",
+				"name": "contractAddress",
+				"type": "address"
 			},
 			{
-				"internalType": "bytes32",
-				"name": "actionId",
-				"type": "bytes32"
+				"internalType": "uint256",
+				"name": "time",
+				"type": "uint256"
 			},
 			{
 				"internalType": "bytes",
-				"name": "data",
+				"name": "_sign",
 				"type": "bytes"
 			}
 		],
-		"name": "dispatch",
+		"name": "addContractFreeGas",
 		"outputs": [],
 		"stateMutability": "nonpayable",
 		"type": "function"
@@ -160,32 +120,60 @@ const AccountABI = `[
 	{
 		"inputs": [
 			{
-				"internalType": "bytes32",
-				"name": "txHash",
-				"type": "bytes32"
-			}
-		],
-		"name": "getDataByTxhash",
-		"outputs": [],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "getOwnerList",
-		"outputs": [
+				"internalType": "address",
+				"name": "_account",
+				"type": "address"
+			},
 			{
-				"internalType": "address[]",
-				"name": "",
-				"type": "address[]"
+				"internalType": "uint256",
+				"name": "time",
+				"type": "uint256"
+			},
+			{
+				"internalType": "bytes",
+				"name": "_sign",
+				"type": "bytes"
 			}
 		],
-		"stateMutability": "view",
+		"name": "confirmAccount",
+		"outputs": [],
+		"stateMutability": "nonpayable",
 		"type": "function"
 	},
 	{
-		"inputs": [],
-		"name": "initialize",
+		"inputs": [
+			{
+				"internalType": "bytes",
+				"name": "_sign",
+				"type": "bytes"
+			},
+			{
+				"internalType": "bytes",
+				"name": "_publicKeyBls",
+				"type": "bytes"
+			},
+			{
+				"internalType": "uint256",
+				"name": "_time",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "_page",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "_pageSize",
+				"type": "uint256"
+			},
+			{
+				"internalType": "bool",
+				"name": "_isConfirm",
+				"type": "bool"
+			}
+		],
+		"name": "getAllAccount",
 		"outputs": [],
 		"stateMutability": "nonpayable",
 		"type": "function"
@@ -194,67 +182,26 @@ const AccountABI = `[
 		"inputs": [
 			{
 				"internalType": "uint256",
-				"name": "",
+				"name": "page",
 				"type": "uint256"
-			}
-		],
-		"name": "ownerList",
-		"outputs": [
-			{
-				"internalType": "address",
-				"name": "",
-				"type": "address"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "",
-				"type": "address"
-			}
-		],
-		"name": "owners",
-		"outputs": [
-			{
-				"internalType": "bool",
-				"name": "",
-				"type": "bool"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "proxiableUUID",
-		"outputs": [
-			{
-				"internalType": "bytes32",
-				"name": "",
-				"type": "bytes32"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "_owner",
-				"type": "address"
 			},
 			{
-				"internalType": "bool",
-				"name": "_status",
-				"type": "bool"
+				"internalType": "uint256",
+				"name": "pageSize",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "time",
+				"type": "uint256"
+			},
+			{
+				"internalType": "bytes",
+				"name": "_sign",
+				"type": "bytes"
 			}
 		],
-		"name": "setOwner",
+		"name": "getAllContractFreeGas",
 		"outputs": [],
 		"stateMutability": "nonpayable",
 		"type": "function"
@@ -263,18 +210,107 @@ const AccountABI = `[
 		"inputs": [
 			{
 				"internalType": "address",
-				"name": "newImplementation",
+				"name": "_account",
 				"type": "address"
 			},
 			{
+				"internalType": "uint256",
+				"name": "page",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "pageSize",
+				"type": "uint256"
+			}
+		],
+		"name": "getNotifications",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "getPublickeyBls",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "contractAddress",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "time",
+				"type": "uint256"
+			},
+			{
 				"internalType": "bytes",
-				"name": "data",
+				"name": "_sign",
 				"type": "bytes"
 			}
 		],
-		"name": "upgradeToAndCall",
+		"name": "removeContractFreeGas",
 		"outputs": [],
-		"stateMutability": "payable",
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint8",
+				"name": "_type",
+				"type": "uint8"
+			}
+		],
+		"name": "setAccountType",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "bytes",
+				"name": "_publicKey",
+				"type": "bytes"
+			}
+		],
+		"name": "setBlsPublicKey",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "to",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "amount",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "time",
+				"type": "uint256"
+			},
+			{
+				"internalType": "bytes",
+				"name": "_sign",
+				"type": "bytes"
+			}
+		],
+		"name": "transferFrom",
+		"outputs": [],
+		"stateMutability": "nonpayable",
 		"type": "function"
 	}
 ]`

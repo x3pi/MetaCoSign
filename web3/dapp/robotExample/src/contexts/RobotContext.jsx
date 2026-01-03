@@ -11,14 +11,16 @@ import {
   createPublicClient,
   http,
   encodeFunctionData,
-  decodeFunctionResult,
   decodeEventLog,
   keccak256,
   toHex,
   stringToHex,
   hexToString,
+  concat,
+  pad,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { signMessage } from "viem/actions";
 import { contracts } from "~/constants/contracts";
 import { chain991, WSS_RPC, WSS_RPC_INTERCEPTOR, GO_BACKEND_RPC_URL } from "~/constants/customeChain";
 
@@ -54,6 +56,8 @@ export function RobotProvider({ children }) {
   const wsInterceptorRef = useRef(null); // WebSocket cho interceptor
   const reconnectChainTimeoutRef = useRef(null);
   const reconnectInterceptorTimeoutRef = useRef(null);
+  const keepaliveChainIntervalRef = useRef(null); // Keepalive interval cho chain WebSocket
+  const keepaliveInterceptorIntervalRef = useRef(null); // Keepalive interval cho interceptor WebSocket
 
   // Connect wallet from private key
   const connectWallet = useCallback((privateKey) => {
@@ -109,9 +113,17 @@ export function RobotProvider({ children }) {
       clearTimeout(reconnectInterceptorTimeoutRef.current);
       reconnectInterceptorTimeoutRef.current = null;
     }
+    if (keepaliveChainIntervalRef.current) {
+      clearInterval(keepaliveChainIntervalRef.current);
+      keepaliveChainIntervalRef.current = null;
+    }
+    if (keepaliveInterceptorIntervalRef.current) {
+      clearInterval(keepaliveInterceptorIntervalRef.current);
+      keepaliveInterceptorIntervalRef.current = null;
+    }
   }, []);
 
-  // Dispatch function - calls dispatch(bytes32 sessionId, bytes32 actionId, bytes calldata data)
+  // Dispatch function - calls dispatch(bytes32 sessionId, bytes32 actionId, bytes calldata data, uint256 timestamp, bytes calldata sig)
   const dispatch = useCallback(
     async (sessionId, actionId, data) => {
       // Validate inputs
@@ -166,7 +178,7 @@ export function RobotProvider({ children }) {
         } else {
           actionIdBytes32 = `0x${actionId.toString(16).padStart(64, "0").slice(0, 64)}`;
         }
-
+        
         // Convert data to bytes (can be any length)
         let dataBytes;
         if (typeof data === "string") {
@@ -180,10 +192,36 @@ export function RobotProvider({ children }) {
           dataBytes = `0x${data.toString(16)}`;
         }
 
+        // Get current timestamp (Unix timestamp in seconds)
+        const timestamp = BigInt(Math.floor(Date.now() / 1000));
+        const timestampHex = pad(toHex(timestamp), { size: 32 }); // Pad to 32 bytes
+
+        // Build message: sessionId (32 bytes) + actionId (32 bytes) + data (variable) + timestamp (32 bytes)
+        const messageBytes = concat([
+          sessionIdBytes32,
+          actionIdBytes32,
+          dataBytes,
+          timestampHex,
+        ]);
+
+        // Sign message using wallet client
+        // viem signMessage with raw bytes will automatically add Ethereum message prefix
+        let signature;
+        try {
+          signature = await signMessage(walletClientRef.current, {
+            message: { raw: messageBytes },
+          });
+          console.log(`✅ [dispatch] Message signed successfully, signature=${signature}`);
+        } catch (signErr) {
+          console.error(`❌ [dispatch] signMessage error:`, signErr);
+          throw signErr;
+        }
+
+        // Encode function call with signature
         const encodedData = encodeFunctionData({
           abi: contracts.RobotManager.abi,
           functionName: "dispatch",
-          args: [sessionIdBytes32, actionIdBytes32, dataBytes],
+          args: [sessionIdBytes32, actionIdBytes32, dataBytes, timestamp, signature],
         });
 
         let hash;
@@ -195,12 +233,6 @@ export function RobotProvider({ children }) {
           console.log(`✅ [dispatch] Transaction sent successfully: hash=${hash}`);
         } catch (sendErr) {
           console.error(`❌ [dispatch] sendTransaction error:`, sendErr);
-          console.error(`❌ [dispatch] Error details:`, {
-            name: sendErr?.name,
-            message: sendErr?.message,
-            cause: sendErr?.cause,
-            stack: sendErr?.stack,
-          });
           throw sendErr;
         }
 
@@ -261,6 +293,17 @@ export function RobotProvider({ children }) {
         // Decode hex → JSON string → parse JSON
         const jsonStr = hexToString(result.data);
         const data = JSON.parse(jsonStr);
+        
+        // Parse inputData JSON string nếu có
+        if (data.inputData) {
+          try {
+            data.inputData = JSON.parse(data.inputData);
+          } catch (e) {
+            console.warn("⚠️ [getDataByTxhash] Failed to parse inputData JSON:", e);
+            // Giữ nguyên inputData nếu parse lỗi
+          }
+        }
+        
         console.log("✅ [getDataByTxhash] Data retrieved:", data);
         return data;
       } catch (err) {
@@ -273,7 +316,7 @@ export function RobotProvider({ children }) {
         setIsLoading(false);
       }
     },
-    [ !publicClientRef.current]
+    [] // publicClientRef.current không cần trong dependency array vì refs không trigger re-render
   );
 
   // Clear events
@@ -290,11 +333,31 @@ export function RobotProvider({ children }) {
     setInterceptorEvents([]);
   }, []);
 
+  // Helper function to send keepalive (eth_chainId) request
+  const sendKeepalive = (ws, source) => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      const keepaliveId = Date.now(); // Unique ID for each request
+      ws.send(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: keepaliveId,
+          method: "eth_chainId",
+          params: [],
+        })
+      );
+      console.log(`💓 [keepalive] Sent eth_chainId to ${source} WebSocket`);
+    }
+  };
+
   // Helper function to subscribe to events
-  const subscribeToEvents = (ws, source) => {
+  const subscribeToEvents = (ws) => {
     // Calculate event topic hash for EmitSentence
     const sigEmitSentence = "EmitSentence(bytes32,bytes32,address,bytes)";
     const topicEmitSentence = keccak256(toHex(sigEmitSentence));
+
+    // Calculate event topic hash for EmitError
+    const sigEmitError = "EmitError(bytes32,string)";
+    const topicEmitError = keccak256(toHex(sigEmitError));
 
     // Subscribe to EmitSentence events from UniversalRobotBus
     ws.send(
@@ -307,6 +370,22 @@ export function RobotProvider({ children }) {
           {
             address: contracts.RobotManager.address,
             topics: [[topicEmitSentence]],
+          },
+        ],
+      })
+    );
+
+    // Subscribe to EmitError events
+    ws.send(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 2,
+        method: "eth_subscribe",
+        params: [
+          "logs",
+          {
+            address: contracts.RobotManager.address,
+            topics: [[topicEmitError]],
           },
         ],
       })
@@ -331,12 +410,14 @@ export function RobotProvider({ children }) {
             });
 
             const args = decoded.args || {};
-            console.log(decoded)
+            console.log(decoded);
+            
             // Create event object for EmitSentence
             if (decoded.eventName === "EmitSentence") {
               const robotEvent = {
                 id: `${log.transactionHash}-${log.logIndex}-${source}`,
                 eventName: decoded.eventName,
+                txHash: log.transactionHash || "0x0", // Transaction hash từ log
                 sessionId: args.sessionId || "0x0",
                 actionId: args.actionId || "0x0",
                 operator: args.operator || "",
@@ -353,6 +434,27 @@ export function RobotProvider({ children }) {
                 setInterceptorEvents((prev) => [robotEvent, ...prev]);
               }
               console.log(`🔔 Robot event received from ${source}:`, robotEvent);
+            }
+            
+            // Create event object for EmitError
+            if (decoded.eventName === "EmitError") {
+              const robotEvent = {
+                id: `${log.transactionHash}-${log.logIndex}-${source}`,
+                eventName: decoded.eventName,
+                txHash: args.txHash || "0x0",
+                message: args.message || "",
+                source: source, // "chain" or "interceptor"
+                timestamp: BigInt(Math.floor(Date.now() / 1000))
+                // Use current timestamp
+              };
+
+              // Add to appropriate events list
+              if (source === "chain") {
+                setChainEvents((prev) => [robotEvent, ...prev]);
+              } else {
+                setInterceptorEvents((prev) => [robotEvent, ...prev]);
+              }
+              console.log(`🔔 Error event received from ${source}:`, robotEvent);
             }
           } catch (decodeErr) {
             console.error(`❌ Error decoding event from ${source}:`, decodeErr);
@@ -393,6 +495,14 @@ export function RobotProvider({ children }) {
         ws.onopen = () => {
           console.log("✅ Chain WebSocket connected (no interceptor)");
           subscribeToEvents(ws, "chain");
+          
+          // Setup keepalive: gửi eth_chainId mỗi 20 giây
+          if (keepaliveChainIntervalRef.current) {
+            clearInterval(keepaliveChainIntervalRef.current);
+          }
+          keepaliveChainIntervalRef.current = setInterval(() => {
+            sendKeepalive(ws, "chain");
+          }, 20000); // 20 seconds
         };
 
         ws.onmessage = (event) => {
@@ -406,6 +516,12 @@ export function RobotProvider({ children }) {
         ws.onclose = (event) => {
           console.log("❌ Chain WebSocket disconnected");
           wsChainRef.current = null;
+
+          // Clear keepalive interval
+          if (keepaliveChainIntervalRef.current) {
+            clearInterval(keepaliveChainIntervalRef.current);
+            keepaliveChainIntervalRef.current = null;
+          }
 
           // Auto-reconnect after 500ms
           if (event.code !== 1000) {
@@ -433,6 +549,10 @@ export function RobotProvider({ children }) {
       if (reconnectChainTimeoutRef.current) {
         clearTimeout(reconnectChainTimeoutRef.current);
         reconnectChainTimeoutRef.current = null;
+      }
+      if (keepaliveChainIntervalRef.current) {
+        clearInterval(keepaliveChainIntervalRef.current);
+        keepaliveChainIntervalRef.current = null;
       }
     };
   }, [account]);
@@ -465,7 +585,15 @@ export function RobotProvider({ children }) {
 
         ws.onopen = () => {
           console.log("✅ Interceptor WebSocket connected");
-          subscribeToEvents(ws, "interceptor");
+          subscribeToEvents(ws);
+          
+          // Setup keepalive: gửi eth_chainId mỗi 20 giây
+          if (keepaliveInterceptorIntervalRef.current) {
+            clearInterval(keepaliveInterceptorIntervalRef.current);
+          }
+          keepaliveInterceptorIntervalRef.current = setInterval(() => {
+            sendKeepalive(ws, "interceptor");
+          }, 20000); // 20 seconds
         };
 
         ws.onmessage = (event) => {
@@ -479,6 +607,12 @@ export function RobotProvider({ children }) {
         ws.onclose = (event) => {
           console.log("❌ Interceptor WebSocket disconnected");
           wsInterceptorRef.current = null;
+
+          // Clear keepalive interval
+          if (keepaliveInterceptorIntervalRef.current) {
+            clearInterval(keepaliveInterceptorIntervalRef.current);
+            keepaliveInterceptorIntervalRef.current = null;
+          }
 
           // Auto-reconnect after 500ms
           if (event.code !== 1000) {
@@ -506,6 +640,10 @@ export function RobotProvider({ children }) {
       if (reconnectInterceptorTimeoutRef.current) {
         clearTimeout(reconnectInterceptorTimeoutRef.current);
         reconnectInterceptorTimeoutRef.current = null;
+      }
+      if (keepaliveInterceptorIntervalRef.current) {
+        clearInterval(keepaliveInterceptorIntervalRef.current);
+        keepaliveInterceptorIntervalRef.current = null;
       }
     };
   }, [account]);

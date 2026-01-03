@@ -70,6 +70,25 @@ const RobotABI = `[
 			{
 				"indexed": false,
 				"internalType": "bytes32",
+				"name": "txHash",
+				"type": "bytes32"
+			},
+			{
+				"indexed": false,
+				"internalType": "string",
+				"name": "message",
+				"type": "string"
+			}
+		],
+		"name": "EmitError",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": false,
+				"internalType": "bytes32",
 				"name": "sessionId",
 				"type": "bytes32"
 			},
@@ -150,9 +169,37 @@ const RobotABI = `[
 				"internalType": "bytes",
 				"name": "data",
 				"type": "bytes"
+			},
+			{
+				"internalType": "uint256",
+				"name": "time",
+				"type": "uint256"
+			},
+			{
+				"internalType": "bytes",
+				"name": "sig",
+				"type": "bytes"
 			}
 		],
 		"name": "dispatch",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "bytes32",
+				"name": "txHash",
+				"type": "bytes32"
+			},
+			{
+				"internalType": "string",
+				"name": "message",
+				"type": "string"
+			}
+		],
+		"name": "emitError",
 		"outputs": [],
 		"stateMutability": "nonpayable",
 		"type": "function"

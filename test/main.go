@@ -3,82 +3,155 @@ package main
 import (
 	"context"
 	"crypto/ecdsa"
-	"flag"
 	"fmt"
 	"log"
-	"os"
-	"os/signal"
-	"syscall"
+	"math/big"
+	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/meta-node-blockchain/meta-node/test/config"
-	"github.com/meta-node-blockchain/meta-node/test/contract"
-	"github.com/meta-node-blockchain/meta-node/test/listener"
 )
 
-// Hàm mới để chạy trong nền, duy trì kết nối
-func startKeepAlive(ctx context.Context, client *ethclient.Client) {
-	ticker := time.NewTicker(20 * time.Second)
-	// Đảm bảo ticker được dừng khi hàm kết thúc để giải phóng tài nguyên
-	defer ticker.Stop()
-	log.Println("🔧 Bắt đầu goroutine duy trì kết nối (keep-alive)...")
-	for {
-		select {
-		case <-ticker.C: // Mỗi khi ticker tick
-			// Gọi một phương thức nhẹ nhàng như ChainID để gửi dữ liệu qua socket
-			_, err := client.ChainID(ctx)
-			if err != nil {
-				// Nếu có lỗi, có thể kết nối đã bị mất
-				log.Printf("⚠️ Lỗi trong quá trình keep-alive (ChainID): %v. Đang cố gắng kết nối lại...", err)
-			}
-		case <-ctx.Done(): // Nếu context nhận được tín hiệu hủy
-			log.Println("🛑 Dừng goroutine duy trì kết nối.")
-			return // Thoát khỏi vòng lặp và kết thúc goroutine
-		}
-	}
+// 1. CẬP NHẬT ABI: Thêm field vào dispatch
+const contractABI = `[
+    {"anonymous":false,"inputs":[{"indexed":false,"internalType":"bytes32","name":"sessionId","type":"bytes32"},{"indexed":false,"internalType":"bytes32","name":"actionId","type":"bytes32"},{"indexed":false,"internalType":"address","name":"operator","type":"address"},{"indexed":false,"internalType":"bytes","name":"data","type":"bytes"}],"name":"EmitSentence","type":"event"},
+    {"inputs":[{"internalType":"bytes32","name":"sessionId","type":"bytes32"},{"internalType":"bytes32","name":"actionId","type":"bytes32"},{"internalType":"bytes","name":"data","type":"bytes"},{"internalType":"uint256","name":"time","type":"uint256"},{"internalType":"bytes","name":"sig","type":"bytes"}],"name":"dispatch","outputs":[],"stateMutability":"nonpayable","type":"function"}
+]`
+
+func BuildMessageForDispatch(sessionId [32]byte, actionId [32]byte, data []byte, timestamp *big.Int) []byte {
+	timestampBytes := make([]byte, 32)
+	timestamp.FillBytes(timestampBytes)
+
+	message := make([]byte, 0, 32+32+len(data)+32)
+	message = append(message, sessionId[:]...)
+	message = append(message, actionId[:]...)
+	message = append(message, data...)
+	message = append(message, timestampBytes...)
+
+	return message
 }
+
 func main() {
-	// --- 1. Kết nối đến client Ethereum ---
-	envFile := flag.String("envfile", ".env.1", "Path to .env file")
-	flag.Parse()
-	config.Load(*envFile)
-	// ctx, cancel := context.WithCancel(context.Background())
-	// defer cancel() // Đảm bảo hàm cancel được gọi khi main thoát
-	client, err := ethclient.Dial(config.RpcUrl)
+	// 1. KẾT NỐI
+	client, err := ethclient.Dial("ws://192.168.1.234:8545/interceptor")
 	if err != nil {
-		log.Fatalf("Lỗi kết nối đến Ethereum client: %v", err)
+		log.Fatal("Lỗi kết nối:", err)
 	}
-	defer client.Close()
-	fmt.Println("✅ Đã kết nối đến Ethereum client.")
-	// go startKeepAlive(ctx, client)
-	// --- 2. Tải tài khoản từ khóa riêng ---
-	privateKey, err := crypto.HexToECDSA(config.PrivateKeyHex)
+
+	contractAddr := common.HexToAddress("0xE74A88071fdc26f6b0453fE2B8b1d3e805b314E5")
+	parsedABI, _ := abi.JSON(strings.NewReader(contractABI))
+
+	// Thông tin Robot
+	mySessionID := [32]byte{}
+	copy(mySessionID[:], common.HexToHash("0x53455353494f4e5f303031000000000000000000000000000000000000000000").Bytes())
+	actionMove := [32]byte{}
+	copy(actionMove[:], common.HexToHash("0x414354494f4e5f4d4f5645000000000000000000000000000000000000000000").Bytes())
+
+	// -------------------------------------------------------------------------
+	// PHẦN 1: LẮNG NGHE SỰ KIỆN (Giữ nguyên cấu trúc lọc của bạn)
+	// -------------------------------------------------------------------------
+	go func() {
+		query := ethereum.FilterQuery{
+			Addresses: []common.Address{contractAddr},
+		}
+
+		logs := make(chan types.Log)
+		sub, err := client.SubscribeFilterLogs(context.Background(), query, logs)
+		if err != nil {
+			log.Fatal("Lỗi Subscribe:", err)
+		}
+
+		fmt.Println("📡 [LISTENER] Hệ thống đang nghe sự kiện EmitSentence...")
+
+		for {
+			select {
+			case err := <-sub.Err():
+				log.Println("Lỗi luồng nghe:", err)
+			case vLog := <-logs:
+				// Giải mã sự kiện EmitSentence
+				var event struct {
+					SessionId [32]byte
+					ActionId  [32]byte
+					Operator  common.Address
+					Data      []byte
+				}
+
+				// Unpack data từ logs
+				err := parsedABI.UnpackIntoInterface(&event, "EmitSentence", vLog.Data)
+				if err != nil {
+					continue
+				}
+
+				// LOGIC LỌC (Sử dụng [32]byte trực tiếp để so sánh)
+				if event.SessionId == mySessionID {
+					fmt.Printf("\n📩 [NHẬN ĐƯỢC] Phản hồi từ Blockchain:\n")
+					fmt.Printf("   👉 Session: %s\n", "SESSION_001")
+					fmt.Printf("   👉 Operator: %s\n", event.Operator.Hex())
+					fmt.Printf("   👉 Dữ liệu: %s\n", string(event.Data))
+					fmt.Printf("   👉 TxHash: %s\n", vLog.TxHash.Hex())
+				}
+			}
+		}
+	}()
+
+	time.Sleep(1 * time.Second)
+
+	// -------------------------------------------------------------------------
+	// PHẦN 2: GỬI LỆNH DISPATCH (Bổ sung Time và Sig)
+	// -------------------------------------------------------------------------
+	fmt.Println("\n🚀 [SENDER] Chuẩn bị ký và gửi Dispatch...")
+
+	privateKey, _ := crypto.HexToECDSA("3f425fa96b85f8ece78f2a10350fa7af4643a4cdee02f36369833f45b0e003a7")
+	publicKey := privateKey.Public().(*ecdsa.PublicKey)
+	fromAddress := crypto.PubkeyToAddress(*publicKey)
+
+	// A. Chuẩn bị Data và Timestamp
+	dataPayload := []byte("Tốc độ: 10m/s, Hướng: Đông Bắc")
+	nowTime := big.NewInt(time.Now().Unix())
+
+	// B. Tạo Chữ Ký (Signature)
+	message := BuildMessageForDispatch(mySessionID, actionMove, dataPayload, nowTime)
+	prefixedMessage := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", len(message), message)
+	messageHash := crypto.Keccak256Hash([]byte(prefixedMessage))
+
+	signature, err := crypto.Sign(messageHash.Bytes(), privateKey)
 	if err != nil {
-		log.Fatalf("Lỗi tải khóa riêng: %v", err)
+		log.Fatal("Lỗi ký:", err)
 	}
-	publicKey := privateKey.Public()
-	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
-	if !ok {
-		log.Fatal("Lỗi: không thể chuyển đổi publicKey sang *ecdsa.PublicKey")
-	}
-	fromAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
-	fmt.Printf("Sử dụng tài khoản: %s\n", fromAddress.Hex())
+	signature[64] += 27 // Chuẩn hóa V cho Ethereum
 
-	// --- 3. Tải hoặc khởi tạo contract ---
-	contractAddress := common.HexToAddress(config.ContractAddressHex)
-	instanceWS, err := contract.NewFileContract(contractAddress, client)
+	// C. Thiết lập giao dịch
+	nonce, _ := client.PendingNonceAt(context.Background(), fromAddress)
+	gasPrice, _ := client.SuggestGasPrice(context.Background())
+	chainID, _ := client.ChainID(context.Background())
+
+	auth, _ := bind.NewKeyedTransactorWithChainID(privateKey, chainID)
+	auth.Nonce = big.NewInt(int64(nonce))
+	auth.GasLimit = uint64(500000)
+	auth.GasPrice = gasPrice
+
+	// D. Gửi Dispatch: bổ sung nowTime và signature vào tham số cuối
+	input, err := parsedABI.Pack("dispatch", mySessionID, actionMove, dataPayload, nowTime, signature)
 	if err != nil {
-		log.Fatalf("Lỗi khởi tạo contract: %v", err)
+		log.Fatal("Lỗi Pack ABI:", err)
 	}
-	ls := listener.NewEventListener(instanceWS)
-	ls.Start()
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+	tx := types.NewTransaction(nonce, contractAddr, big.NewInt(0), auth.GasLimit, gasPrice, input)
+	signedTx, _ := auth.Signer(fromAddress, tx)
 
-	log.Println("--- Nhận được tín hiệu dừng.. ---")
+	err = client.SendTransaction(context.Background(), signedTx)
+	if err != nil {
+		log.Fatal("Gửi Dispatch thất bại:", err)
+	}
+
+	fmt.Printf("✅ [SENDER] Đã gửi thành công! TxHash: %s\n", signedTx.Hash().Hex())
+	fmt.Printf("📝 [INFO] Time: %d, Sig: 0x%x\n", nowTime.Uint64(), signature)
+
+	select {}
 }

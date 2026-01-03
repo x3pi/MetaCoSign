@@ -3,20 +3,11 @@ package proto;
 
 option go_package = "github.com/meta-node-blockchain/meta-node/pkg/proto";
 
-// StoredTransactionData lưu thông tin transaction và events
-message StoredTransactionData {
-  string tx_hash = 1;                    // Transaction hash (hex string)
-  bytes tx_bytes = 2;                    // Serialized transaction (mt_types.Transaction)
-  string raw_tx_hex = 3;                 // Raw transaction hex string
-  bytes from_address = 4;                // From address (20 bytes)
-  bytes to_address = 5;                  // To address (20 bytes)
-  int64 created_at = 6;                  // Unix timestamp
-  repeated StoredEventData events = 7;    // List of events
-}
-
-// StoredEventData lưu thông tin event từ dispatch
-message StoredEventData {
-  bytes data = 1;                        // Event data (bytes từ dispatch)
-  int64 created_at = 2;                  // Unix timestamp
+// StoredErrorData lưu thông tin lỗi từ dispatch và processTransactionQueue
+message StoredErrorData {
+  string tx_hash = 1;                    // Transaction hash (hex string) - dùng làm key
+  string input_data = 2;                 // Input data từ dispatch (serialized as JSON string)
+  string error_message = 3;              // Mã lỗi hoặc thông báo lỗi
+  int64 created_at = 4;                  // Unix timestamp
 }
 

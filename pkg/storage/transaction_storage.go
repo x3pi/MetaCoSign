@@ -3,30 +3,30 @@ package storage
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	pb "github.com/meta-node-blockchain/meta-node/pkg/proto"
-	mt_types "github.com/meta-node-blockchain/meta-node/types"
 	"github.com/syndtr/goleveldb/leveldb"
 	"google.golang.org/protobuf/proto"
 )
 
 const (
-	TX_STORAGE_PREFIX = "tx:" // tx:<txHash> → StoredTransactionData
+	ERROR_STORAGE_PREFIX = "error:" // error:<txHash> → StoredErrorData
 )
 
-// CachedTxData lưu transaction trong cache
-type CachedTxData struct {
-	Data        *pb.StoredTransactionData
+// CachedErrorData lưu error data trong cache
+type CachedErrorData struct {
+	Data        *pb.StoredErrorData
 	CachedAt    time.Time
-	AccessCount int // Số lần truy cập để LRU
+	AccessCount int64 // Số lần truy cập để LRU
 }
 
-// TransactionStorage quản lý lưu trữ transaction và events
+// RobotTransaction quản lý lưu trữ error data
 type RobotTransaction struct {
 	db           *leveldb.DB
-	cache        sync.Map // txHash (string) → *CachedTxData
+	cache        sync.Map // txHash (string) → *CachedErrorData
 	cacheSize    int      // Số lượng items trong cache
 	maxCacheSize int      // Giới hạn cache (default 500)
 	mu           sync.RWMutex
@@ -41,67 +41,49 @@ type RobotTransaction struct {
 
 type writeRequest struct {
 	txHash string
-	data   *pb.StoredTransactionData
+	data   *pb.StoredErrorData
 }
 
-// NewTransactionStorage tạo mới TransactionStorage
+// NewTransactionStorage tạo mới RobotTransaction storage
 func NewTransactionStorage(db *leveldb.DB) *RobotTransaction {
 	ts := &RobotTransaction{
 		db:           db,
 		maxCacheSize: 500,
-		batchSize:    50,                             // Batch 50 transactions
-		batchTimeout: 500 * time.Millisecond,         // Flush sau 100ms
+		batchSize:    50,                             // Batch 50 errors
+		batchTimeout: 500 * time.Millisecond,         // Flush sau 500ms
 		writeChan:    make(chan *writeRequest, 1000), // Buffer 1000 requests
 		stopChan:     make(chan struct{}),
 	}
-	// Khởi động batch writer
 	ts.wg.Add(1)
 	go ts.batchWriter()
 
 	return ts
 }
 
-// SaveTransaction lưu transaction và events (async via channel)
-func (ts *RobotTransaction) SaveTransaction(
-	tx mt_types.Transaction,
-	rawTxHex string,
-	eventData []byte, // Event data từ dispatch
+// SaveError lưu error data (async via channel)
+func (ts *RobotTransaction) SaveError(
+	txHash string,
+	inputData string, // Input data serialized as JSON string
+	errorMessage string,
 ) error {
-	txHash := tx.Hash().Hex()
-
-	// Marshal transaction
-	txBytes, err := tx.Marshal()
-	if err != nil {
-		return fmt.Errorf("failed to marshal transaction: %w", err)
+	// Tạo stored error data
+	storedData := &pb.StoredErrorData{
+		TxHash:       txHash,
+		InputData:    inputData,
+		ErrorMessage: errorMessage,
+		CreatedAt:    time.Now().Unix(),
 	}
 
-	// Tạo stored data
-	storedData := &pb.StoredTransactionData{
-		TxHash:      txHash,
-		TxBytes:     txBytes,
-		RawTxHex:    rawTxHex,
-		FromAddress: tx.FromAddress().Bytes(),
-		ToAddress:   tx.ToAddress().Bytes(),
-		CreatedAt:   time.Now().Unix(),
-	}
-	// Thêm event data nếu có
-	if len(eventData) > 0 {
-		storedData.Events = []*pb.StoredEventData{
-			{
-				Data:      eventData,
-				CreatedAt: time.Now().Unix(),
-			},
-		}
-	}
 	// Update cache ngay lập tức
 	ts.updateCache(txHash, storedData)
+
 	// Gửi vào channel để batch write
 	select {
 	case ts.writeChan <- &writeRequest{txHash: txHash, data: storedData}:
 		// Success
 	default:
 		// Channel đầy, log warning nhưng không block
-		logger.Warn("⚠️ Transaction write channel full, dropping txHash=%s", txHash)
+		logger.Warn("⚠️ Error write channel full, dropping txHash=%s", txHash)
 	}
 
 	return nil
@@ -110,9 +92,8 @@ func (ts *RobotTransaction) SaveTransaction(
 // batchWriter xử lý batch write async
 func (ts *RobotTransaction) batchWriter() {
 	defer ts.wg.Done()
-
 	batch := new(leveldb.Batch)
-	pending := make(map[string]*pb.StoredTransactionData)
+	pending := make(map[string]*pb.StoredErrorData)
 	ticker := time.NewTicker(ts.batchTimeout)
 	defer ticker.Stop()
 
@@ -123,19 +104,19 @@ func (ts *RobotTransaction) batchWriter() {
 
 		batch.Reset()
 		for txHash, data := range pending {
-			key := []byte(fmt.Sprintf("%s%s", TX_STORAGE_PREFIX, txHash))
+			key := []byte(fmt.Sprintf("%s%s", ERROR_STORAGE_PREFIX, txHash))
 			dataBytes, err := proto.Marshal(data)
 			if err != nil {
-				logger.Error("❌ Failed to marshal transaction data for txHash=%s: %v", txHash, err)
+				logger.Error("❌ Failed to marshal error data for txHash=%s: %v", txHash, err)
 				continue
 			}
 			batch.Put(key, dataBytes)
 		}
 
 		if err := ts.db.Write(batch, nil); err != nil {
-			logger.Error("❌ Failed to write transaction batch: %v", err)
+			logger.Error("❌ Failed to write error batch: %v", err)
 		} else {
-			logger.Debug("✅ Flushed %d transactions to DB", len(pending))
+			logger.Debug("✅ Flushed %d errors to DB", len(pending))
 		}
 
 		// Clear pending
@@ -169,29 +150,29 @@ func (ts *RobotTransaction) batchWriter() {
 	}
 }
 
-// GetTransactionByHash lấy transaction theo hash (check cache trước)
-func (ts *RobotTransaction) GetTransactionByHash(txHashHex string) (*pb.StoredTransactionData, error) {
+// GetErrorByHash lấy error data theo txHash (check cache trước)
+func (ts *RobotTransaction) GetErrorByHash(txHashHex string) (*pb.StoredErrorData, error) {
 	// 1. Check cache trước
 	if cached, ok := ts.cache.Load(txHashHex); ok {
-		cachedData := cached.(*CachedTxData)
+		cachedData := cached.(*CachedErrorData)
 		// Update access count
-		cachedData.AccessCount++
+		atomic.AddInt64(&cachedData.AccessCount, 1)
 		return cachedData.Data, nil
 	}
 
 	// 2. Load từ DB
-	key := []byte(fmt.Sprintf("%s%s", TX_STORAGE_PREFIX, txHashHex))
+	key := []byte(fmt.Sprintf("%s%s", ERROR_STORAGE_PREFIX, txHashHex))
 	dataBytes, err := ts.db.Get(key, nil)
 	if err != nil {
 		if err == leveldb.ErrNotFound {
-			return nil, fmt.Errorf("transaction not found: %s", txHashHex)
+			return nil, fmt.Errorf("error not found: %s", txHashHex)
 		}
-		return nil, fmt.Errorf("failed to get transaction: %w", err)
+		return nil, fmt.Errorf("failed to get error: %w", err)
 	}
 
-	var storedData pb.StoredTransactionData
+	var storedData pb.StoredErrorData
 	if err := proto.Unmarshal(dataBytes, &storedData); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal transaction data: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal error data: %w", err)
 	}
 
 	// 3. Update cache
@@ -201,7 +182,7 @@ func (ts *RobotTransaction) GetTransactionByHash(txHashHex string) (*pb.StoredTr
 }
 
 // updateCache cập nhật cache
-func (ts *RobotTransaction) updateCache(txHash string, data *pb.StoredTransactionData) {
+func (ts *RobotTransaction) updateCache(txHash string, data *pb.StoredErrorData) {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 
@@ -215,7 +196,7 @@ func (ts *RobotTransaction) updateCache(txHash string, data *pb.StoredTransactio
 	}
 
 	// Update cache
-	ts.cache.Store(txHash, &CachedTxData{
+	ts.cache.Store(txHash, &CachedErrorData{
 		Data:        data,
 		CachedAt:    time.Now(),
 		AccessCount: 0,
@@ -224,20 +205,27 @@ func (ts *RobotTransaction) updateCache(txHash string, data *pb.StoredTransactio
 
 // evictLRU xóa item ít được truy cập nhất
 func (ts *RobotTransaction) evictLRU() {
-	var oldestKey string
-	var oldestAccessCount int = -1
+	var bestKey string
+	var minCount int64 = 1<<63 - 1
+
+	samples := 0
+	maxSamples := 10 // Chỉ kiểm tra 10 phần tử ngẫu nhiên
 
 	ts.cache.Range(func(key, value interface{}) bool {
-		cached := value.(*CachedTxData)
-		if oldestAccessCount == -1 || cached.AccessCount < oldestAccessCount {
-			oldestAccessCount = cached.AccessCount
-			oldestKey = key.(string)
+		cached := value.(*CachedErrorData)
+		count := atomic.LoadInt64(&cached.AccessCount)
+
+		if count < minCount {
+			minCount = count
+			bestKey = key.(string)
 		}
-		return true
+
+		samples++
+		return samples < maxSamples // Dừng lại khi đủ mẫu
 	})
 
-	if oldestKey != "" {
-		ts.cache.Delete(oldestKey)
+	if bestKey != "" {
+		ts.cache.Delete(bestKey)
 		ts.cacheSize--
 	}
 }

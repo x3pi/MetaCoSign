@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useRobot } from "./contexts/RobotContext";
 import { privateKey } from "./constants/customeChain";
+import { hexToString } from "viem";
 
 function App() {
   const {
@@ -33,7 +34,15 @@ function App() {
   
   // Spam test states
   const [isSpamming, setIsSpamming] = useState(false);
-  const [spamProgress, setSpamProgress] = useState({ sent: 0, success: 0, failed: 0, errors: [] });
+  const [spamProgress, setSpamProgress] = useState({ 
+    sent: 0, 
+    success: 0, 
+    failed: 0, 
+    errors: [],
+    missing: [] // Danh sách index bị miss
+  });
+  const [sentIndicesSet, setSentIndicesSet] = useState(new Set()); // Lưu các index đã gửi để check sau
+  const [checkResult, setCheckResult] = useState(null); // Kết quả check events
 
   // Auto-connect with private key from constants on mount
   useEffect(() => {
@@ -61,9 +70,9 @@ function App() {
     }
 
     try {
-      console.log(`Dispatching sessionId=${sessionId}, actionId=${actionId}, data=${data}`);
-      const hash = await dispatch(sessionId, actionId, data);
-      console.log(`✅ Dispatch successful! Transaction hash: ${hash}`);
+      // console.log(`Dispatching sessionId=${sessionId}, actionId=${actionId}, data=${data}`);
+      await dispatch(sessionId, actionId, data);
+      // console.log(`✅ Dispatch successful! Transaction hash: ${hash}`);
       // Don't reset form to allow spam testing
     } catch (err) {
       alert(`Error: ${err.message}`);
@@ -90,122 +99,171 @@ function App() {
       setIsLoadingTxData(false);
     }
   };
+// Spam dispatch commands để test nonce
+const handleSpamDispatch = async () => {
+  // Validate input
+  if (!sessionId || sessionId.trim() === "") {
+    alert("Please fill Session ID field first");
+    return;
+  }
+  if (!actionId || actionId.trim() === "") {
+    alert("Please fill Action ID field first");
+    return;
+  }
+  if (!data || data.trim() === "") {
+    alert("Please fill Data field first");
+    return;
+  }
 
-  // Spam 1000 dispatch commands để test nonce
-  const handleSpamDispatch = async () => {
-    // Validate input
-    if (!sessionId || sessionId.trim() === "") {
-      alert("Please fill Session ID field first");
-      return;
-    }
-    if (!actionId || actionId.trim() === "") {
-      alert("Please fill Action ID field first");
-      return;
-    }
-    if (!data || data.trim() === "") {
-      alert("Please fill Data field first");
-      return;
-    }
+  if (isSpamming) {
+    alert("Spam test is already running!");
+    return;
+  }
 
-    if (isSpamming) {
-      alert("Spam test is already running!");
-      return;
-    }
+  setIsSpamming(true);
+  // Reset progress, loại bỏ missing list
+  setSpamProgress({ sent: 0, success: 0, failed: 0, errors: [] });
+  setCheckResult(null); // Reset check result
 
-    setIsSpamming(true);
-    setSpamProgress({ sent: 0, success: 0, failed: 0, errors: [] });
+  const total = 1000;
+  const batchSize = 1; 
+  let successCount = 0;
+  let failedCount = 0;
+  const allErrors = [];
+  const sentIndices = new Set(); // Lưu các index đã gửi thành công (1-based)
 
-    const total = 1000;
-    const batchSize = 10; // Gửi 10 lệnh cùng lúc để tăng tốc
-    let successCount = 0;
-    let failedCount = 0;
-    const allErrors = [];
+  try {
+    for (let i = 0; i < total; i += batchSize) {
+      const batch = [];
+      const batchEnd = Math.min(i + batchSize, total);
 
-    try {
-      for (let i = 0; i < total; i += batchSize) {
-        const batch = [];
-        const batchEnd = Math.min(i + batchSize, total);
-
-        // Tạo batch promises
-        for (let j = i; j < batchEnd; j++) {
-          try {
-            // Xử lý data: nếu là hex string thì giữ nguyên, nếu là text thì append index
-            let dataWithIndex;
-            if (data.startsWith("0x")) {
-              // Nếu là hex string, không append text vào (giữ nguyên hoặc có thể append hex index nếu cần)
-              // Để đơn giản, giữ nguyên data khi spam với hex string
-              dataWithIndex = data;
-            } else {
-              // Nếu là text, append index vào text
-              dataWithIndex = `${data} [${j}]`;
-            }
-            
-            batch.push(
-              dispatch(sessionId, actionId, dataWithIndex)
-                .then((hash) => {
-                  successCount++;
-                  setSpamProgress((prev) => ({
-                    ...prev,
-                    sent: prev.sent + 1,
-                    success: successCount,
-                  }));
-                  console.log(`✅ Success at index ${j}, hash: ${hash}`);
-                })
-                .catch((err) => {
-                  const errorMsg = err?.message || String(err) || "Unknown error";
-                  failedCount++;
-                  const errorObj = { index: j, error: errorMsg };
-                  allErrors.push(errorObj);
-                  
-                  setSpamProgress((prev) => ({
-                    ...prev,
-                    sent: prev.sent + 1,
-                    failed: failedCount,
-                    errors: [...prev.errors.slice(-9), errorObj], // Giữ lại 10 lỗi gần nhất
-                  }));
-                  console.error(`❌ Error at index ${j}:`, err);
-                })
-            );
-          } catch (validationErr) {
-            const errorMsg = `Validation error: ${validationErr?.message || String(validationErr)}`;
-            failedCount++;
-            const errorObj = { index: j, error: errorMsg };
-            allErrors.push(errorObj);
-            
-            setSpamProgress((prev) => ({
-              ...prev,
-              sent: prev.sent + 1,
-              failed: failedCount,
-              errors: [...prev.errors.slice(-9), errorObj],
-            }));
-            console.error(`❌ Validation error at index ${j}:`, validationErr);
-          }
+      for (let j = i; j < batchEnd; j++) {
+        const index = j + 1;
+        let dataWithIndex;
+        if (data.startsWith("0x")) {
+          dataWithIndex = data;
+        } else {
+          dataWithIndex = `${data} [${index}]`;
         }
-
-        // Đợi batch hoàn thành
-        await Promise.allSettled(batch);
-
-        // Delay nhỏ giữa các batch để tránh quá tải
-        if (batchEnd < total) {
-          await new Promise((resolve) => setTimeout(resolve, 50));
-        }
+        
+        batch.push(
+          dispatch(sessionId, actionId, dataWithIndex)
+            .then((hash) => {
+              successCount++;
+              sentIndices.add(index); // Lưu index đã gửi thành công
+              setSpamProgress((prev) => ({
+                ...prev,
+                sent: prev.sent + 1,
+                success: successCount,
+              }));
+              console.log(`✅ Success at index ${index}, hash: ${hash}`);
+            })
+            .catch((err) => {
+              const errorMsg = err?.message || String(err) || "Unknown error";
+              failedCount++;
+              const errorObj = { index: index, error: errorMsg };
+              allErrors.push(errorObj);
+              
+              setSpamProgress((prev) => ({
+                ...prev,
+                sent: prev.sent + 1,
+                failed: failedCount,
+                errors: [...prev.errors.slice(-9), errorObj], 
+              }));
+              console.error(`❌ Error at index ${index}:`, err);
+            })
+        );
       }
 
-      // Final summary
-      const finalProgress = {
-        sent: total,
-        success: successCount,
-        failed: failedCount,
-        errors: allErrors.slice(-10), // Lấy 10 lỗi cuối cùng
-      };
+      // Đợi batch hiện tại hoàn tất
+      await Promise.allSettled(batch);
 
-      console.log("✅ Spam test completed!", finalProgress);
-      setSpamProgress(finalProgress);
-    } catch (err) {
-      console.error("❌ Spam test error:", err);
-      alert(`Spam test error: ${err.message}`);
-    } finally {
-      setIsSpamming(false);
+      // Delay nhỏ giữa các batch để tránh bị rate limit RPC
+      // if (batchEnd < total) {
+      //   await new Promise((resolve) => setTimeout(resolve, 50));
+      // }
+    }
+
+    console.log("✅ Spam test completed!", {
+      totalSent: total,
+      success: successCount,
+      failed: failedCount
+    });
+
+    // Lưu sentIndices vào state để có thể check lại sau
+    setSentIndicesSet(new Set(sentIndices));
+    console.log(`📝 Saved ${sentIndices.size} sent indices for checking`);
+
+  } catch (err) {
+    console.error("❌ Spam test critical error:", err);
+    alert(`Spam test error: ${err.message}`);
+  } finally {
+    setIsSpamming(false);
+  }
+};
+
+  // Hàm check events trên chain
+  const handleCheckEvents = () => {
+    if (sentIndicesSet.size === 0) {
+      alert("Chưa có dữ liệu spam để check. Hãy chạy spam test trước.");
+      return;
+    }
+
+    // Lấy tất cả chain events (chỉ EmitSentence)
+    const chainEventsFiltered = (chainEvents || []).filter(
+      (e) => e.eventName === "EmitSentence"
+    );
+
+    const receivedIndices = new Set();
+    // Extract index từ data trong events
+    chainEventsFiltered.forEach((event) => {
+      try {
+        if (event.data && typeof event.data === "string") {
+          // Nếu data là hex string, decode nó
+          let decodedData = event.data;
+          if (event.data.startsWith("0x") && event.data.length > 2) {
+            try {
+              decodedData = hexToString(event.data);
+            } catch {
+              decodedData = event.data;
+            }
+          }
+          
+          // Tìm pattern `[number]` trong decoded data
+          const match = decodedData.match(/\[(\d+)\]/);
+          if (match) {
+            const index = parseInt(match[1], 10);
+            receivedIndices.add(index);
+          }
+        }
+      } catch (e) {
+        console.warn("⚠️ Error parsing event data:", e);
+      }
+    });
+
+    // Tìm các index bị miss (đã gửi nhưng chưa nhận được event)
+    const missingIndices = Array.from(sentIndicesSet).filter(
+      (index) => !receivedIndices.has(index)
+    );
+    missingIndices.sort((a, b) => a - b);
+
+    const result = {
+      sentCount: sentIndicesSet.size,
+      receivedCount: receivedIndices.size,
+      totalEvents: chainEventsFiltered.length,
+      missingCount: missingIndices.length,
+      missingIndices: missingIndices,
+      receivedIndices: Array.from(receivedIndices).sort((a, b) => a - b),
+    };
+
+    setCheckResult(result);
+    console.log("🔍 Check Events Result:", result);
+    console.log(`📊 Sent: ${result.sentCount}, Received: ${result.receivedCount}, Missing: ${result.missingCount}`);
+    if (missingIndices.length > 0) {
+      console.log("⚠️ Missing indices:", missingIndices);
+      console.log(`⚠️ First 20 missing: ${missingIndices.slice(0, 20).join(", ")}`);
+    } else {
+      console.log("✅ All sent events were received on chain!");
     }
   };
 
@@ -353,6 +411,11 @@ function App() {
                   <span className="text-red-600">
                     ❌ Failed: {spamProgress.failed}
                   </span>
+                  {spamProgress.missing && spamProgress.missing.length > 0 && (
+                    <span className="text-orange-600">
+                      ⚠️ Missing: {spamProgress.missing.length}
+                    </span>
+                  )}
                 </div>
                 {spamProgress.errors.length > 0 && (
                   <div className="mt-2 max-h-32 overflow-y-auto">
@@ -368,6 +431,76 @@ function App() {
                         {err.error}
                       </div>
                     ))}
+                  </div>
+                )}
+                {spamProgress.missing && spamProgress.missing.length > 0 && (
+                  <div className="mt-2 max-h-32 overflow-y-auto">
+                    <p className="text-xs font-semibold text-orange-600 mb-1">
+                      Missing Events ({spamProgress.missing.length} total):
+                    </p>
+                    <div className="text-xs text-orange-700 bg-orange-50 p-1 rounded">
+                      <span className="font-mono">
+                        {spamProgress.missing.length <= 20
+                          ? spamProgress.missing.join(", ")
+                          : `${spamProgress.missing.slice(0, 20).join(", ")} ... (${spamProgress.missing.length} total)`}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Check Events Button và Result */}
+            {sentIndicesSet.size > 0 && (
+              <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-md">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-semibold text-blue-800">
+                    Check Events on Chain
+                  </h3>
+                  <button
+                    onClick={handleCheckEvents}
+                    disabled={isSpamming}
+                    className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  >
+                    🔍 Check
+                  </button>
+                </div>
+                
+                {checkResult && (
+                  <div className="mt-2 space-y-2 text-xs">
+                    <div className="flex gap-4">
+                      <span className="text-blue-700">
+                        📤 Sent: <strong>{checkResult.sentCount}</strong>
+                      </span>
+                      <span className="text-green-700">
+                        ✅ Received: <strong>{checkResult.receivedCount}</strong>
+                      </span>
+                      <span className="text-orange-700">
+                        ⚠️ Missing: <strong>{checkResult.missingCount}</strong>
+                      </span>
+                      <span className="text-gray-700">
+                        📊 Total Events: <strong>{checkResult.totalEvents}</strong>
+                      </span>
+                    </div>
+                    
+                    {checkResult.missingCount > 0 && (
+                      <div className="mt-2 p-2 bg-orange-50 border border-orange-200 rounded">
+                        <p className="text-xs font-semibold text-orange-600 mb-1">
+                          Missing Indices ({checkResult.missingCount} total):
+                        </p>
+                        <div className="text-xs text-orange-700 font-mono break-all">
+                          {checkResult.missingIndices.length <= 30
+                            ? checkResult.missingIndices.join(", ")
+                            : `${checkResult.missingIndices.slice(0, 30).join(", ")} ... (${checkResult.missingIndices.length} total)`}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {checkResult.missingCount === 0 && (
+                      <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded text-green-700">
+                        ✅ All sent events were received on chain!
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -401,11 +534,11 @@ function App() {
               </button>
             </form>
 
-            {/* Display Transaction Data */}
+            {/* Display Error Data */}
             {txData && (
-              <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-md">
-                <h3 className="text-lg font-semibold text-green-800 mb-2">
-                  Transaction Data
+              <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-md">
+                <h3 className="text-lg font-semibold text-red-800 mb-2">
+                  Error Data
                 </h3>
                 <div className="space-y-2 text-sm">
                   <div>
@@ -413,44 +546,45 @@ function App() {
                     <span className="font-mono">{txData.txHash}</span>
                   </div>
                   <div>
-                    <span className="font-semibold">From:</span>{" "}
-                    <span className="font-mono">{txData.fromAddress}</span>
-                  </div>
-                  <div>
-                    <span className="font-semibold">To:</span>{" "}
-                    <span className="font-mono">{txData.toAddress}</span>
+                    <span className="font-semibold">Error Message:</span>{" "}
+                    <span className="text-red-700 break-all">{txData.errorMessage || "N/A"}</span>
                   </div>
                   <div>
                     <span className="font-semibold">Created At:</span>{" "}
                     {new Date(txData.createdAt * 1000).toLocaleString()}
                   </div>
-                  <div>
-                    <span className="font-semibold">Raw Tx Hex:</span>{" "}
-                    <span className="font-mono text-xs break-all">
-                      {txData.rawTxHex}
-                    </span>
-                  </div>
-                  {txData.events && txData.events.length > 0 && (
+                  {txData.inputData && (
                     <div>
-                      <span className="font-semibold">Events:</span>
-                      <div className="mt-2 space-y-2">
-                        {txData.events.map((event, idx) => (
-                          <div
-                            key={idx}
-                            className="bg-white p-2 rounded border border-green-200"
-                          >
-                            <div className="text-xs">
-                              <span className="font-semibold">Data:</span>{" "}
-                              <span className="font-mono break-all">
-                                {event.data}
-                              </span>
-                            </div>
-                            <div className="text-xs mt-1">
-                              <span className="font-semibold">Created At:</span>{" "}
-                              {new Date(event.createdAt * 1000).toLocaleString()}
-                            </div>
+                      <span className="font-semibold">Input Data:</span>
+                      <div className="mt-2 p-2 bg-white rounded border border-red-200">
+                        {typeof txData.inputData === "string" ? (
+                          <pre className="text-xs break-all whitespace-pre-wrap">
+                            {txData.inputData}
+                          </pre>
+                        ) : (
+                          <div className="space-y-1 text-xs">
+                            {txData.inputData.sessionId && (
+                              <div>
+                                <span className="font-semibold">Session ID:</span>{" "}
+                                <span className="font-mono">{txData.inputData.sessionId}</span>
+                              </div>
+                            )}
+                            {txData.inputData.actionId && (
+                              <div>
+                                <span className="font-semibold">Action ID:</span>{" "}
+                                <span className="font-mono">{txData.inputData.actionId}</span>
+                              </div>
+                            )}
+                            {txData.inputData.data && (
+                              <div>
+                                <span className="font-semibold">Data:</span>{" "}
+                                <span className="font-mono break-all">
+                                  {txData.inputData.data}
+                                </span>
+                              </div>
+                            )}
                           </div>
-                        ))}
+                        )}
                       </div>
                     </div>
                   )}
@@ -602,7 +736,9 @@ function EventCard({ event, source }) {
   return (
     <div
       className={`border rounded-md p-4 hover:bg-gray-50 transition-colors ${
-        source === "chain"
+        event.eventName === "EmitError"
+          ? "border-red-200 bg-red-50"
+          : source === "chain"
           ? "border-blue-200 bg-blue-50"
           : "border-purple-200 bg-purple-50"
       }`}
@@ -613,6 +749,8 @@ function EventCard({ event, source }) {
             className={`px-2 py-1 rounded text-xs font-semibold ${
               event.eventName === "EmitSentence"
                 ? "bg-green-100 text-green-800"
+                : event.eventName === "EmitError"
+                ? "bg-red-100 text-red-800"
                 : "bg-purple-100 text-purple-800"
             }`}
           >
@@ -633,27 +771,43 @@ function EventCard({ event, source }) {
         </span>
       </div>
       <div className="space-y-1 text-sm">
-        <p>
-          <span className="font-medium">Session ID:</span>{" "}
-          <span className="font-mono text-xs">{formatBytes32(event.sessionId)}</span>
-        </p>
-        <p>
-          <span className="font-medium">Action ID:</span>{" "}
-          <span className="font-mono text-xs">{formatBytes32(event.actionId)}</span>
-        </p>
-        {event.operator && (
-          <p>
-            <span className="font-medium">Operator:</span>{" "}
-            <span className="font-mono text-xs">{event.operator}</span>
-          </p>
-        )}
-        {event.data && (
-          <p>
-            <span className="font-medium">Data:</span>{" "}
-            <span className="font-mono text-xs break-all">
-              {formatBytes(event.data)}
-            </span>
-          </p>
+        {event.eventName === "EmitError" ? (
+          <>
+            <p>
+              <span className="font-medium">TxHash:</span>{" "}
+              <span className="font-mono text-xs">{event.txHash}</span>
+            </p>
+            <p>
+              <span className="font-medium">Error Message:</span>{" "}
+              <span className="text-red-700 break-all">{event.message || "N/A"}</span>
+            </p>
+          </>
+        ) : (
+          // Hiển thị cho EmitSentence event
+          <>
+            <p>
+              <span className="font-medium">Session ID:</span>{" "}
+              <span className="font-mono text-xs">{formatBytes32(event.sessionId)}</span>
+            </p>
+            <p>
+              <span className="font-medium">Action ID:</span>{" "}
+              <span className="font-mono text-xs">{formatBytes32(event.actionId)}</span>
+            </p>
+            {event.operator && (
+              <p>
+                <span className="font-medium">Operator:</span>{" "}
+                <span className="font-mono text-xs">{event.operator}</span>
+              </p>
+            )}
+            {event.data && (
+              <p>
+                <span className="font-medium">Data:</span>{" "}
+                <span className="font-mono text-xs break-all">
+                  {formatBytes(event.data)}
+                </span>
+              </p>
+            )}
+          </>
         )}
       </div>
     </div>

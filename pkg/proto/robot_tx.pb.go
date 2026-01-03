@@ -21,34 +21,31 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// StoredTransactionData lưu thông tin transaction và events
-type StoredTransactionData struct {
+// StoredErrorData lưu thông tin lỗi từ dispatch và processTransactionQueue
+type StoredErrorData struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	TxHash        string                 `protobuf:"bytes,1,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`                // Transaction hash (hex string)
-	TxBytes       []byte                 `protobuf:"bytes,2,opt,name=tx_bytes,json=txBytes,proto3" json:"tx_bytes,omitempty"`             // Serialized transaction (mt_types.Transaction)
-	RawTxHex      string                 `protobuf:"bytes,3,opt,name=raw_tx_hex,json=rawTxHex,proto3" json:"raw_tx_hex,omitempty"`        // Raw transaction hex string
-	FromAddress   []byte                 `protobuf:"bytes,4,opt,name=from_address,json=fromAddress,proto3" json:"from_address,omitempty"` // From address (20 bytes)
-	ToAddress     []byte                 `protobuf:"bytes,5,opt,name=to_address,json=toAddress,proto3" json:"to_address,omitempty"`       // To address (20 bytes)
-	CreatedAt     int64                  `protobuf:"varint,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`      // Unix timestamp
-	Events        []*StoredEventData     `protobuf:"bytes,7,rep,name=events,proto3" json:"events,omitempty"`                              // List of events
+	TxHash        string                 `protobuf:"bytes,1,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`                   // Transaction hash (hex string) - dùng làm key
+	InputData     string                 `protobuf:"bytes,2,opt,name=input_data,json=inputData,proto3" json:"input_data,omitempty"`          // Input data từ dispatch (serialized as JSON string)
+	ErrorMessage  string                 `protobuf:"bytes,3,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"` // Mã lỗi hoặc thông báo lỗi
+	CreatedAt     int64                  `protobuf:"varint,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`         // Unix timestamp
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *StoredTransactionData) Reset() {
-	*x = StoredTransactionData{}
+func (x *StoredErrorData) Reset() {
+	*x = StoredErrorData{}
 	mi := &file_robot_tx_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *StoredTransactionData) String() string {
+func (x *StoredErrorData) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*StoredTransactionData) ProtoMessage() {}
+func (*StoredErrorData) ProtoMessage() {}
 
-func (x *StoredTransactionData) ProtoReflect() protoreflect.Message {
+func (x *StoredErrorData) ProtoReflect() protoreflect.Message {
 	mi := &file_robot_tx_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -60,107 +57,33 @@ func (x *StoredTransactionData) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use StoredTransactionData.ProtoReflect.Descriptor instead.
-func (*StoredTransactionData) Descriptor() ([]byte, []int) {
+// Deprecated: Use StoredErrorData.ProtoReflect.Descriptor instead.
+func (*StoredErrorData) Descriptor() ([]byte, []int) {
 	return file_robot_tx_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *StoredTransactionData) GetTxHash() string {
+func (x *StoredErrorData) GetTxHash() string {
 	if x != nil {
 		return x.TxHash
 	}
 	return ""
 }
 
-func (x *StoredTransactionData) GetTxBytes() []byte {
+func (x *StoredErrorData) GetInputData() string {
 	if x != nil {
-		return x.TxBytes
-	}
-	return nil
-}
-
-func (x *StoredTransactionData) GetRawTxHex() string {
-	if x != nil {
-		return x.RawTxHex
+		return x.InputData
 	}
 	return ""
 }
 
-func (x *StoredTransactionData) GetFromAddress() []byte {
+func (x *StoredErrorData) GetErrorMessage() string {
 	if x != nil {
-		return x.FromAddress
+		return x.ErrorMessage
 	}
-	return nil
+	return ""
 }
 
-func (x *StoredTransactionData) GetToAddress() []byte {
-	if x != nil {
-		return x.ToAddress
-	}
-	return nil
-}
-
-func (x *StoredTransactionData) GetCreatedAt() int64 {
-	if x != nil {
-		return x.CreatedAt
-	}
-	return 0
-}
-
-func (x *StoredTransactionData) GetEvents() []*StoredEventData {
-	if x != nil {
-		return x.Events
-	}
-	return nil
-}
-
-// StoredEventData lưu thông tin event từ dispatch
-type StoredEventData struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Data          []byte                 `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`                             // Event data (bytes từ dispatch)
-	CreatedAt     int64                  `protobuf:"varint,2,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"` // Unix timestamp
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *StoredEventData) Reset() {
-	*x = StoredEventData{}
-	mi := &file_robot_tx_proto_msgTypes[1]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *StoredEventData) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*StoredEventData) ProtoMessage() {}
-
-func (x *StoredEventData) ProtoReflect() protoreflect.Message {
-	mi := &file_robot_tx_proto_msgTypes[1]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use StoredEventData.ProtoReflect.Descriptor instead.
-func (*StoredEventData) Descriptor() ([]byte, []int) {
-	return file_robot_tx_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *StoredEventData) GetData() []byte {
-	if x != nil {
-		return x.Data
-	}
-	return nil
-}
-
-func (x *StoredEventData) GetCreatedAt() int64 {
+func (x *StoredErrorData) GetCreatedAt() int64 {
 	if x != nil {
 		return x.CreatedAt
 	}
@@ -171,22 +94,14 @@ var File_robot_tx_proto protoreflect.FileDescriptor
 
 const file_robot_tx_proto_rawDesc = "" +
 	"\n" +
-	"\x0erobot_tx.proto\x12\x05proto\"\xfa\x01\n" +
-	"\x15StoredTransactionData\x12\x17\n" +
-	"\atx_hash\x18\x01 \x01(\tR\x06txHash\x12\x19\n" +
-	"\btx_bytes\x18\x02 \x01(\fR\atxBytes\x12\x1c\n" +
+	"\x0erobot_tx.proto\x12\x05proto\"\x8d\x01\n" +
+	"\x0fStoredErrorData\x12\x17\n" +
+	"\atx_hash\x18\x01 \x01(\tR\x06txHash\x12\x1d\n" +
 	"\n" +
-	"raw_tx_hex\x18\x03 \x01(\tR\brawTxHex\x12!\n" +
-	"\ffrom_address\x18\x04 \x01(\fR\vfromAddress\x12\x1d\n" +
+	"input_data\x18\x02 \x01(\tR\tinputData\x12#\n" +
+	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\x12\x1d\n" +
 	"\n" +
-	"to_address\x18\x05 \x01(\fR\ttoAddress\x12\x1d\n" +
-	"\n" +
-	"created_at\x18\x06 \x01(\x03R\tcreatedAt\x12.\n" +
-	"\x06events\x18\a \x03(\v2\x16.proto.StoredEventDataR\x06events\"D\n" +
-	"\x0fStoredEventData\x12\x12\n" +
-	"\x04data\x18\x01 \x01(\fR\x04data\x12\x1d\n" +
-	"\n" +
-	"created_at\x18\x02 \x01(\x03R\tcreatedAtB5Z3github.com/meta-node-blockchain/meta-node/pkg/protob\x06proto3"
+	"created_at\x18\x04 \x01(\x03R\tcreatedAtB5Z3github.com/meta-node-blockchain/meta-node/pkg/protob\x06proto3"
 
 var (
 	file_robot_tx_proto_rawDescOnce sync.Once
@@ -200,18 +115,16 @@ func file_robot_tx_proto_rawDescGZIP() []byte {
 	return file_robot_tx_proto_rawDescData
 }
 
-var file_robot_tx_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_robot_tx_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_robot_tx_proto_goTypes = []any{
-	(*StoredTransactionData)(nil), // 0: proto.StoredTransactionData
-	(*StoredEventData)(nil),       // 1: proto.StoredEventData
+	(*StoredErrorData)(nil), // 0: proto.StoredErrorData
 }
 var file_robot_tx_proto_depIdxs = []int32{
-	1, // 0: proto.StoredTransactionData.events:type_name -> proto.StoredEventData
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	0, // [0:0] is the sub-list for method output_type
+	0, // [0:0] is the sub-list for method input_type
+	0, // [0:0] is the sub-list for extension type_name
+	0, // [0:0] is the sub-list for extension extendee
+	0, // [0:0] is the sub-list for field type_name
 }
 
 func init() { file_robot_tx_proto_init() }
@@ -225,7 +138,7 @@ func file_robot_tx_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_robot_tx_proto_rawDesc), len(file_robot_tx_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   1,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

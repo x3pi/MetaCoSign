@@ -66,7 +66,6 @@ func (p *RpcReverseProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 
 	case "eth_estimateGas":
-		logger.Info("eth_estimateGas body: %v", string(body))
 		callParam := gjson.GetBytes(body, "params.0")
 		if !callParam.Exists() {
 			logger.Info("Cannot unmarshal params for eth_estimateGas")
@@ -115,91 +114,87 @@ func (p *RpcReverseProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		utils.WriteJSON(w, resp)
 		return
 
-	case "eth_getTransactionByHash":
-		txHash := gjson.GetBytes(body, "params.0")
-		if !txHash.Exists() {
-			logger.Warn("⚠️ [http_handler] eth_getTransactionByHash missing params: id=%v", id)
-			resp := utils.MakeInvalidParamError(id, "Invalid params for eth_getTransactionByHash")
-			utils.WriteJSON(w, resp)
-			return
-		}
-		txHashStr := txHash.String()
-		logger.Info("🔵 [http_handler] Received eth_getTransactionByHash request: id=%v, txHash=%s", id, txHashStr)
-		// Forward request to upstream RPC server
-		r.Body = io.NopCloser(bytes.NewReader(body))
-		logger.Info("🔵 [http_handler] Forwarding eth_getTransactionByHash to upstream: id=%v, txHash=%s", id, txHashStr)
-		p.ReverseProxy.ServeHTTP(w, r)
-		logger.Info("🔵 [http_handler] Forwarded eth_getTransactionByHash response: id=%v, txHash=%s", id, txHashStr)
-		return
+	// case "eth_getTransactionByHash":
+	// 	txHash := gjson.GetBytes(body, "params.0")
+	// 	if !txHash.Exists() {
+	// 		logger.Warn("⚠️ [http_handler] eth_getTransactionByHash missing params: id=%v", id)
+	// 		resp := utils.MakeInvalidParamError(id, "Invalid params for eth_getTransactionByHash")
+	// 		utils.WriteJSON(w, resp)
+	// 		return
+	// 	}
+	// 	// Forward request to upstream RPC server
+	// 	r.Body = io.NopCloser(bytes.NewReader(body))
+	// 	p.ReverseProxy.ServeHTTP(w, r)
+	// 	return
 
-	case "eth_getTransactionReceipt":
-		txHash := gjson.GetBytes(body, "params.0")
-		if !txHash.Exists() {
-			logger.Warn("⚠️ [http_handler] eth_getTransactionReceipt missing params: id=%v", id)
-			resp := utils.MakeInvalidParamError(id, "Invalid params for eth_getTransactionReceipt")
-			utils.WriteJSON(w, resp)
-			return
-		}
-		txHashStr := txHash.String()
-		logger.Info("🔵 [http_handler] Received eth_getTransactionReceipt request: id=%v, txHash=%s", id, txHashStr)
-		// Forward request to upstream RPC server
-		r.Body = io.NopCloser(bytes.NewReader(body))
-		logger.Info("🔵 [http_handler] Forwarding eth_getTransactionReceipt to upstream: id=%v, txHash=%s", id, txHashStr)
-		p.ReverseProxy.ServeHTTP(w, r)
-		logger.Info("🔵 [http_handler] Forwarded eth_getTransactionReceipt response: id=%v, txHash=%s", id, txHashStr)
-		return
+	// case "eth_getTransactionReceipt":
+	// 	txHash := gjson.GetBytes(body, "params.0")
+	// 	if !txHash.Exists() {
+	// 		logger.Warn("⚠️ [http_handler] eth_getTransactionReceipt missing params: id=%v", id)
+	// 		resp := utils.MakeInvalidParamError(id, "Invalid params for eth_getTransactionReceipt")
+	// 		utils.WriteJSON(w, resp)
+	// 		return
+	// 	}
+	// 	txHashStr := txHash.String()
+	// 	logger.Info("🔵 [http_handler] Received eth_getTransactionReceipt request: id=%v, txHash=%s", id, txHashStr)
+	// 	// Forward request to upstream RPC server
+	// 	r.Body = io.NopCloser(bytes.NewReader(body))
+	// 	logger.Info("🔵 [http_handler] Forwarding eth_getTransactionReceipt to upstream: id=%v, txHash=%s", id, txHashStr)
+	// 	p.ReverseProxy.ServeHTTP(w, r)
+	// 	logger.Info("🔵 [http_handler] Forwarded eth_getTransactionReceipt response: id=%v, txHash=%s", id, txHashStr)
+	// 	return
 
-	case "eth_getTransactionCount":
-		address := gjson.GetBytes(body, "params.0")
-		blockTag := gjson.GetBytes(body, "params.1")
-		if !address.Exists() {
-			logger.Warn("⚠️ [http_handler] eth_getTransactionCount missing params: id=%v", id)
-			resp := utils.MakeInvalidParamError(id, "Invalid params for eth_getTransactionCount")
-			utils.WriteJSON(w, resp)
-			return
-		}
-		addressStr := address.String()
-		blockTagStr := "latest"
-		if blockTag.Exists() {
-			blockTagStr = blockTag.String()
-		}
-		logger.Info("🔵 [http_handler] Received eth_getTransactionCount request: id=%v, address=%s, blockTag=%s", id, addressStr, blockTagStr)
+	// case "eth_getTransactionCount":
+	// 	address := gjson.GetBytes(body, "params.0")
+	// 	blockTag := gjson.GetBytes(body, "params.1")
+	// 	if !address.Exists() {
+	// 		logger.Warn("⚠️ [http_handler] eth_getTransactionCount missing params: id=%v", id)
+	// 		resp := utils.MakeInvalidParamError(id, "Invalid params for eth_getTransactionCount")
+	// 		utils.WriteJSON(w, resp)
+	// 		return
+	// 	}
+	// 	addressStr := address.String()
+	// 	blockTagStr := "latest"
+	// 	if blockTag.Exists() {
+	// 		blockTagStr = blockTag.String()
+	// 	}
+	// 	logger.Info("🔵 [http_handler] Received eth_getTransactionCount request: id=%v, address=%s, blockTag=%s", id, addressStr, blockTagStr)
 
-		// Gọi upstream RPC trực tiếp để có thể kiểm tra và sửa response
-		params := []interface{}{addressStr}
-		if blockTag.Exists() {
-			params = append(params, blockTagStr)
-		}
-		request := &rpc_client.JSONRPCRequest{
-			Jsonrpc: "2.0",
-			Method:  "eth_getTransactionCount",
-			Params:  params,
-			Id:      id,
-		}
+	// 	// Gọi upstream RPC trực tiếp để có thể kiểm tra và sửa response
+	// 	params := []interface{}{addressStr}
+	// 	if blockTag.Exists() {
+	// 		params = append(params, blockTagStr)
+	// 	}
+	// 	request := &rpc_client.JSONRPCRequest{
+	// 		Jsonrpc: "2.0",
+	// 		Method:  "eth_getTransactionCount",
+	// 		Params:  params,
+	// 		Id:      id,
+	// 	}
 
-		response := p.AppCtx.ClientRpc.SendHTTPRequest(request)
+	// 	response := p.AppCtx.ClientRpc.SendHTTPRequest(request)
 
-		// Kiểm tra và sửa response nếu có null
-		if response.Error != nil {
-			logger.Warn("⚠️ [http_handler] eth_getTransactionCount error: id=%v, error=%v", id, response.Error)
-		} else if response.Result != nil {
-			// Đảm bảo Result là hex string hợp lệ (không null)
-			resultStr, ok := response.Result.(string)
-			if !ok || resultStr == "" || resultStr == "null" {
-				logger.Warn("⚠️ [http_handler] eth_getTransactionCount result is null or invalid: id=%v, result=%v (type=%T), setting to 0x0", id, response.Result, response.Result)
-				response.Result = "0x0"
-			} else {
-				logger.Info("🔵 [http_handler] eth_getTransactionCount response: id=%v, result=%s", id, resultStr)
-			}
-		} else {
-			// Nếu không có result và không có error, set default
-			logger.Warn("⚠️ [http_handler] eth_getTransactionCount no result and no error: id=%v, setting to 0x0", id)
-			// response.Result = "0x0"
-		}
+	// 	// Kiểm tra và sửa response nếu có null
+	// 	if response.Error != nil {
+	// 		logger.Warn("⚠️ [http_handler] eth_getTransactionCount error: id=%v, error=%v", id, response.Error)
+	// 	} else if response.Result != nil {
+	// 		// Đảm bảo Result là hex string hợp lệ (không null)
+	// 		resultStr, ok := response.Result.(string)
+	// 		if !ok || resultStr == "" || resultStr == "null" {
+	// 			logger.Warn("⚠️ [http_handler] eth_getTransactionCount result is null or invalid: id=%v, result=%v (type=%T), setting to 0x0", id, response.Result, response.Result)
+	// 			response.Result = "0x0"
+	// 		} else {
+	// 			logger.Info("🔵 [http_handler] eth_getTransactionCount response: id=%v, result=%s", id, resultStr)
+	// 		}
+	// 	} else {
+	// 		// Nếu không có result và không có error, set default
+	// 		logger.Warn("⚠️ [http_handler] eth_getTransactionCount no result and no error: id=%v, setting to 0x0", id)
+	// 		// response.Result = "0x0"
+	// 	}
 
-		utils.WriteJSON(w, *response)
-		logger.Info("🔵 [http_handler] Sent eth_getTransactionCount response: id=%v, address=%s", id, addressStr)
-		return
+	// 	utils.WriteJSON(w, *response)
+	// 	logger.Info("🔵 [http_handler] Sent eth_getTransactionCount response: id=%v, address=%s", id, addressStr)
+	// 	return
 
 	default:
 		r.Body = io.NopCloser(bytes.NewReader(body))

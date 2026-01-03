@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"math/big"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	ethCommon "github.com/ethereum/go-ethereum/common"
@@ -30,14 +33,19 @@ type RobotHandler struct {
 	// Map lưu session data tạm thời
 	sessions       sync.Map // sessionId => *SessionData
 	processedCount uint64
+	// Map để track các transaction đã xử lý (tránh duplicate)
 }
 
 type QueuedTransaction struct {
 	RobotAddress      ethCommon.Address
 	RawTransactionHex string
 	InitialNonce      uint64
-	SessionID         uint64 // Deprecated: không dùng nữa, giữ lại để tương thích
-	Method            string // Deprecated: không dùng nữa, giữ lại để tương thích
+	txHash            string
+	SessionID         uint64   // Deprecated: không dùng nữa, giữ lại để tương thích
+	Method            string   // Deprecated: không dùng nữa, giữ lại để tương thích
+	SessionId         [32]byte // Session ID từ dispatch
+	ActionId          [32]byte // Action ID từ dispatch
+	Data              []byte   // Data từ dispatch (input data gửi lên)
 }
 
 type SessionData struct {
@@ -78,6 +86,21 @@ func GetRobotHandler(appCtx *app.Context) (*RobotHandler, error) {
 	})
 
 	return robotHandlerInstance, err
+}
+
+// serializeInputData serialize sessionId, actionId, data thành JSON string
+func serializeInputData(sessionId, actionId [32]byte, data []byte) string {
+	inputMap := map[string]interface{}{
+		"sessionId": fmt.Sprintf("0x%x", sessionId),
+		"actionId":  fmt.Sprintf("0x%x", actionId),
+		"data":      fmt.Sprintf("0x%x", data),
+	}
+	jsonBytes, err := json.Marshal(inputMap)
+	if err != nil {
+		// Fallback nếu marshal lỗi
+		return fmt.Sprintf(`{"sessionId":"0x%x","actionId":"0x%x","data":"0x%x"}`, sessionId, actionId, data)
+	}
+	return string(jsonBytes)
 }
 
 // HandleRobotTransaction xử lý giao dịch robot NGAY LẬP TỨC (không check nonce)
@@ -131,8 +154,6 @@ func (h *RobotHandler) handleDispatchImmediate(
 	inputData []byte,
 	rawTransactionHex string,
 ) (bool, interface{}, error) {
-	logger.Info("🔵 [dispatch] Request received - txHash=%s, from=%s, to=%s",
-		tx.Hash().Hex(), tx.FromAddress().Hex(), tx.ToAddress().Hex())
 
 	args, err := method.Inputs.Unpack(inputData)
 	if err != nil {
@@ -140,8 +161,8 @@ func (h *RobotHandler) handleDispatchImmediate(
 		return false, nil, fmt.Errorf("failed to unpack: %w", err)
 	}
 
-	if len(args) < 3 {
-		logger.Error("❌ [dispatch] Invalid args length: %d", len(args))
+	if len(args) < 5 {
+		logger.Error("❌ [dispatch] Invalid args length: %d, expected 5 (sessionId, actionId, data, timestamp, sig)", len(args))
 		return false, nil, fmt.Errorf("invalid args length")
 	}
 
@@ -163,39 +184,67 @@ func (h *RobotHandler) handleDispatchImmediate(
 		return false, nil, fmt.Errorf("data type invalid")
 	}
 
+	timestamp, ok := args[3].(*big.Int)
+	if !ok {
+		logger.Error("❌ [dispatch] timestamp wrong type: %T", args[3])
+		return false, nil, fmt.Errorf("timestamp type invalid")
+	}
+
+	sig, ok := args[4].([]byte)
+	if !ok {
+		logger.Error("❌ [dispatch] sig wrong type: %T", args[4])
+		return false, nil, fmt.Errorf("sig type invalid")
+	}
+
+	dataAsText := string(data)
+	fromAddress := tx.FromAddress()
+
+	// Verify timestamp (5 phút = 300 giây)
+	if err := utilsPkg.VerifyTimestamp(timestamp); err != nil {
+		logger.Error("❌ [dispatch] Timestamp verification failed: %v", err)
+		return false, nil, fmt.Errorf("timestamp verification failed: %w", err)
+	}
+
+	// Build message: sessionId (32) + actionId (32) + data (variable) + timestamp (32)
+	message := utilsPkg.BuildMessageForDispatch(sessionId, actionId, data, timestamp)
+
+	// Verify signature
+	signerAddress, err := utilsPkg.RecoverSignerAddress(message, sig)
+	if err != nil {
+		logger.Error("❌ [dispatch] Failed to recover signer address: %v", err)
+		return false, nil, fmt.Errorf("failed to recover signer: %w", err)
+	}
+
+	// Verify signer matches sender
+	if signerAddress != fromAddress {
+		logger.Error("❌ [dispatch] Signature mismatch: signer=%s, sender=%s", signerAddress.Hex(), fromAddress.Hex())
+		return false, nil, fmt.Errorf("signature mismatch: signer %s does not match sender %s", signerAddress.Hex(), fromAddress.Hex())
+	}
+
+	logger.Info("✅ [dispatch] Signature verified successfully for sender=%s", fromAddress.Hex())
+
 	sessionIdHex := ethCommon.BytesToHash(sessionId[:]).Hex()
 	actionIdHex := ethCommon.BytesToHash(actionId[:]).Hex()
-	logger.Info("🔵 [dispatch] sessionId=%s, actionId=%s, dataLen=%d",
-		sessionIdHex, actionIdHex, len(data))
+	txHash := tx.Hash().Hex()
 
 	// Đưa transaction vào queue để xử lý tuần tự
 	queuedTx := &QueuedTransaction{
 		RobotAddress:      tx.FromAddress(),
 		RawTransactionHex: rawTransactionHex,
 		InitialNonce:      tx.GetNonce(),
+		txHash:            txHash,
+		SessionId:         sessionId,
+		ActionId:          actionId,
+		Data:              data,
 	}
 	select {
 	case h.txQueue <- queuedTx:
-		logger.Info("✅ Queued transaction for dispatch - sessionId=%s, actionId=%s", sessionIdHex, actionIdHex)
+		logger.Info("✅ Queued transaction for dispatch - sessionId=%s, actionId=%s, txHash=%s, data=%s", sessionIdHex, actionIdHex, txHash, dataAsText)
 	default:
 		logger.Error("❌ Queue is full, cannot queue transaction for dispatch - sessionId=%s", sessionIdHex)
 	}
 	operator := tx.FromAddress()
 	h.broadcastEvent("EmitSentence", sessionId, actionId, operator, data)
-	if h.appCtx.LdbRobotTransaction != nil {
-		// Pack event data: sessionId, actionId, operator, data
-		// Chỉ lưu data từ dispatch (args[2])
-		if err := h.appCtx.LdbRobotTransaction.SaveTransaction(tx, rawTransactionHex, data); err != nil {
-			logger.Error("❌ [dispatch] Failed to save transaction to storage: %v", err)
-			// Không return error, chỉ log vì đây là non-critical operation
-			return false, nil, fmt.Errorf("failed to save transaction to storage: %w", err)
-		} else {
-			logger.Debug("✅ [dispatch] Saved transaction to storage: txHash=%s", tx.Hash().Hex())
-		}
-	}
-	txHash := tx.Hash().Hex()
-	logger.Info("✅ [dispatch] Returning txHash=%s for sessionId=%s, actionId=%s",
-		txHash, sessionIdHex, actionIdHex)
 
 	return true, txHash, nil
 }
@@ -229,169 +278,166 @@ func (h *RobotHandler) handleGetDataByTxhash(
 		logger.Error("❌ [getDataByTxhash] LdbRobotTransaction is not initialized")
 		return nil, fmt.Errorf("transaction storage not available")
 	}
-
 	// Tra cứu từ storage
-	storedData, err := h.appCtx.LdbRobotTransaction.GetTransactionByHash(txHashHex)
+	storedError, err := h.appCtx.LdbRobotTransaction.GetErrorByHash(txHashHex)
 	if err != nil {
 		logger.Error("❌ [getDataByTxhash] Failed to get transaction: %v", err)
-		return nil, fmt.Errorf("transaction not found: %w", err)
+		return nil, fmt.Errorf("error not found: %w", err)
 	}
 	// Tạo response object (không phải JSON string, để eth_call.go tự marshal)
 	response := map[string]interface{}{
-		"txHash":      storedData.TxHash,
-		"rawTxHex":    storedData.RawTxHex,
-		"fromAddress": ethCommon.BytesToAddress(storedData.FromAddress).Hex(),
-		"toAddress":   ethCommon.BytesToAddress(storedData.ToAddress).Hex(),
-		"createdAt":   storedData.CreatedAt,
-		"events":      []map[string]interface{}{},
+		"txHash":       storedError.TxHash,
+		"inputData":    storedError.InputData,
+		"errorMessage": storedError.ErrorMessage,
+		"createdAt":    storedError.CreatedAt,
 	}
-
-	// Thêm events nếu có
-	for _, event := range storedData.Events {
-		eventData := map[string]interface{}{
-			"data":      fmt.Sprintf("0x%x", event.Data),
-			"createdAt": event.CreatedAt,
-		}
-		response["events"] = append(response["events"].([]map[string]interface{}), eventData)
-	}
-
-	logger.Info("✅ [getDataByTxhash] Returning data for txHash=%s", txHashHex)
-	// Trả về map/object trực tiếp (eth_call.go sẽ tự marshal thành JSON hex string)
+	logger.Info("✅ [getDataByTxhash] Returning error data for txHash=%s", txHashHex)
 	return response, nil
 }
 
-// processTransactionQueue: Worker xử lý queue - lấy từ queue và gửi lên chain với nonce tuần tự
+// processTransactionQueue: Worker chính xử lý hàng đợi giao dịch
 func (h *RobotHandler) processTransactionQueue() {
-	// Map để quản lý nonce theo từng address
+	// Map để quản lý nonce theo từng address nội bộ trong worker
 	nonceMap := make(map[ethCommon.Address]uint64)
 	nonceMutex := sync.Mutex{}
-	// Lấy từ queue và xử lý tuần tự
+
+	logger.Info("🚀 RobotHandler Worker started processing queue...")
+
 	for queuedTx := range h.txQueue {
-		count := atomic.AddUint64(&h.processedCount, 1)
-		fromAddress := queuedTx.RobotAddress
+		success := false
+		maxRetries := 3
+		var lastError error
 
-		// Decode rawTransactionHex
-		decodedTxBytes, releaseDecoded, err := utils.DecodeHexPooled(queuedTx.RawTransactionHex)
-		if err != nil {
-			logger.Error("Failed to decode rawTransactionHex: %v", err)
-			continue
+		// Vòng lặp Retry 3 lần
+		for attempt := 1; attempt <= maxRetries; attempt++ {
+			// Gọi hàm xử lý thực thi giao dịch
+			err := h.executeSingleTransaction(queuedTx, &nonceMap, &nonceMutex)
+
+			if err == nil {
+				success = true
+				break
+			}
+
+			lastError = err
+
+			// Nếu thất bại, tính toán thời gian chờ tăng dần (Lần 1: 2s, Lần 2: 4s)
+			if attempt < maxRetries {
+				waitTime := time.Duration(attempt*2) * 400 * time.Millisecond
+				logger.Error("⚠️ [Attempt %d/%d] Tx %s failed: %v. Retrying in %v...",
+					attempt, maxRetries, queuedTx.txHash, err, waitTime)
+				time.Sleep(waitTime)
+			}
 		}
 
-		// Unmarshal Ethereum transaction
-		ethTx := new(types.Transaction)
-		if err := ethTx.UnmarshalBinary(decodedTxBytes); err != nil {
-			releaseDecoded()
-			logger.Error("Failed to unmarshal ethTx: %v", err)
-			continue
+		// Nếu sau 3 lần vẫn lỗi -> Dừng toàn bộ chương trình
+		if !success {
+			criticalMsg := fmt.Sprintf("❌ [CRITICAL] Transaction %s failed after %d retries. System must stop to prevent nonce desync. Error: %v",
+				queuedTx.txHash, maxRetries, lastError)
+			logger.Error(criticalMsg)
+			// Lưu lỗi cuối cùng vào LevelDB
+			inputDataStr := serializeInputData(queuedTx.SessionId, queuedTx.ActionId, queuedTx.Data)
+			h.appCtx.LdbRobotTransaction.SaveError(queuedTx.txHash, inputDataStr, criticalMsg)
+			// Phát tán event lỗi cuối cùng
+			txHashBytes := ethCommon.HexToHash(queuedTx.txHash)
+			h.broadcastEvent("EmitError", txHashBytes, criticalMsg)
+			// Dừng chương trình ngay lập tức
+			time.Sleep(1 * time.Second)
+			logger.Error("🛑 Shutting down process due to critical transaction failure.")
+			os.Exit(1)
 		}
+	}
+}
 
-		// Lấy fromAddress từ transaction (sử dụng queuedTx.RobotAddress đã có sẵn)
-		// fromAddress đã được set từ queuedTx.RobotAddress ở đầu vòng lặp
+// executeSingleTransaction thực hiện một chu kỳ: Giải mã -> Tăng Nonce -> Build -> Gửi -> Chờ Receipt
+func (h *RobotHandler) executeSingleTransaction(
+	queuedTx *QueuedTransaction,
+	nonceMap *map[ethCommon.Address]uint64,
+	nonceMutex *sync.Mutex,
+) error {
+	fromAddress := queuedTx.RobotAddress
+	count := atomic.AddUint64(&h.processedCount, 1)
 
-		// Lấy nonce tuần tự cho address này
-		nonceMutex.Lock()
-		currentNonce, exists := nonceMap[fromAddress]
-		logger.Info("current nonce for %s: %v", fromAddress.Hex(), currentNonce)
-		if !exists {
-			logger.Info("init nonce for %s: %v", fromAddress.Hex(), queuedTx.InitialNonce)
-			// Lần đầu tiên, sử dụng InitialNonce làm base
-			currentNonce = queuedTx.InitialNonce
-		}
+	// 1. Giải mã RawTransactionHex
+	decodedTxBytes, releaseDecoded, err := utils.DecodeHexPooled(queuedTx.RawTransactionHex)
+	if err != nil {
+		return fmt.Errorf("decode hex error: %w", err)
+	}
+	defer releaseDecoded()
 
-		// Tăng nonce cho lần tiếp theo
-		nonceMap[fromAddress] = currentNonce + 1
-		nonceMutex.Unlock()
-		// Rebuild transaction với nonce mới
-		var (
-			bTx       []byte
-			releaseTx func()
-			buildErr  error
-			hasKey    bool
+	// 2. Unmarshal Ethereum transaction
+	ethTx := new(types.Transaction)
+	if err := ethTx.UnmarshalBinary(decodedTxBytes); err != nil {
+		return fmt.Errorf("unmarshal binary error: %w", err)
+	}
+
+	// 3. Quản lý Nonce tuần tự
+	nonceMutex.Lock()
+	currentNonce, exists := (*nonceMap)[fromAddress]
+	if !exists {
+		currentNonce = queuedTx.InitialNonce
+	}
+	// Tạm thời tăng nonce trong map
+	(*nonceMap)[fromAddress] = currentNonce + 1
+	nonceMutex.Unlock()
+	logger.Info("🔄 Processing Tx: %s | Nonce: %v | Attempting send...", queuedTx.txHash, currentNonce)
+	// 4. Rebuild transaction với nonce mới
+	var (
+		bTx       []byte
+		releaseTx func()
+		buildErr  error
+	)
+
+	hasKey, _ := h.appCtx.PKS.HasPrivateKey(fromAddress)
+	if !hasKey {
+		bTx, _, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTx(
+			ethTx, h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas, currentNonce,
 		)
-		hasKey, err = h.appCtx.PKS.HasPrivateKey(fromAddress)
-		if err != nil {
-			releaseDecoded()
-			logger.Error("Error checking private key for %s: %v", fromAddress.Hex(), err)
-			continue
-		}
-		// Sử dụng transaction cũ (ethTx) và truyền nonce vào để cập nhật
-		// Không tạo transaction mới vì transaction mới chưa được ký sẽ bị lỗi "invalid transaction v, r, s values"
-		if !hasKey {
-			bTx, _, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTx(
-				ethTx,
-				h.appCtx.TcpCfg,
-				h.appCtx.Cfg,
-				h.appCtx.LdbContractFreeGas,
-				currentNonce, // Truyền nonce để cập nhật (nếu > 0 thì cập nhật, nếu = 0 thì dùng nonce từ account state)
-			)
-		} else {
-			senderPkString, _ := h.appCtx.PKS.GetPrivateKey(fromAddress)
-			keyPair := bls.NewKeyPair(ethCommon.FromHex(senderPkString))
-			bTx, _, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(
-				ethTx,
-				h.appCtx.TcpCfg,
-				h.appCtx.Cfg,
-				h.appCtx.LdbContractFreeGas,
-				keyPair.PrivateKey(),
-				currentNonce, // Truyền nonce để cập nhật (nếu > 0 thì cập nhật, nếu = 0 thì dùng nonce từ account state)
-			)
-		}
-		releaseDecoded()
-		if buildErr != nil {
-			if releaseTx != nil {
-				releaseTx()
-			}
-			logger.Error("❌ Failed to build transaction: %v", buildErr)
-			// Rollback nonce nếu build failed
-			nonceMutex.Lock()
-			if nonceMap[fromAddress] > 0 {
-				nonceMap[fromAddress]--
-			}
-			nonceMutex.Unlock()
-			continue
-		}
-		// Gửi lên chain
-		rs := h.appCtx.ClientRpc.SendRawTransactionBinary(bTx, releaseTx, nil, nil, nil)
-		if rs.Error != nil {
-			logger.Error("❌ Failed to send transaction: %v", rs.Error)
-			// Rollback nonce nếu send failed
-			nonceMutex.Lock()
-			if nonceMap[fromAddress] > 0 {
-				nonceMap[fromAddress]--
-			}
-			nonceMutex.Unlock()
-		} else {
-			logger.Info("error send transaction: %v", rs)
-			txHash, ok := rs.Result.(string)
-			if !ok {
-				logger.Error("Failed to get transaction hash from result")
-				// Rollback nonce
-				nonceMutex.Lock()
-				if nonceMap[fromAddress] > 0 {
-					nonceMap[fromAddress]--
-				}
-				nonceMutex.Unlock()
-				continue
-			}
-			logger.Info("✅ Sent robot tx to chain: nonce=%d, txHash=%s, count=%d",
-				currentNonce, txHash, count)
+	} else {
+		senderPkString, _ := h.appCtx.PKS.GetPrivateKey(fromAddress)
+		keyPair := bls.NewKeyPair(ethCommon.FromHex(senderPkString))
+		bTx, _, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(
+			ethTx, h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas, keyPair.PrivateKey(), currentNonce,
+		)
+	}
 
-			// Chờ receipt để đảm bảo nonce được cập nhật tuần tự
-			receipt, err := h.waitForReceipt(txHash, 30*time.Second)
-			if err != nil {
-				logger.Error("❌ Failed to get receipt for txHash=%s: %v", txHash, err)
-				// Rollback nonce nếu không có receipt
-				nonceMutex.Lock()
-				if nonceMap[fromAddress] > 0 {
-					nonceMap[fromAddress]--
-				}
-				nonceMutex.Unlock()
-				continue
-			}
-			logger.Info("✅ Received receipt for txHash=%s, blockNumber=%v, count=%d",
-				txHash, receipt["blockNumber"], count)
+	if buildErr != nil {
+		if releaseTx != nil {
+			releaseTx()
 		}
+		h.rollbackNonce(fromAddress, nonceMap, nonceMutex)
+		return fmt.Errorf("build transaction error: %w", buildErr)
+	}
 
+	// 5. Gửi lên Chain
+	rs := h.appCtx.ClientRpc.SendRawTransactionBinary(bTx, releaseTx, nil, nil, nil)
+	if rs.Error != nil {
+		h.rollbackNonce(fromAddress, nonceMap, nonceMutex)
+		return fmt.Errorf("RPC send error: %v", rs.Error)
+	}
+
+	newTxHash, ok := rs.Result.(string)
+	if !ok {
+		h.rollbackNonce(fromAddress, nonceMap, nonceMutex)
+		return fmt.Errorf("invalid result type from RPC")
+	}
+
+	// 6. Chờ Receipt (đảm bảo transaction đã lên block trước khi xử lý tx tiếp theo)
+	_, err = h.waitForReceipt(newTxHash, 30*time.Second)
+	if err != nil {
+		h.rollbackNonce(fromAddress, nonceMap, nonceMutex)
+		return fmt.Errorf("wait for receipt timeout/error: %w", err)
+	}
+
+	logger.Info("✅ Tx Success: %s | Total Processed: %d", newTxHash, count)
+	return nil
+}
+
+// rollbackNonce giảm nonce trong map nếu giao dịch thất bại để retry lại với cùng nonce đó
+func (h *RobotHandler) rollbackNonce(addr ethCommon.Address, m *map[ethCommon.Address]uint64, mu *sync.Mutex) {
+	mu.Lock()
+	defer mu.Unlock()
+	if val, ok := (*m)[addr]; ok && val > 0 {
+		(*m)[addr]--
 	}
 }
 
@@ -432,10 +478,8 @@ func (h *RobotHandler) broadcastEvent(
 	}
 
 	eventLogData := map[string]interface{}{
-		"address": addressContract,
-		"topics": []string{
-			eventHash.Hex(), // topics[0]: Event signature
-		},
+		"address":          addressContract,
+		"topics":           eventTopics,
 		"data":             fmt.Sprintf("0x%x", eventData),
 		"blockNumber":      fmt.Sprintf("0x%x", 1),
 		"transactionHash":  fmt.Sprintf("0x%064x", time.Now().UnixNano()),
@@ -457,7 +501,7 @@ func (h *RobotHandler) broadcastEvent(
 // waitForReceipt chờ receipt từ RPC với timeout 30s
 func (h *RobotHandler) waitForReceipt(txHash string, timeout time.Duration) (map[string]interface{}, error) {
 	startTime := time.Now()
-	checkInterval := 200 * time.Millisecond // Check mỗi 500ms
+	checkInterval := 100 * time.Millisecond // Check mỗi 500ms
 	maxAttempts := int(timeout / checkInterval)
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
@@ -506,9 +550,9 @@ func (h *RobotHandler) waitForReceipt(txHash string, timeout time.Duration) (map
 
 			// Kiểm tra xem receipt có hợp lệ không (có blockNumber)
 			if blockNumber, ok := receipt["blockNumber"]; ok && blockNumber != nil {
-				elapsed := time.Since(startTime)
-				logger.Info("✅ Receipt received for txHash=%s after %v, blockNumber=%v",
-					txHash, elapsed, blockNumber)
+				// elapsed := time.Since(startTime)
+				// logger.Info("✅ Receipt received for txHash=%s after %v, blockNumber=%v",
+				// 	txHash, elapsed, blockNumber)
 				return receipt, nil
 			}
 

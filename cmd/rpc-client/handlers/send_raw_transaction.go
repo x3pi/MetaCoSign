@@ -132,8 +132,6 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 
 		}
 		if tx.ToAddress() == ethCommon.HexToAddress(appCtx.Cfg.ContractsInterceptor[1]) {
-			logger.Info("🔵_____Robot contract detected - txHash=%s, method=%s",
-				tx.Hash().Hex(), "emitSentence or createSession")
 			robotHandler, err := robothandler.GetRobotHandler(appCtx)
 			if err != nil {
 				logger.Error("❌ [sendRawTransaction] Failed to get robot handler: %v", err)
@@ -145,8 +143,6 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 				rawTransactionHex,
 			)
 			// Transaction đã được lưu trong robot_handler.handleDispatchImmediate
-			logger.Info("🔵 [sendRawTransaction] HandleRobotTransaction response: handled=%v, result=%v (type=%T), err=%v",
-				handled, result, result, err)
 			if handled {
 				releaseDecodedOnce()
 				if releaseTx != nil {
@@ -168,12 +164,9 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 				txHash := tx.Hash().Hex()
 				var finalResult string
 				if result != nil {
-					// Nếu result đã là string (txHash), dùng luôn
 					if txHashStr, ok := result.(string); ok && txHashStr != "" {
 						finalResult = txHashStr
-						logger.Info("✅ [sendRawTransaction] Using txHash from result: %s", finalResult)
 					} else {
-						// Nếu là object hoặc empty string, lấy txHash từ transaction
 						finalResult = txHash
 						logger.Warn("⚠️ [sendRawTransaction] Result is not valid string (type=%T, value=%v), using tx.Hash(): %s",
 							result, result, finalResult)
@@ -188,9 +181,8 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 					finalResult = txHash
 					logger.Error("❌ [sendRawTransaction] finalResult is empty, using tx.Hash(): %s", finalResult)
 				}
-
-				logger.Info("✅ [sendRawTransaction] Sending response: txHash=%s, id=%v (type=%T), jsonrpc=%s",
-					finalResult, id, finalResult, "2.0")
+				// logger.Info("✅ [sendRawTransaction] Sending response: txHash=%s, id=%v (type=%T), jsonrpc=%s",
+				// 	finalResult, id, finalResult, "2.0")
 				response := rpc_client.JSONRPCResponse{
 					Jsonrpc: "2.0",
 					Result:  finalResult,

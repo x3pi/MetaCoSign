@@ -1,23 +1,25 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
-
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-
 contract UniversalRobotBus is Initializable, UUPSUpgradeable {
     // --- STORAGE ---
     mapping(address => bool) public owners;
-    address[] public ownerList; // Thêm để dễ quản lý danh sách node 3060
+    address[] public ownerList; 
 
-    // Event duy nhất mang tính tổng quát cao
     event EmitSentence(
         bytes32 sessionId,
         bytes32 actionId,
         address operator,
         bytes data
+    );
+    
+    event EmitError(
+        bytes32 txHash,
+        string message
     );
 
     modifier onlyOwner() {
@@ -30,40 +32,43 @@ contract UniversalRobotBus is Initializable, UUPSUpgradeable {
         _disableInitializers();
     }
 
-    function initialize() public virtual initializer {
+    function initialize() public initializer {
         __UUPSUpgradeable_init();
         owners[msg.sender] = true;
         ownerList.push(msg.sender);
     }
-    // Hàm bắt buộc của UUPS, thêm virtual để sau này thay đổi cơ chế phân quyền nâng cấp
-    function _authorizeUpgrade(address newImplementation) internal virtual override onlyOwner {}
+
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
     // --- CORE DISPATCHER ---
-    /**
-     * @dev Đã thêm virtual: Tương lai bạn có thể override để thêm:
-     * 1. Cơ chế thu phí (fee).
-     * 2. Kiểm tra điều kiện Robot (status check).
-     * 3. Ghi log bổ sung vào Storage thay vì chỉ emit Event.
-     */
     function dispatch(
         bytes32 sessionId,
         bytes32 actionId,
-        bytes calldata data
-    ) external virtual onlyOwner {
-        _beforeDispatch(sessionId, actionId, data); // Hook để mở rộng
+        bytes calldata data,
+        uint256 timestamp,
+        bytes calldata sig
+    ) external virtual {
+        _beforeDispatch(sessionId, actionId, data);
         emit EmitSentence(sessionId, actionId, msg.sender, data);
-        _afterDispatch(sessionId, actionId, data);  // Hook để mở rộng
+        _afterDispatch(sessionId, actionId, data);
     }
 
-    // --- HOOKS (Dùng để override ở các bản nâng cấp sau) ---
     function _beforeDispatch(bytes32 sessionId, bytes32 actionId, bytes calldata data) internal virtual {}
     function _afterDispatch(bytes32 sessionId, bytes32 actionId, bytes calldata data) internal virtual {}
 
+    // SỬA LỖI: Thêm 's' vào bytes32 và truyền đủ tham số cho emit
+    function emitError(bytes32 txHash, string memory message) external virtual {
+        emit EmitError(txHash, message);
+    }
+    function getDataByTxhash(bytes32 txHash) external view virtual {
+    }
     // --- OWNER MANAGEMENT ---
     function setOwner(address _owner, bool _status) external virtual onlyOwner {
-        owners[_owner] = _status;
-        if(_status) {
+        if (_status && !owners[_owner]) {
+            owners[_owner] = true;
             ownerList.push(_owner);
+        } else if (!_status && owners[_owner]) {
+            owners[_owner] = false;
         }
     }
     function getOwnerList() external view virtual returns (address[] memory) {
