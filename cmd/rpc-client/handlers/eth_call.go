@@ -101,6 +101,21 @@ func processEthCallParams(appCtx *app.Context, id interface{}, callObjectRaw jso
 	}
 
 	rs := appCtx.ClientRpc.SendCallTransaction(bTx)
+
+	// Sử dụng helper function để tránh code lặp lại
+	// Hàm này tự động extract revert data và decode error
+	if decoded.HasTo && appCtx.ErrorDecoder != nil {
+		appCtx.ErrorDecoder.DecodeError(
+			context.Background(),
+			&rs,
+			decoded.ToAddress.Hex(),
+			0,
+		)
+	}
 	rs.Id = id
+	if rs.Error != nil {
+		logger.Info("2__✅✅✅ rs.Error.Message : %s Data %s Code %d", rs.Error.Message, rs.Error.Data, rs.Error.Code)
+	}
+
 	return rs
 }

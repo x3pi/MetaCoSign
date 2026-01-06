@@ -24,25 +24,63 @@ const sourceCodeObj = {
     "test.sol": `// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
 
+error InsufficientBalance(uint256 available, uint256 required);
+
 contract TestDebug {
     uint256 public balance;
+    uint256[] public array;
 
-    // Lỗi 1: Revert có thông báo (dễ test nhất)
-    function testRequire(uint256 _value) public pure {
-        require(_value > 10, "Gia tri phai lon hon 10");
-    }
+    enum Action { None, Start, Stop }
 
-    // Lỗi 2: Lỗi tính toán (Overflow/Underflow) 
-    // Solidity 0.8.x sẽ tự panic nếu balance = 0 mà trừ đi 1
-    function testUnderflow() public {
-        balance -= 1; 
-    }
-
-    // Lỗi 3: Revert thủ công
-    function testRevert() public pure {
-        if (true) {
-            revert("Loi manual revert tai day");
+    // --- CUSTOM ERROR ---
+    function testCustomError(uint256 amount) public pure {
+        uint256 currentBalance = 50;
+        if (amount > currentBalance) {
+            // Sẽ trả về Error Selector của InsufficientBalance
+            revert InsufficientBalance(currentBalance, amount);
         }
+    }
+
+    // --- PANIC CODES (0x...) ---
+
+    // Panic 0x01: assert(false)
+    function testPanic0x01() public pure {
+        assert(false);
+    }
+
+    // Panic 0x11: Arithmetic overflow / underflow
+    function testPanic0x11() public {
+        balance = 0;
+        balance -= 1; // 0.8.x tự động panic nếu không dùng unchecked
+    }
+
+    // Panic 0x12: Division by zero
+    function testPanic0x12(uint256 denominator) public pure {
+        uint256 result = 100 / denominator; // Truyền vào 0 để test
+    }
+
+    // Panic 0x21: Invalid enum value
+    // Ép kiểu một số ngoài phạm vi enum (ví dụ: truyền vào 3)
+    function testPanic0x21(uint256 _value) public pure returns (Action) {
+        return Action(_value); 
+    }
+
+    // Panic 0x31: Empty array pop
+    function testPanic0x31() public {
+        // Đảm bảo mảng rỗng rồi pop
+        array.pop();
+    }
+
+    // Panic 0x32: Array index out of bounds
+    function testPanic0x32(uint256 index) public view returns (uint256) {
+        // Truyền vào index >= array.length
+        return array[index];
+    }
+
+    // --- REQUIRE / REVERT WITH STRING ---
+
+    function testRequireString(uint256 value) public pure {
+        require(value < 100, "value phai nho hon 100");
     }
 }`
   };
@@ -75,15 +113,43 @@ export default function PushArtifactTest() {
 
   const loadExampleData = () => {
     setParams({
-      contract_address: '0x75e00FF70bd4eFA111D768425db8B9f1781C9939',
-      metadata: JSON.stringify({"compiler":{"version":"0.8.30+commit.73712a01"},"language":"Solidity","output":{"abi":[{"inputs":[],"name":"balance","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"_value","type":"uint256"}],"name":"testRequire","outputs":[],"stateMutability":"pure","type":"function"},{"inputs":[],"name":"testRevert","outputs":[],"stateMutability":"pure","type":"function"},{"inputs":[],"name":"testUnderflow","outputs":[],"stateMutability":"nonpayable","type":"function"}],"devdoc":{"kind":"dev","methods":{},"version":1},"userdoc":{"kind":"user","methods":{},"version":1}},"settings":{"compilationTarget":{"test.sol":"TestDebug"},"evmVersion":"prague","libraries":{},"metadata":{"bytecodeHash":"ipfs"},"optimizer":{"enabled":true,"runs":200},"remappings":[],"viaIR":true},"sources":{"test.sol":{"keccak256":"0x4bb5136e9b0a7f49cddd237418f5ef7ba01234f5ca936ba80036ede45d352f2f","license":"MIT","urls":["bzz-raw://ec21ddafb118029cde251f6d775434161798f720c4de63b2a3be7f38bcc03f78","dweb:/ipfs/QmccijEUvR9Aq38N2fXNxdyvsHwbE6oj8xnHTRwk3TeQ8d"]}},"version":1} ,null, 2),
+      contract_address: '0xE5A7116231033304b6226087A55c7F599D09A579',
+      metadata: JSON.stringify({"compiler":{"version":"0.8.30+commit.73712a01"},"language":"Solidity","output":{"abi":[{"inputs":[{"internalType":"uint256","name":"available","type":"uint256"},{"internalType":"uint256","name":"required","type":"uint256"}],"name":"InsufficientBalance","type":"error"},{"inputs":[{"internalType":"uint256","name":"","type":"uint256"}],"name":"array","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"balance","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"amount","type":"uint256"}],"name":"testCustomError","outputs":[],"stateMutability":"pure","type":"function"},{"inputs":[],"name":"testPanic0x01","outputs":[],"stateMutability":"pure","type":"function"},{"inputs":[],"name":"testPanic0x11","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"denominator","type":"uint256"}],"name":"testPanic0x12","outputs":[],"stateMutability":"pure","type":"function"},{"inputs":[{"internalType":"uint256","name":"_value","type":"uint256"}],"name":"testPanic0x21","outputs":[{"internalType":"enum TestDebug.Action","name":"","type":"uint8"}],"stateMutability":"pure","type":"function"},{"inputs":[],"name":"testPanic0x31","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"index","type":"uint256"}],"name":"testPanic0x32","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"value","type":"uint256"}],"name":"testRequireString","outputs":[],"stateMutability":"pure","type":"function"}],"devdoc":{"kind":"dev","methods":{},"version":1},"userdoc":{"kind":"user","methods":{},"version":1}},"settings":{"compilationTarget":{"test.sol":"TestDebug"},"evmVersion":"prague","libraries":{},"metadata":{"bytecodeHash":"ipfs"},"optimizer":{"enabled":true,"runs":200},"remappings":[],"viaIR":true},"sources":{"test.sol":{"keccak256":"0xd7635fb922ae80aef86db4fa744fefa883d2f2077ced0db3038f172892d1ddeb","license":"MIT","urls":["bzz-raw://e89e7b38a5a1f2affd6a4d517c2a2e1453e662519c9ae5c2289164ca908f9673","dweb:/ipfs/QmahoSCHTXGZKbv3pfDKP2hWRGign9V4aYuQAx9cLAYLHH"]}},"version":1},null, 2),
       source_code: JSON.stringify(sourceCodeObj, null, 2),
       abi: JSON.stringify([
         {
-            "inputs": [],
-            "name": "testUnderflow",
-            "outputs": [],
-            "stateMutability": "nonpayable",
+            "inputs": [
+                {
+                    "internalType": "uint256",
+                    "name": "available",
+                    "type": "uint256"
+                },
+                {
+                    "internalType": "uint256",
+                    "name": "required",
+                    "type": "uint256"
+                }
+            ],
+            "name": "InsufficientBalance",
+            "type": "error"
+        },
+        {
+            "inputs": [
+                {
+                    "internalType": "uint256",
+                    "name": "",
+                    "type": "uint256"
+                }
+            ],
+            "name": "array",
+            "outputs": [
+                {
+                    "internalType": "uint256",
+                    "name": "",
+                    "type": "uint256"
+                }
+            ],
+            "stateMutability": "view",
             "type": "function"
         },
         {
@@ -103,18 +169,96 @@ export default function PushArtifactTest() {
             "inputs": [
                 {
                     "internalType": "uint256",
-                    "name": "_value",
+                    "name": "amount",
                     "type": "uint256"
                 }
             ],
-            "name": "testRequire",
+            "name": "testCustomError",
             "outputs": [],
             "stateMutability": "pure",
             "type": "function"
         },
         {
             "inputs": [],
-            "name": "testRevert",
+            "name": "testPanic0x01",
+            "outputs": [],
+            "stateMutability": "pure",
+            "type": "function"
+        },
+        {
+            "inputs": [],
+            "name": "testPanic0x11",
+            "outputs": [],
+            "stateMutability": "nonpayable",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {
+                    "internalType": "uint256",
+                    "name": "denominator",
+                    "type": "uint256"
+                }
+            ],
+            "name": "testPanic0x12",
+            "outputs": [],
+            "stateMutability": "pure",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {
+                    "internalType": "uint256",
+                    "name": "_value",
+                    "type": "uint256"
+                }
+            ],
+            "name": "testPanic0x21",
+            "outputs": [
+                {
+                    "internalType": "enum TestDebug.Action",
+                    "name": "",
+                    "type": "uint8"
+                }
+            ],
+            "stateMutability": "pure",
+            "type": "function"
+        },
+        {
+            "inputs": [],
+            "name": "testPanic0x31",
+            "outputs": [],
+            "stateMutability": "nonpayable",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {
+                    "internalType": "uint256",
+                    "name": "index",
+                    "type": "uint256"
+                }
+            ],
+            "name": "testPanic0x32",
+            "outputs": [
+                {
+                    "internalType": "uint256",
+                    "name": "",
+                    "type": "uint256"
+                }
+            ],
+            "stateMutability": "view",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {
+                    "internalType": "uint256",
+                    "name": "value",
+                    "type": "uint256"
+                }
+            ],
+            "name": "testRequireString",
             "outputs": [],
             "stateMutability": "pure",
             "type": "function"

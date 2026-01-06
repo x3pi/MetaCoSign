@@ -175,14 +175,11 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 					finalResult = txHash
 					logger.Warn("⚠️ [sendRawTransaction] Result is nil, using tx.Hash(): %s", finalResult)
 				}
-
 				// Đảm bảo finalResult không bao giờ empty
 				if finalResult == "" {
 					finalResult = txHash
 					logger.Error("❌ [sendRawTransaction] finalResult is empty, using tx.Hash(): %s", finalResult)
 				}
-				// logger.Info("✅ [sendRawTransaction] Sending response: txHash=%s, id=%v (type=%T), jsonrpc=%s",
-				// 	finalResult, id, finalResult, "2.0")
 				response := rpc_client.JSONRPCResponse{
 					Jsonrpc: "2.0",
 					Result:  finalResult,
@@ -192,7 +189,18 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 			} else if !handled && err == nil {
 				rs := appCtx.ClientRpc.SendRawTransactionBinary(bTx, releaseTx, decodedTxBytes, releaseDecodedOnce, nil)
 				releaseDecodedOnce()
+				if rs.Error != nil && tx.ToAddress() != (ethCommon.Address{}) {
+					appCtx.ErrorDecoder.DecodeError(
+						context.Background(),
+						&rs,
+						tx.ToAddress().Hex(),
+						0,
+					)
+				}
 				rs.Id = id
+				if rs.Error != nil {
+					logger.Info("✅✅✅ rs.Error.Message : %s Code %d", rs.Error.Message, rs.Error.Code)
+				}
 				return rs
 			}
 			return utils.MakeInternalError(id, "method notfound in abi robot")
@@ -202,7 +210,18 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 		if !(tx.ToAddress() == file_handler.PredictContractAddress(ethCommon.HexToAddress(appCtx.ClientTcp.GetClientContext().Config.OwnerFileStorageAddress)) && name == "uploadChunk") {
 			rs := appCtx.ClientRpc.SendRawTransactionBinary(bTx, releaseTx, decodedTxBytes, releaseDecodedOnce, nil)
 			releaseDecodedOnce()
+			if rs.Error != nil && tx.ToAddress() != (ethCommon.Address{}) && appCtx.ErrorDecoder != nil {
+				appCtx.ErrorDecoder.DecodeError(
+					context.Background(),
+					&rs,
+					tx.ToAddress().Hex(),
+					0,
+				)
+			}
 			rs.Id = id
+			if rs.Error != nil {
+				logger.Info("✅✅✅ rs.Error.Message : %s Data %s Code %d", rs.Error.Message, rs.Error.Data, rs.Error.Code)
+			}
 			return rs
 		} else {
 			fileHandler, err := file_handler.GetFileHandlerTCP(appCtx.ClientTcp, appCtx.TcpCfg)

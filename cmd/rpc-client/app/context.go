@@ -13,6 +13,7 @@ import (
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/store"
 	"github.com/meta-node-blockchain/meta-node/pkg/bls"
 	"github.com/meta-node-blockchain/meta-node/pkg/common"
+	"github.com/meta-node-blockchain/meta-node/pkg/debug"
 	"github.com/meta-node-blockchain/meta-node/pkg/ldb_storage"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	"github.com/meta-node-blockchain/meta-node/pkg/rpc_client"
@@ -51,6 +52,8 @@ type Context struct {
 	NodeBlsPublicKey  common.PublicKey
 
 	SubInterceptor *ws_interceptor.SubscriptionInterceptor
+
+	ErrorDecoder *debug.ErrorDecoder
 }
 
 // New tạo Application Context với tất cả dependencies
@@ -128,6 +131,8 @@ func New(cfg *config.Config, tcpCfg *tcp_config.ClientConfig) (*Context, error) 
 		artifactStorage = storage.NewArtifactStorage(artifactDB)
 		logger.Info("✅ Artifact Registry storage initialized at: %s", cfg.LdbArtifactRegistryPath)
 	}
+	// 9. Initialize Error Decoder
+	errorDecoder := debug.NewErrorDecoder(artifactStorage)
 
 	subInterceptor := ws_interceptor.NewSubscriptionInterceptor(cfg)
 	ctx := &Context{
@@ -144,6 +149,7 @@ func New(cfg *config.Config, tcpCfg *tcp_config.ClientConfig) (*Context, error) 
 		NodeBlsPrivateKey:   keyPair.PrivateKey(),
 		NodeBlsPublicKey:    keyPair.PublicKey(),
 		SubInterceptor:      subInterceptor,
+		ErrorDecoder:        errorDecoder,
 	}
 	return ctx, nil
 }

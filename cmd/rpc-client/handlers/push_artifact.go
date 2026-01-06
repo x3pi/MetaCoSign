@@ -102,8 +102,8 @@ func HandlePushArtifact(appCtx *app.Context, req models.JSONRPCRequestRaw) rpc_c
 
 	if !bytecodeMatch {
 		logger.Error("❌ Bytecode mismatch! From deploy (first 50): %s, From chain (first 50): %s",
-			bytecodeFromDeployNormalized[:min(50, len(bytecodeFromDeployNormalized))],
-			bytecodeFromChainNormalized[:min(50, len(bytecodeFromChainNormalized))])
+			bytecodeFromDeployNormalized,
+			bytecodeFromChainNormalized)
 		logger.Error("Deploy length: %d, Chain length: %d", len(bytecodeFromDeployNormalized), len(bytecodeFromChainNormalized))
 		return utils.MakeInternalError(req.Id, "Bytecode verification failed: deployed bytecode does not match bytecode from chain")
 	}

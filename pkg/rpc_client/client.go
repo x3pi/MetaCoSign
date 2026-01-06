@@ -52,7 +52,19 @@ type ClientRPC struct {
 type JSONRPCError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
-	Data    string `json:"data"`
+	Data    string `json:"data,omitempty"` // Giữ nguyên, có thể chứa raw revert data hoặc decoded error JSON
+	// Decoded error fields (optional, chỉ có khi error được decode)
+	Decoded      bool                   `json:"decoded,omitempty"`
+	ErrorType    string                 `json:"error_type,omitempty"` // "panic", "custom", "standard", "unknown"
+	ErrorName    string                 `json:"error_name,omitempty"`
+	ErrorSig     string                 `json:"error_signature,omitempty"`
+	Arguments    map[string]interface{} `json:"arguments,omitempty"`
+	PanicCode    string                 `json:"panic_code,omitempty"`
+	ContractAddr string                 `json:"contract_address,omitempty"`
+	ContractName string                 `json:"contract_name,omitempty"`
+	PC           uint64                 `json:"pc,omitempty"`
+	CallDepth    int                    `json:"call_depth,omitempty"`
+	Function     string                 `json:"function,omitempty"`
 }
 
 type JSONRPCRequest struct {
