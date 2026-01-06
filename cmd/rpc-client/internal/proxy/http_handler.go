@@ -114,6 +114,17 @@ func (p *RpcReverseProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		utils.WriteJSON(w, resp)
 		return
 
+	case "rpc_pushArtifact":
+		var req models.JSONRPCRequestRaw
+		if err := json.Unmarshal(body, &req); err != nil {
+			resp := utils.MakeInvalidParamError(id, "Invalid JSON-RPC request")
+			utils.WriteJSON(w, resp)
+			return
+		}
+		resp := handlers.HandlePushArtifact(p.AppCtx, req)
+		utils.WriteJSON(w, resp)
+		return
+
 	// case "eth_getTransactionByHash":
 	// 	txHash := gjson.GetBytes(body, "params.0")
 	// 	if !txHash.Exists() {

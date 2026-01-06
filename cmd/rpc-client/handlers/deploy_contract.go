@@ -16,7 +16,6 @@ func HandleDeployContract(appCtx *app.Context, req models.JSONRPCRequestRaw) rpc
 	if err := json.Unmarshal(req.Params, &paramsList); err != nil || len(paramsList) == 0 {
 		return utils.MakeInvalidParamError(req.Id, "Cannot unmarshal params for eth_deployContract")
 	}
-
 	// Parse constructor bytecode từ params[0]
 	var constructorBytecodeHex string
 	if err := json.Unmarshal(paramsList[0], &constructorBytecodeHex); err != nil {

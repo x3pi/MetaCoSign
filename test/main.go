@@ -115,7 +115,6 @@ func main() {
 	dataPayload := []byte("Tốc độ: 10m/s, Hướng: Đông Bắc")
 	nowTime := big.NewInt(time.Now().Unix())
 
-	// B. Tạo Chữ Ký (Signature)
 	message := BuildMessageForDispatch(mySessionID, actionMove, dataPayload, nowTime)
 	prefixedMessage := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", len(message), message)
 	messageHash := crypto.Keccak256Hash([]byte(prefixedMessage))

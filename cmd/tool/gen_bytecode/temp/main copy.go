@@ -14,8 +14,71 @@ import (
 	"time"
 
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
-	"github.com/meta-node-blockchain/meta-node/pkg/models/gen_bytecode"
 )
+
+// --- 1. Cấu trúc mapping file config.json (từ Remix) ---
+type ConfigFile struct {
+	Compiler CompilerInfo              `json:"compiler"`
+	Language string                    `json:"language"`
+	Settings BuildMetadata             `json:"settings"`
+	Sources  map[string]SourceMetadata `json:"sources"`
+}
+
+type CompilerInfo struct {
+	Version string `json:"version"`
+}
+
+type SourceMetadata struct {
+	Keccak256 string   `json:"keccak256"`
+	License   string   `json:"license"`
+	URLs      []string `json:"urls"`
+}
+
+type BuildMetadata struct {
+	CompilationTarget map[string]string              `json:"compilationTarget,omitempty"`
+	Optimizer         Optimizer                      `json:"optimizer"`
+	EVMVersion        string                         `json:"evmVersion,omitempty"`
+	ViaIR             bool                           `json:"viaIR,omitempty"`
+	OutputSelection   map[string]map[string][]string `json:"outputSelection,omitempty"`
+	Libraries         map[string]interface{}         `json:"libraries,omitempty"`
+	Metadata          map[string]interface{}         `json:"metadata,omitempty"`
+	Remappings        []string                       `json:"remappings,omitempty"`
+}
+
+type Optimizer struct {
+	Enabled bool `json:"enabled"`
+	Runs    int  `json:"runs"`
+}
+
+// --- 2. Cấu trúc Input gửi cho solc (Standard JSON Input) ---
+type SolcInput struct {
+	Language string            `json:"language"`
+	Sources  map[string]Source `json:"sources"`
+	Settings BuildMetadata     `json:"settings"` // Nhúng trực tiếp struct Metadata vào đây
+}
+
+type Source struct {
+	Content string `json:"content"`
+}
+
+// --- 3. Cấu trúc Output nhận về từ solc ---
+type SolcOutput struct {
+	Contracts map[string]map[string]ContractOutput `json:"contracts"`
+	Errors    []SolcError                          `json:"errors"`
+}
+
+type ContractOutput struct {
+	EVM struct {
+		Bytecode struct {
+			Object string `json:"object"`
+		} `json:"bytecode"`
+	} `json:"evm"`
+}
+
+type SolcError struct {
+	Severity string `json:"severity"`
+	Message  string `json:"message"`
+}
 
 // Hàm tải file từ IPFS
 func downloadFromIPFS(ipfsURL string) ([]byte, error) {
@@ -210,7 +273,7 @@ func parseImports(content string) []string {
 }
 
 // Hàm kiểm tra xem file có được import (trực tiếp hoặc gián tiếp) không
-func isFileNeeded(sourcePath string, imports []string, allSources map[string]gen_bytecode.SourceMetadata) bool {
+func isFileNeeded(sourcePath string, imports []string, allSources map[string]SourceMetadata) bool {
 	// 1. Kiểm tra xem có được import trực tiếp không
 	for _, imp := range imports {
 		if sourcePath == imp || strings.HasSuffix(sourcePath, imp) {
@@ -244,44 +307,35 @@ func main() {
 		log.Fatalf("Lỗi đọc config.json: %v", err)
 	}
 
-	var config gen_bytecode.ConfigFile
+	var config ConfigFile
 	if err := json.Unmarshal(configFile, &config); err != nil {
 		log.Fatalf("Lỗi parse JSON config: %v", err)
 	}
 
-	// --- BƯỚC 2: Trích xuất TARGET và XÓA khỏi Settings ---
-	var mainFileName string
-	var mainContractName string
-	if len(config.Settings.CompilationTarget) > 0 {
-		for f, c := range config.Settings.CompilationTarget {
-			mainFileName = f
-			mainContractName = c
-			break // Lấy target đầu tiên
-		}
-	} else {
-		log.Fatal("Không tìm thấy compilationTarget trong config.json")
-	}
-	fmt.Printf("🎯 Target: File [%s] | Contract [%s]\n", mainFileName, mainContractName)
-	// Kiểm tra xem có dùng solc-js không (qua Node.js)
 	// --- BƯỚC 1.1: Parse compiler version từ config ---
 	configVersion := parseVersionFromConfig(config.Compiler.Version)
 	fmt.Printf("Version từ config.json: %s\n", configVersion)
 
 	// Lấy settings từ config
-	config.Settings.CompilationTarget = nil
+	metadata := config.Settings
+	metadata.CompilationTarget = nil
+
+	// Kiểm tra xem có dùng solc-js không (qua Node.js)
 	useSolcJS := checkNodeJS()
 	if useSolcJS {
 		fmt.Printf("✓ Phát hiện Node.js và npx. Sẽ dùng solc-js version %s\n", configVersion)
 	} else {
 		fmt.Printf("⚠ Không tìm thấy Node.js/npx. Sẽ dùng solc binary local\n")
 	}
-	// 3. TỐI ƯU HÓA OUTPUT SELECTION
-	// Chỉ yêu cầu bytecode cho đúng file và contract đích để tránh nặng payload
-	config.Settings.OutputSelection = map[string]map[string][]string{
-		mainFileName: {
-			mainContractName: {"evm.bytecode.object"},
-		},
+	// Thêm outputSelection nếu chưa có (cần để solc trả về bytecode)
+	if metadata.OutputSelection == nil {
+		metadata.OutputSelection = map[string]map[string][]string{
+			"*": {
+				"*": {"evm.bytecode.object"},
+			},
+		}
 	}
+
 	// --- BƯỚC 1.5: Xác định solc version để điều chỉnh pragma version ---
 	var solcVersion string
 	if useSolcJS {
@@ -306,10 +360,10 @@ func main() {
 	}
 
 	// --- BƯỚC 2: Tải các file sources từ config.json (bao gồm file chính và dependencies) ---
-	sources := make(map[string]gen_bytecode.Source)
+	sources := make(map[string]Source)
 
 	// Đọc file test.sol từ file system nếu tồn tại (file chính cần biên dịch)
-	testSolFile := mainFileName
+	testSolFile := "test.sol"
 	var testSolContent string
 	if _, err := os.Stat(testSolFile); err == nil {
 		content, err := os.ReadFile(testSolFile)
@@ -319,7 +373,7 @@ func main() {
 			if solcVersion != "" {
 				testSolContent = adjustPragmaVersion(testSolContent, solcVersion)
 			}
-			sources[testSolFile] = gen_bytecode.Source{Content: testSolContent}
+			sources[testSolFile] = Source{Content: testSolContent}
 			fmt.Printf("✓ Đã đọc %s từ file system\n", testSolFile)
 		}
 	}
@@ -333,8 +387,21 @@ func main() {
 
 	fmt.Println("Đang tải các file sources từ IPFS...")
 	for sourcePath, sourceMeta := range config.Sources {
+		logger.Info("___sourcePath %s", sourcePath)
+		// Bỏ qua nếu đã có trong sources (ví dụ test.sol đã đọc từ file system)
+		// if _, exists := sources[sourcePath]; exists {
+		// 	continue
+		// }
+
+		// Kiểm tra xem file có cần thiết không (được import hoặc là dependency)
+		// if !isFileNeeded(sourcePath, imports, config.Sources) {
+		// 	fmt.Printf("  ⏭ Bỏ qua %s (không được import trong test.sol)\n", sourcePath)
+		// 	continue
+		// }
+
 		var content []byte
 		var err error
+
 		// Thử đọc từ file system trước (cho file local)
 		if _, err := os.Stat(sourcePath); err == nil {
 			content, err = os.ReadFile(sourcePath)
@@ -344,7 +411,7 @@ func main() {
 				if solcVersion != "" {
 					contentStr = adjustPragmaVersion(contentStr, solcVersion)
 				}
-				sources[sourcePath] = gen_bytecode.Source{Content: contentStr}
+				sources[sourcePath] = Source{Content: contentStr}
 				fmt.Printf("  ✓ Đã đọc %s từ file system\n", sourcePath)
 				continue
 			}
@@ -362,6 +429,7 @@ func main() {
 			continue
 		}
 		// Tải từ IPFS
+		fmt.Printf("  Đang tải %s từ IPFS...\n", sourcePath)
 		content, err = downloadFromIPFS(ipfsURL)
 		if err != nil {
 			fmt.Printf("  Cảnh báo: Không thể tải %s từ IPFS: %v\n", sourcePath, err)
@@ -373,16 +441,16 @@ func main() {
 		if solcVersion != "" {
 			contentStr = adjustPragmaVersion(contentStr, solcVersion)
 		}
-		sources[sourcePath] = gen_bytecode.Source{Content: contentStr}
+		sources[sourcePath] = Source{Content: contentStr}
 		fmt.Printf("  ✓ Đã tải %s\n", sourcePath)
 	}
 
 	// --- BƯỚC 4: Tạo payload cho Compiler ---
 	// Kết hợp nội dung file .sol và cấu hình từ .json
-	input := gen_bytecode.SolcInput{
+	input := SolcInput{
 		Language: config.Language,
 		Sources:  sources,
-		Settings: config.Settings, // Gán metadata đã đọc vào đây
+		Settings: metadata, // Gán metadata đã đọc vào đây
 	}
 
 	inputJSON, err := json.Marshal(input)
@@ -390,8 +458,11 @@ func main() {
 		log.Fatalf("Lỗi marshal input: %v", err)
 		return
 	}
+	logger.Info("inputJSON %s", string(inputJSON))
+
 	// --- BƯỚC 5: Gọi lệnh solc (solc-js hoặc solc binary) ---
 	var outputBytes []byte
+
 	fmt.Println("Đang biên dịch...")
 	if useSolcJS {
 		// Dùng solc-js với version từ config
@@ -407,6 +478,7 @@ func main() {
 		if _, statErr := os.Stat(solcPath); os.IsNotExist(statErr) {
 			solcPath = "solc"
 		}
+
 		cmd := exec.Command(solcPath, "--standard-json")
 		cmd.Stdin = bytes.NewReader(inputJSON)
 		var out bytes.Buffer
@@ -419,7 +491,7 @@ func main() {
 	}
 
 	// --- BƯỚC 6: Xử lý kết quả ---
-	var output gen_bytecode.SolcOutput
+	var output SolcOutput
 	if err := json.Unmarshal(outputBytes, &output); err != nil {
 		log.Fatalf("Lỗi parse output từ solc: %v", err)
 	}
@@ -435,21 +507,32 @@ func main() {
 	if hasError {
 		return
 	}
-	logger.Info("output.Contracts %v", output.Contracts)
+
 	// Lấy Bytecode ra
 	// Lưu ý: Output trả về map lồng nhau: filename -> contract name
 	// Ở đây giả định tên contract trùng tên file (thường thấy), hoặc ta duyệt qua map
-	if fileContracts, ok := output.Contracts[mainFileName]; ok {
-		if contractData, ok := fileContracts[mainContractName]; ok {
+	for fName, contracts := range output.Contracts {
+		for cName, contractData := range contracts {
 			bytecode := contractData.EVM.Bytecode.Object
-			if bytecode != "" {
-				fmt.Printf("\n✅ BIÊN DỊCH THÀNH CÔNG!\n")
-				fmt.Printf("Bytecode Length: %d\n", len(bytecode))
 
-				// Lưu kết quả
-				os.WriteFile(mainContractName+".bytecode", []byte(bytecode), 0644)
-				fmt.Printf("💾 Đã lưu vào %s.bytecode\n", mainContractName)
-				return
+			if len(bytecode) > 0 {
+				fmt.Printf("\n>>> THÀNH CÔNG <<<\n")
+				fmt.Printf("File: %s | Contract: %s\n", fName, cName)
+				fmt.Printf("Cấu hình: Optimizer=%v (Runs=%d), EVM=%s, ViaIR=%v\n",
+					metadata.Optimizer.Enabled, metadata.Optimizer.Runs, metadata.EVMVersion, metadata.ViaIR)
+				fmt.Printf("Bytecode Length: %d bytes\n", len(bytecode)/2) // Mỗi 2 ký tự hex = 1 byte
+				fmt.Printf("Bytecode (Full): 0x%s\n", bytecode)
+				if len(bytecode) > 200 {
+					fmt.Printf("Bytecode (First 100 chars): 0x%s...\n", bytecode[:100])
+				}
+
+				// Lưu bytecode vào file
+				outputFilename := fmt.Sprintf("%s.bytecode", cName)
+				if err := os.WriteFile(outputFilename, []byte(bytecode), 0644); err != nil {
+					log.Printf("Cảnh báo: Không thể lưu bytecode vào file %s: %v", outputFilename, err)
+				} else {
+					fmt.Printf("Bytecode đã được lưu vào: %s\n", outputFilename)
+				}
 			}
 		}
 	}

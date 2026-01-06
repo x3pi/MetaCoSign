@@ -14,8 +14,71 @@ import (
 	"time"
 
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
-	"github.com/meta-node-blockchain/meta-node/pkg/models/gen_bytecode"
 )
+
+// --- 1. Cấu trúc mapping file config.json (từ Remix) ---
+type ConfigFile struct {
+	Compiler CompilerInfo              `json:"compiler"`
+	Language string                    `json:"language"`
+	Settings BuildMetadata             `json:"settings"`
+	Sources  map[string]SourceMetadata `json:"sources"`
+}
+
+type CompilerInfo struct {
+	Version string `json:"version"`
+}
+
+type SourceMetadata struct {
+	Keccak256 string   `json:"keccak256"`
+	License   string   `json:"license"`
+	URLs      []string `json:"urls"`
+}
+
+type BuildMetadata struct {
+	CompilationTarget map[string]string              `json:"compilationTarget,omitempty"`
+	Optimizer         Optimizer                      `json:"optimizer"`
+	EVMVersion        string                         `json:"evmVersion,omitempty"`
+	ViaIR             bool                           `json:"viaIR,omitempty"`
+	OutputSelection   map[string]map[string][]string `json:"outputSelection,omitempty"`
+	Libraries         map[string]interface{}         `json:"libraries,omitempty"`
+	Metadata          map[string]interface{}         `json:"metadata,omitempty"`
+	Remappings        []string                       `json:"remappings,omitempty"`
+}
+
+type Optimizer struct {
+	Enabled bool `json:"enabled"`
+	Runs    int  `json:"runs"`
+}
+
+// --- 2. Cấu trúc Input gửi cho solc (Standard JSON Input) ---
+type SolcInput struct {
+	Language string            `json:"language"`
+	Sources  map[string]Source `json:"sources"`
+	Settings BuildMetadata     `json:"settings"` // Nhúng trực tiếp struct Metadata vào đây
+}
+
+type Source struct {
+	Content string `json:"content"`
+}
+
+// --- 3. Cấu trúc Output nhận về từ solc ---
+type SolcOutput struct {
+	Contracts map[string]map[string]ContractOutput `json:"contracts"`
+	Errors    []SolcError                          `json:"errors"`
+}
+
+type ContractOutput struct {
+	EVM struct {
+		Bytecode struct {
+			Object string `json:"object"`
+		} `json:"bytecode"`
+	} `json:"evm"`
+}
+
+type SolcError struct {
+	Severity string `json:"severity"`
+	Message  string `json:"message"`
+}
 
 // Hàm tải file từ IPFS
 func downloadFromIPFS(ipfsURL string) ([]byte, error) {
@@ -210,7 +273,7 @@ func parseImports(content string) []string {
 }
 
 // Hàm kiểm tra xem file có được import (trực tiếp hoặc gián tiếp) không
-func isFileNeeded(sourcePath string, imports []string, allSources map[string]gen_bytecode.SourceMetadata) bool {
+func isFileNeeded(sourcePath string, imports []string, allSources map[string]SourceMetadata) bool {
 	// 1. Kiểm tra xem có được import trực tiếp không
 	for _, imp := range imports {
 		if sourcePath == imp || strings.HasSuffix(sourcePath, imp) {
@@ -244,7 +307,7 @@ func main() {
 		log.Fatalf("Lỗi đọc config.json: %v", err)
 	}
 
-	var config gen_bytecode.ConfigFile
+	var config ConfigFile
 	if err := json.Unmarshal(configFile, &config); err != nil {
 		log.Fatalf("Lỗi parse JSON config: %v", err)
 	}
@@ -306,7 +369,7 @@ func main() {
 	}
 
 	// --- BƯỚC 2: Tải các file sources từ config.json (bao gồm file chính và dependencies) ---
-	sources := make(map[string]gen_bytecode.Source)
+	sources := make(map[string]Source)
 
 	// Đọc file test.sol từ file system nếu tồn tại (file chính cần biên dịch)
 	testSolFile := mainFileName
@@ -319,7 +382,7 @@ func main() {
 			if solcVersion != "" {
 				testSolContent = adjustPragmaVersion(testSolContent, solcVersion)
 			}
-			sources[testSolFile] = gen_bytecode.Source{Content: testSolContent}
+			sources[testSolFile] = Source{Content: testSolContent}
 			fmt.Printf("✓ Đã đọc %s từ file system\n", testSolFile)
 		}
 	}
@@ -333,6 +396,16 @@ func main() {
 
 	fmt.Println("Đang tải các file sources từ IPFS...")
 	for sourcePath, sourceMeta := range config.Sources {
+		// Bỏ qua nếu đã có trong sources (ví dụ test.sol đã đọc từ file system)
+		// if _, exists := sources[sourcePath]; exists {
+		// 	continue
+		// }
+
+		// Kiểm tra xem file có cần thiết không (được import hoặc là dependency)
+		// if !isFileNeeded(sourcePath, imports, config.Sources) {
+		// 	fmt.Printf("  ⏭ Bỏ qua %s (không được import trong test.sol)\n", sourcePath)
+		// 	continue
+		// }
 		var content []byte
 		var err error
 		// Thử đọc từ file system trước (cho file local)
@@ -344,7 +417,7 @@ func main() {
 				if solcVersion != "" {
 					contentStr = adjustPragmaVersion(contentStr, solcVersion)
 				}
-				sources[sourcePath] = gen_bytecode.Source{Content: contentStr}
+				sources[sourcePath] = Source{Content: contentStr}
 				fmt.Printf("  ✓ Đã đọc %s từ file system\n", sourcePath)
 				continue
 			}
@@ -373,13 +446,13 @@ func main() {
 		if solcVersion != "" {
 			contentStr = adjustPragmaVersion(contentStr, solcVersion)
 		}
-		sources[sourcePath] = gen_bytecode.Source{Content: contentStr}
+		sources[sourcePath] = Source{Content: contentStr}
 		fmt.Printf("  ✓ Đã tải %s\n", sourcePath)
 	}
 
 	// --- BƯỚC 4: Tạo payload cho Compiler ---
 	// Kết hợp nội dung file .sol và cấu hình từ .json
-	input := gen_bytecode.SolcInput{
+	input := SolcInput{
 		Language: config.Language,
 		Sources:  sources,
 		Settings: config.Settings, // Gán metadata đã đọc vào đây
@@ -419,7 +492,7 @@ func main() {
 	}
 
 	// --- BƯỚC 6: Xử lý kết quả ---
-	var output gen_bytecode.SolcOutput
+	var output SolcOutput
 	if err := json.Unmarshal(outputBytes, &output); err != nil {
 		log.Fatalf("Lỗi parse output từ solc: %v", err)
 	}

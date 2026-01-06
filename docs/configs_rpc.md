@@ -43,7 +43,7 @@ file `config-rpc.json` tại `cmd/rpc-client` (hoặc cập nhật cấu hình t
   "ldb_artifact_registry": "./db/ldb_artifact_registry",
   "ldb_robot_transaction": "./db/ldb_robot_transaction",
   "owner_rpc_address": "0x0b143e894a600114c4a3729874214e5fc5ea9cbc",
-  "contracts_interceptor": ["0x00000000000000000000000000000000D844bb55","0x1Bab1fF78ebc3926a0461ff3529778473759A802"],
+  "contracts_interceptor": ["0x00000000000000000000000000000000D844bb55","0xE74A88071fdc26f6b0453fE2B8b1d3e805b314E5"],
   "reward_amount": 1000000000000000000
 }
 ```

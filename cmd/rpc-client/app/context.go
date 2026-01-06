@@ -44,7 +44,7 @@ type Context struct {
 	LdbRobotTransaction *storage.RobotTransaction
 
 	// Artifact Registry Storage
-	// LdbArtifactRegistry *storage.ArtifactRegistryStorage
+	LdbArtifactRegistry *storage.ArtifactStorage
 
 	// Node BLS keys
 	NodeBlsPrivateKey common.PrivateKey
@@ -113,6 +113,22 @@ func New(cfg *config.Config, tcpCfg *tcp_config.ClientConfig) (*Context, error) 
 		logger.Info("✅ Transaction storage initialized at: %s", cfg.LdbRobotTransactionPath)
 	}
 
+	// 8. Initialize LevelDB for Artifact Registry
+	var artifactStorage *storage.ArtifactStorage
+	if cfg.LdbArtifactRegistryPath != "" {
+		artifactDB, err := leveldb.OpenFile(cfg.LdbArtifactRegistryPath, nil)
+		if err != nil {
+			pkStore.Close()
+			ldbBlsWallets.Close()
+			if transactionStorage != nil {
+				transactionStorage.Close()
+			}
+			return nil, fmt.Errorf("lỗi mở LevelDB artifact registry tại '%s': %w", cfg.LdbArtifactRegistryPath, err)
+		}
+		artifactStorage = storage.NewArtifactStorage(artifactDB)
+		logger.Info("✅ Artifact Registry storage initialized at: %s", cfg.LdbArtifactRegistryPath)
+	}
+
 	subInterceptor := ws_interceptor.NewSubscriptionInterceptor(cfg)
 	ctx := &Context{
 		ClientRpc:           clientRpc,
@@ -124,6 +140,7 @@ func New(cfg *config.Config, tcpCfg *tcp_config.ClientConfig) (*Context, error) 
 		LdbNotification:     ldbNotification,
 		LdbContractFreeGas:  contractFreeGasStorage,
 		LdbRobotTransaction: transactionStorage,
+		LdbArtifactRegistry: artifactStorage,
 		NodeBlsPrivateKey:   keyPair.PrivateKey(),
 		NodeBlsPublicKey:    keyPair.PublicKey(),
 		SubInterceptor:      subInterceptor,
@@ -151,6 +168,13 @@ func (ctx *Context) Close() error {
 	if ctx.LdbRobotTransaction != nil {
 		if err := ctx.LdbRobotTransaction.Close(); err != nil {
 			logger.Error("Failed to close TransactionStorage: %v", err)
+			errors = append(errors, err)
+		}
+	}
+
+	if ctx.LdbArtifactRegistry != nil {
+		if err := ctx.LdbArtifactRegistry.Close(); err != nil {
+			logger.Error("Failed to close ArtifactRegistry: %v", err)
 			errors = append(errors, err)
 		}
 	}
