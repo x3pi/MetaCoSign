@@ -21,11 +21,10 @@ import (
 // PushArtifactParams chứa các tham số để push artifact
 type PushArtifactParams struct {
 	ContractAddress string `json:"contract_address"` // Contract address (required)
-	ABI             string `json:"abi"`              // ABI JSON string
 	SourceCode      string `json:"source_code"`      // Full source code (all .sol files, JSON encoded)
 	SourceMap       string `json:"source_map"`       // Source map string
 	StorageLayout   string `json:"storage_layout"`   // Storage layout JSON string
-	Metadata        string `json:"metadata"`         // Metadata/config.json (JSON string) - required, contains all compiler settings
+	Metadata        string `json:"metadata"`         // Metadata/config.json (JSON string) - required, contains all compiler settings including ABI
 	VerifyBytecode  bool   `json:"verify_bytecode"`  // Whether to verify bytecode on-chain (default: true)
 }
 
@@ -40,9 +39,7 @@ func HandlePushArtifact(appCtx *app.Context, req models.JSONRPCRequestRaw) rpc_c
 		logger.Error("Failed to unmarshal push artifact params: %v", err)
 		return utils.MakeInvalidParamError(req.Id, "Invalid params for rpc_pushArtifact: "+err.Error())
 	}
-	if params.ABI == "" {
-		return utils.MakeInvalidParamError(req.Id, "abi is required")
-	}
+
 	if params.SourceCode == "" {
 		return utils.MakeInvalidParamError(req.Id, "source_code is required")
 	}
@@ -140,7 +137,7 @@ func HandlePushArtifact(appCtx *app.Context, req models.JSONRPCRequestRaw) rpc_c
 		ArtifactId:      artifactID,
 		BytecodeHash:    bytecodeHash,
 		Metadata:        params.Metadata,
-		Abi:             params.ABI,
+		Abi:             compilerSettings.ABI,
 		SourceCode:      params.SourceCode,
 		SourceMap:       params.SourceMap,
 		StorageLayout:   params.StorageLayout,
@@ -252,6 +249,7 @@ type CompilerSettings struct {
 	OptimizerSettings string // JSON string từ metadata.settings.optimizer
 	EVMVersion        string // Từ metadata.settings.evmVersion
 	LinkedLibraries   string // JSON string từ metadata.settings.libraries
+	ABI               string // JSON string từ metadata.output.abi
 }
 
 // extractCompilerSettingsFromMetadata parse metadata và extract các compiler settings
@@ -287,10 +285,17 @@ func extractCompilerSettingsFromMetadata(metadataJSON string) (*CompilerSettings
 	}
 	linkedLibraries := string(librariesJSON)
 
+	abiJson, err := json.Marshal(config.Output.ABI)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal libraries: %w", err)
+	}
+	abi := string(abiJson)
+
 	return &CompilerSettings{
 		SolcVersion:       solcVersion,
 		OptimizerSettings: optimizerSettings,
 		EVMVersion:        evmVersion,
 		LinkedLibraries:   linkedLibraries,
+		ABI:               abi,
 	}, nil
 }

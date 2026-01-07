@@ -1,11 +1,17 @@
 package gen_bytecode
 
+import "encoding/json"
+
 // --- 1. Cấu trúc mapping file config.json (từ Remix) ---
 type ConfigFile struct {
 	Compiler CompilerInfo              `json:"compiler"`
+	Output   ABIContainer              `json:"output"`
 	Language string                    `json:"language"`
 	Settings BuildMetadata             `json:"settings"`
 	Sources  map[string]SourceMetadata `json:"sources"`
+}
+type ABIContainer struct {
+	ABI json.RawMessage `json:"abi"`
 }
 
 // CompiledBytecodes chứa cả creation và deployed bytecode

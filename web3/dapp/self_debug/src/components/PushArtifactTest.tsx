@@ -5,9 +5,13 @@ interface PushArtifactParams {
   contract_address: string;
   metadata: string;
   source_code: string;
-  abi: string;
   source_map: string;
   storage_layout: string;
+}
+
+interface SourceFile {
+  filename: string;
+  content: string;
 }
 
 interface JSONRPCResponse {
@@ -20,6 +24,7 @@ interface JSONRPCResponse {
   };
   id: number;
 }
+
 const sourceCodeObj = {
     "test.sol": `// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
@@ -89,14 +94,33 @@ export default function PushArtifactTest() {
     contract_address: '',
     metadata: '',
     source_code: '',
-    abi: '',
     source_map: '',
     storage_layout: '',
   });
 
+  const [sourceFiles, setSourceFiles] = useState<SourceFile[]>([
+    { filename: '', content: '' }
+  ]);
+
   const [loading, setLoading] = useState(false);
   const [response, setResponse] = useState<JSONRPCResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const addSourceFile = () => {
+    setSourceFiles([...sourceFiles, { filename: '', content: '' }]);
+  };
+
+  const removeSourceFile = (index: number) => {
+    if (sourceFiles.length > 1) {
+      setSourceFiles(sourceFiles.filter((_, i) => i !== index));
+    }
+  };
+
+  const updateSourceFile = (index: number, field: 'filename' | 'content', value: string) => {
+    const updated = [...sourceFiles];
+    updated[index][field] = value;
+    setSourceFiles(updated);
+  };
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -115,155 +139,7 @@ export default function PushArtifactTest() {
     setParams({
       contract_address: '0xE5A7116231033304b6226087A55c7F599D09A579',
       metadata: JSON.stringify({"compiler":{"version":"0.8.30+commit.73712a01"},"language":"Solidity","output":{"abi":[{"inputs":[{"internalType":"uint256","name":"available","type":"uint256"},{"internalType":"uint256","name":"required","type":"uint256"}],"name":"InsufficientBalance","type":"error"},{"inputs":[{"internalType":"uint256","name":"","type":"uint256"}],"name":"array","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"balance","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"amount","type":"uint256"}],"name":"testCustomError","outputs":[],"stateMutability":"pure","type":"function"},{"inputs":[],"name":"testPanic0x01","outputs":[],"stateMutability":"pure","type":"function"},{"inputs":[],"name":"testPanic0x11","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"denominator","type":"uint256"}],"name":"testPanic0x12","outputs":[],"stateMutability":"pure","type":"function"},{"inputs":[{"internalType":"uint256","name":"_value","type":"uint256"}],"name":"testPanic0x21","outputs":[{"internalType":"enum TestDebug.Action","name":"","type":"uint8"}],"stateMutability":"pure","type":"function"},{"inputs":[],"name":"testPanic0x31","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"index","type":"uint256"}],"name":"testPanic0x32","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"value","type":"uint256"}],"name":"testRequireString","outputs":[],"stateMutability":"pure","type":"function"}],"devdoc":{"kind":"dev","methods":{},"version":1},"userdoc":{"kind":"user","methods":{},"version":1}},"settings":{"compilationTarget":{"test.sol":"TestDebug"},"evmVersion":"prague","libraries":{},"metadata":{"bytecodeHash":"ipfs"},"optimizer":{"enabled":true,"runs":200},"remappings":[],"viaIR":true},"sources":{"test.sol":{"keccak256":"0xd7635fb922ae80aef86db4fa744fefa883d2f2077ced0db3038f172892d1ddeb","license":"MIT","urls":["bzz-raw://e89e7b38a5a1f2affd6a4d517c2a2e1453e662519c9ae5c2289164ca908f9673","dweb:/ipfs/QmahoSCHTXGZKbv3pfDKP2hWRGign9V4aYuQAx9cLAYLHH"]}},"version":1},null, 2),
-      source_code: JSON.stringify(sourceCodeObj, null, 2),
-      abi: JSON.stringify([
-        {
-            "inputs": [
-                {
-                    "internalType": "uint256",
-                    "name": "available",
-                    "type": "uint256"
-                },
-                {
-                    "internalType": "uint256",
-                    "name": "required",
-                    "type": "uint256"
-                }
-            ],
-            "name": "InsufficientBalance",
-            "type": "error"
-        },
-        {
-            "inputs": [
-                {
-                    "internalType": "uint256",
-                    "name": "",
-                    "type": "uint256"
-                }
-            ],
-            "name": "array",
-            "outputs": [
-                {
-                    "internalType": "uint256",
-                    "name": "",
-                    "type": "uint256"
-                }
-            ],
-            "stateMutability": "view",
-            "type": "function"
-        },
-        {
-            "inputs": [],
-            "name": "balance",
-            "outputs": [
-                {
-                    "internalType": "uint256",
-                    "name": "",
-                    "type": "uint256"
-                }
-            ],
-            "stateMutability": "view",
-            "type": "function"
-        },
-        {
-            "inputs": [
-                {
-                    "internalType": "uint256",
-                    "name": "amount",
-                    "type": "uint256"
-                }
-            ],
-            "name": "testCustomError",
-            "outputs": [],
-            "stateMutability": "pure",
-            "type": "function"
-        },
-        {
-            "inputs": [],
-            "name": "testPanic0x01",
-            "outputs": [],
-            "stateMutability": "pure",
-            "type": "function"
-        },
-        {
-            "inputs": [],
-            "name": "testPanic0x11",
-            "outputs": [],
-            "stateMutability": "nonpayable",
-            "type": "function"
-        },
-        {
-            "inputs": [
-                {
-                    "internalType": "uint256",
-                    "name": "denominator",
-                    "type": "uint256"
-                }
-            ],
-            "name": "testPanic0x12",
-            "outputs": [],
-            "stateMutability": "pure",
-            "type": "function"
-        },
-        {
-            "inputs": [
-                {
-                    "internalType": "uint256",
-                    "name": "_value",
-                    "type": "uint256"
-                }
-            ],
-            "name": "testPanic0x21",
-            "outputs": [
-                {
-                    "internalType": "enum TestDebug.Action",
-                    "name": "",
-                    "type": "uint8"
-                }
-            ],
-            "stateMutability": "pure",
-            "type": "function"
-        },
-        {
-            "inputs": [],
-            "name": "testPanic0x31",
-            "outputs": [],
-            "stateMutability": "nonpayable",
-            "type": "function"
-        },
-        {
-            "inputs": [
-                {
-                    "internalType": "uint256",
-                    "name": "index",
-                    "type": "uint256"
-                }
-            ],
-            "name": "testPanic0x32",
-            "outputs": [
-                {
-                    "internalType": "uint256",
-                    "name": "",
-                    "type": "uint256"
-                }
-            ],
-            "stateMutability": "view",
-            "type": "function"
-        },
-        {
-            "inputs": [
-                {
-                    "internalType": "uint256",
-                    "name": "value",
-                    "type": "uint256"
-                }
-            ],
-            "name": "testRequireString",
-            "outputs": [],
-            "stateMutability": "pure",
-            "type": "function"
-        }
-    ], null, 2),
+      source_code: '', // Will be built from sourceFiles
       source_map: "58:584:0:-:0;;;;;;;;;;;;;;;;;;;;;;;;;;;588:35;58:584;588:35;;;58:584;;;;;;;;;;;;;-1:-1:-1;;58:584:0;;;;246:2;58:584;;237:11;58:584;;;;;;;-1:-1:-1;;;58:584:0;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;-1:-1:-1;;58:584:0;;;;;;;;;;;;;;;;;;;-1:-1:-1;;58:584:0;;;;;;-1:-1:-1;;;588:35:0;;58:584;;588:35;;58:584;;;;;;;;;;;588:35;;;58:584;;;;;;-1:-1:-1;;58:584:0;;;;;;-1:-1:-1;;58:584:0;;;;;;;;;;;;;;;;;;;;;",
       storage_layout: JSON.stringify({
         "storage": [
@@ -285,6 +161,14 @@ export default function PushArtifactTest() {
         }
     }, null, 2),
     });
+
+    // Load example source files
+    setSourceFiles([
+      {
+        filename: 'test.sol',
+        content: sourceCodeObj["test.sol"]
+      }
+    ]);
   };
 
   const validateJSON = (jsonString: string, fieldName: string): boolean => {
@@ -301,21 +185,39 @@ export default function PushArtifactTest() {
     e.preventDefault();
     setError(null);
     
+    // Build source_code JSON from sourceFiles array
+    const sourceCodeObj: Record<string, string> = {};
+    for (const file of sourceFiles) {
+      if (file.filename && file.content) {
+        sourceCodeObj[file.filename] = file.content;
+      }
+    }
+
+    // Check if we have at least one source file
+    if (Object.keys(sourceCodeObj).length === 0) {
+      setError('At least one source file (filename + content) is required');
+      return;
+    }
+
+    // Convert to JSON string
+    const sourceCodeJSON = JSON.stringify(sourceCodeObj, null, 2);
+    
     // Validate JSON fields
     if (!validateJSON(params.metadata, 'metadata')) return;
-    if (!validateJSON(params.source_code, 'source_code')) return;
-    if (!validateJSON(params.abi, 'abi')) return;
     if (params.storage_layout && !validateJSON(params.storage_layout, 'storage_layout')) return;
 
     // If validation passes, proceed with submit
     setLoading(true);
     setResponse(null);
-
+    console.log(sourceCodeJSON)
     try {
       const requestBody = {
         jsonrpc: '2.0',
         method: 'rpc_pushArtifact',
-        params: params,
+        params: {
+          ...params,
+          source_code: sourceCodeJSON // Use the built JSON string
+        },
         id: 1,
       };
 
@@ -361,10 +263,10 @@ export default function PushArtifactTest() {
               contract_address: '',
               metadata: '',
               source_code: '',
-              abi: '',
               source_map: '',
               storage_layout: '',
             });
+            setSourceFiles([{ filename: '', content: '' }]);
             setResponse(null);
             setError(null);
           }}
@@ -407,36 +309,58 @@ export default function PushArtifactTest() {
           />
         </div>
 
-        {/* Source Code (JSON) */}
+        {/* Source Code Files - Dynamic Input */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Source Code (JSON) *
-          </label>
-          <textarea
-            name="source_code"
-            value={params.source_code}
-            onChange={handleChange}
-            required
-            rows={8}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
-            placeholder='{"contracts/MyContract.sol": "pragma solidity...", ...}'
-          />
-        </div>
+          <div className="flex justify-between items-center mb-2">
+            <label className="block text-sm font-medium text-gray-700">
+              Source Code Files *
+            </label>
+            <button
+              type="button"
+              onClick={addSourceFile}
+              className="px-3 py-1 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
+            >
+              + Add File
+            </button>
+          </div>
 
-        {/* ABI (JSON) */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            ABI (JSON) *
-          </label>
-          <textarea
-            name="abi"
-            value={params.abi}
-            onChange={handleChange}
-            required
-            rows={6}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
-            placeholder='[{"type": "function", ...}]'
-          />
+          {sourceFiles.map((file, index) => (
+            <div key={index} className="mb-4 p-4 border border-gray-200 rounded-md bg-gray-50">
+              <div className="flex justify-between items-start mb-2">
+                <label className="text-sm font-medium text-gray-600">
+                  File #{index + 1}
+                </label>
+                {sourceFiles.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeSourceFile(index)}
+                    className="px-2 py-1 bg-red-500 text-white text-xs rounded hover:bg-red-600"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+              
+              <input
+                type="text"
+                value={file.filename}
+                onChange={(e) => updateSourceFile(index, 'filename', e.target.value)}
+                placeholder="Filename (e.g., MyContract.sol)"
+                className="w-full px-3 py-2 mb-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              />
+              
+              <textarea
+                value={file.content}
+                onChange={(e) => updateSourceFile(index, 'content', e.target.value)}
+                placeholder="// SPDX-License-Identifier: MIT&#10;pragma solidity ^0.8.0;&#10;&#10;contract MyContract {&#10;    // Your code here&#10;}"
+                rows={10}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+              />
+            </div>
+          ))}
+          <p className="text-xs text-gray-500 mt-2">
+            Enter each Solidity source file separately. Will be automatically converted to JSON on submit.
+          </p>
         </div>
 
         {/* Source Map */}
