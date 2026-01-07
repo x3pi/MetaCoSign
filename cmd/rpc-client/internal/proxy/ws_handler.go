@@ -156,6 +156,20 @@ func (p *RpcReverseProxy) proxyWebSocketTraffic(
 	clientWriter, targetWriter *ws_writer.WebSocketWriter,
 	r *http.Request,
 ) {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Error("PANIC in WebSocket proxy traffic handler: %v", r)
+			// Close connections safely
+			if clientConn != nil {
+				_ = clientWriter.WriteCloseMessage(websocket.CloseInternalServerErr, "Internal server error")
+				clientConn.Close()
+			}
+			if targetConn != nil {
+				targetConn.Close()
+			}
+		}
+	}()
+
 	ctx := r.Context()
 	errChan := make(chan error, 2)
 	quit := make(chan struct{})
@@ -165,12 +179,30 @@ func (p *RpcReverseProxy) proxyWebSocketTraffic(
 
 	// Goroutine 1: Client → Upstream (with RPC method handling)
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("PANIC in client-to-upstream goroutine: %v", r)
+				select {
+				case errChan <- fmt.Errorf("client goroutine panic: %v", r):
+				default:
+				}
+			}
+		}()
 		defer wg.Done()
 		p.proxyClientToUpstream(clientConn, targetConn, clientWriter, targetWriter, errChan, quit)
 	}()
 
 	// Goroutine 2: Upstream → Client (passthrough)
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("PANIC in upstream-to-client goroutine: %v", r)
+				select {
+				case errChan <- fmt.Errorf("upstream goroutine panic: %v", r):
+				default:
+				}
+			}
+		}()
 		defer wg.Done()
 		p.proxyUpstreamToClient(targetConn, clientWriter, errChan, quit)
 	}()
@@ -354,43 +386,63 @@ func (p *RpcReverseProxy) proxyClientToUpstream(
 			}
 			return
 		}
-		if req.Method == "eth_subscribe" {
-			if err := p.HandleSubscribeRequest(req, clientConn, targetConn, clientWriter, targetWriter, errChan, quit); err != nil {
-				errorResp := map[string]interface{}{
-					"jsonrpc": "2.0",
-					"id":      req.Id,
-					"error": map[string]interface{}{
-						"code":    -32602,
-						"message": err.Error(),
-					},
+
+		// Handle panic recovery for RPC processing
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					logger.Error("Panic in proxyClientToUpstream for method %s: %v", req.Method, r)
+					errorResp := map[string]interface{}{
+						"jsonrpc": "2.0",
+						"id":      req.Id,
+						"error": map[string]interface{}{
+							"code":    -32603,
+							"message": "Internal server error",
+						},
+					}
+					clientWriter.WriteJSON(errorResp)
 				}
-				clientWriter.WriteJSON(errorResp)
-			}
-			continue
-		} else if req.Method == "eth_unsubscribe" {
-			p.AppCtx.SubInterceptor.RemoveByConnection(clientConn)
-		}
-		// Try to handle RPC method locally
-		rpcResp, handled := p.RouteWebSocketMessage(req)
-		if handled && rpcResp != nil {
-			if err := clientWriter.WriteJSON(rpcResp); err != nil {
-				logger.Error("Error writing RPC response to client %s: %v", clientConn.RemoteAddr(), err)
-				select {
-				case errChan <- fmt.Errorf("client write error: %w", err):
-				case <-quit:
-				}
-				return
-			}
-		} else {
-			if err := targetWriter.WriteJSON(req); err != nil {
-				logger.Error("Error writing to upstream for client %s: %v", clientConn.RemoteAddr(), err)
-				select {
-				case errChan <- fmt.Errorf("upstream write error: %w", err):
-				case <-quit:
+			}()
+
+			if req.Method == "eth_subscribe" {
+				if err := p.HandleSubscribeRequest(req, clientConn, targetConn, clientWriter, targetWriter, errChan, quit); err != nil {
+					errorResp := map[string]interface{}{
+						"jsonrpc": "2.0",
+						"id":      req.Id,
+						"error": map[string]interface{}{
+							"code":    -32602,
+							"message": err.Error(),
+						},
+					}
+					clientWriter.WriteJSON(errorResp)
 				}
 				return
+			} else if req.Method == "eth_unsubscribe" {
+				p.AppCtx.SubInterceptor.RemoveByConnection(clientConn)
 			}
-		}
+
+			// Try to handle RPC method locally
+			rpcResp, handled := p.RouteWebSocketMessage(req)
+			if handled && rpcResp != nil {
+				if err := clientWriter.WriteJSON(rpcResp); err != nil {
+					logger.Error("Error writing RPC response to client %s: %v", clientConn.RemoteAddr(), err)
+					select {
+					case errChan <- fmt.Errorf("client write error: %w", err):
+					case <-quit:
+					}
+					return
+				}
+			} else {
+				if err := targetWriter.WriteJSON(req); err != nil {
+					logger.Error("Error writing to upstream for client %s: %v", clientConn.RemoteAddr(), err)
+					select {
+					case errChan <- fmt.Errorf("upstream write error: %w", err):
+					case <-quit:
+					}
+					return
+				}
+			}
+		}()
 	}
 }
 
