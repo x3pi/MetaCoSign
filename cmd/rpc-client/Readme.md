@@ -2,7 +2,7 @@
   "rpc_server_url": "http://139.59.243.85:8646",
   "wss_server_url": "ws://139.59.243.85:8646/ws",
 
-    "rpc_server_url": "http://localhost:8646",
+  "rpc_server_url": "http://localhost:8646",
   "wss_server_url": "ws://localhost:8646/ws",
 http://192.168.1.234:8545/register-bls-key
 
