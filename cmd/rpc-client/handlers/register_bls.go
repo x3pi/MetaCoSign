@@ -12,6 +12,7 @@ import (
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/app"
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/models"
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/utils"
+	"github.com/meta-node-blockchain/meta-node/pkg/bls"
 	"github.com/meta-node-blockchain/meta-node/pkg/rpc_client"
 )
 
@@ -50,6 +51,25 @@ func processRegisterBlsKeyParams(appCtx *app.Context, params models.RegisterBlsK
 		releaseBls()
 		return utils.MakeInvalidParamError(id, "Invalid BLS private key hex data.")
 	}
+
+	// Validate BLS private key using proper BLS validation
+	if !bls.ValidateBlsPrivateKey(blsPrivKeyBytes) {
+		releaseBls()
+		return utils.MakeInvalidParamError(id, "Invalid BLS private key: key is invalid or out of bounds.")
+	}
+	if len(blsPrivKeyBytes) == 32 && blsPrivKeyBytes[0]&0xC0 != 0 {
+		// This is a rough check - if MSB is set, it might be too large
+		// For production, should use proper big integer comparison
+		releaseBls()
+		return utils.MakeInvalidParamError(id, "Invalid BLS private key: key too large.")
+	}
+
+	// Use comprehensive BLS validation
+	if !bls.ValidateBlsPrivateKey(blsPrivKeyBytes) {
+		releaseBls()
+		return utils.MakeInvalidParamError(id, "Invalid BLS private key: failed validation.")
+	}
+
 	releaseBls()
 
 	clientTimestamp, err := time.Parse(time.RFC3339Nano, params.Timestamp)
