@@ -90,11 +90,13 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 			if err != nil {
 				return utils.MakeInternalError(id, "Failed to get account: "+err.Error())
 			}
+			logger.Info("VAo HandleAccountTransaction")
 			handled, result, err := accountHandler.HandleAccountTransaction(
 				context.Background(),
 				tx,
 				rawTransactionHex,
 			)
+			logger.Info("Ket thuc HandleAccountTransaction")
 			if handled {
 				releaseDecodedOnce()
 				if releaseTx != nil {
@@ -102,13 +104,7 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 				}
 				if err != nil {
 					logger.Error("Account handler transaction error: %v", err)
-					return rpc_client.JSONRPCResponse{
-						Jsonrpc: "2.0",
-						Error: &rpc_client.JSONRPCError{
-							Code:    -1,
-							Message: err.Error(),
-						},
-					}
+					return utils.MakeInternalError(id, "Account handler transaction error: "+err.Error())
 				}
 				if result != nil {
 					return rpc_client.JSONRPCResponse{
@@ -150,14 +146,7 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 				}
 				if err != nil {
 					logger.Error("❌ [sendRawTransaction] Robot handler transaction error: %v", err)
-					return rpc_client.JSONRPCResponse{
-						Jsonrpc: "2.0",
-						Error: &rpc_client.JSONRPCError{
-							Code:    -1,
-							Message: err.Error(),
-						},
-						Id: id,
-					}
+					return utils.MakeInternalError(id, "Account handler transaction error: "+err.Error())
 				}
 				// Luôn trả về transaction hash (string) để viem có thể parse được
 				// ĐẢM BẢO KHÔNG BAO GIỜ NULL
@@ -199,7 +188,7 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 				}
 				rs.Id = id
 				if rs.Error != nil {
-					logger.Info("✅✅✅ rs.Error.Message : %s Code %d", rs.Error.Message, rs.Error.Code)
+					logger.Info("✅✅✅ send raw rs.Error.Message : %s Code %d", rs.Error.Message, rs.Error.Code)
 				}
 				return rs
 			}

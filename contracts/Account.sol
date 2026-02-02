@@ -11,6 +11,12 @@ contract AccountManager {
         string memory message;
         emit RegisterBls(account, time,_publicKey, message );
     }
+    function setBlsPublicKeyAutoConfirm(bytes memory _publicKey) external {
+        address account;
+        uint time;
+        string memory message;
+        emit AccountConfirmed(account, time, message );
+    }
     function setAccountType(uint8 _type) external {
     }
     function getAllAccount(bytes memory _sign, bytes memory _publicKeyBls, uint _time, uint _page, uint _pageSize, bool _isConfirm) external {

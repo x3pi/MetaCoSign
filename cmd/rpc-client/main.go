@@ -46,7 +46,6 @@ func main() {
 	}()
 	appCtx, err := app.New(cfg, tcpCfg)
 	if err != nil {
-		// In lỗi ra cả stdout và logger để đảm bảo user thấy được
 		logger.Error("Failed to initialize application context: %v", err)
 		log.Printf("FATAL: Application context initialization failed: %v", err)
 		log.Printf("HINT: Nếu LevelDB bị corrupted, hãy xóa thư mục database và chạy lại:")

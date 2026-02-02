@@ -143,6 +143,19 @@ const AccountABI = `[
 	{
 		"inputs": [
 			{
+				"internalType": "address",
+				"name": "_account",
+				"type": "address"
+			}
+		],
+		"name": "confirmAccountWithoutSign",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
 				"internalType": "bytes",
 				"name": "_sign",
 				"type": "bytes"
@@ -281,6 +294,19 @@ const AccountABI = `[
 			}
 		],
 		"name": "setBlsPublicKey",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "bytes",
+				"name": "_publicKey",
+				"type": "bytes"
+			}
+		],
+		"name": "setBlsPublicKeyAutoConfirm",
 		"outputs": [],
 		"stateMutability": "nonpayable",
 		"type": "function"

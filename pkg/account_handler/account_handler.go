@@ -78,6 +78,9 @@ func (h *AccountHandlerNoReceipt) HandleAccountTransaction(
 	case "setBlsPublicKey":
 		err = h.handleSetBlsPublicKey(tx, method, inputData[4:], rawTransactionHex)
 		return true, nil, err
+	case "confirmAccountWithoutSign":
+		result, err = h.handleConfirmAccountWithoutSign(tx, method, inputData[4:])
+		return true, result, err
 	case "confirmAccount":
 		result, err = h.handleConfirmAccount(tx, method, inputData[4:])
 		return true, result, err
@@ -93,6 +96,7 @@ func (h *AccountHandlerNoReceipt) HandleAccountTransaction(
 	case "setAccountType":
 		return false, nil, nil
 	default:
+		logger.Info("___default for tx %s", method.Name)
 		return false, nil, nil
 	}
 }
@@ -120,7 +124,6 @@ func (h *AccountHandlerNoReceipt) HandleEthCall(ctx context.Context, data []byte
 		return nil, nil
 	}
 }
-
 func (h *AccountHandlerNoReceipt) handleSetBlsPublicKey(
 	tx mt_types.Transaction,
 	method *abi.Method,
@@ -187,6 +190,146 @@ func (h *AccountHandlerNoReceipt) handleSetBlsPublicKey(
 	return nil
 }
 
+func (h *AccountHandlerNoReceipt) handleConfirmAccountWithoutSign(
+	tx mt_types.Transaction,
+	method *abi.Method,
+	inputData []byte,
+) (string, error) {
+	args, err := method.Inputs.Unpack(inputData)
+	if err != nil {
+		return "", fmt.Errorf("lỗi khi unpack input data: %v", err)
+	}
+	accountAddress, _ := args[0].(ethCommon.Address)
+	// timestamp, _ := args[1].(*big.Int)
+	// signatureBytes, _ := args[2].([]byte)
+
+	// Verify timestamp
+	// if err := h.verifyTimestamp(timestamp); err != nil {
+	// 	return "", err
+	// }
+	// Build and verify signature
+	// message := buildMessageWithTimestamp(accountAddress.Bytes(), timestamp)
+	// if err := h.verifyOwnerSignature(message, signatureBytes); err != nil {
+	// 	return "", err
+	// }
+	currentTime := time.Now().Unix()
+	pendingTx, err := h.storage.GetPendingTransaction(accountAddress)
+	if err != nil {
+		return "", fmt.Errorf("pending transaction not found: %w", err)
+	}
+	// ========== REBUILD TRANSACTION TỪ rawTransactionHex ==========
+	rawTransactionHex := pendingTx.RawTransactionHex
+	// Decode hex
+	decodedTxBytes, releaseDecoded, err := utils.DecodeHexPooled(rawTransactionHex)
+	if err != nil {
+		return "", fmt.Errorf("invalid raw transaction hex: %w", err)
+	}
+	decodedReleased := false
+	releaseDecodedOnce := func() {
+		if decodedReleased {
+			return
+		}
+		decodedReleased = true
+		if releaseDecoded != nil {
+			releaseDecoded()
+		}
+	}
+	// Unmarshal Ethereum transaction
+	ethTx := new(types.Transaction)
+	if err := ethTx.UnmarshalBinary(decodedTxBytes); err != nil {
+		return "", fmt.Errorf("failed to unmarshal ethereum transaction: %w", err)
+	}
+	// Verify sender
+	signer := types.LatestSignerForChainID(h.appCtx.ClientRpc.ChainId)
+	fromAddress, err := types.Sender(signer, ethTx)
+	if err != nil {
+		return "", fmt.Errorf("failed to derive sender: %w", err)
+	}
+	if fromAddress != accountAddress {
+		return "", fmt.Errorf("sender mismatch: expected %s, got %s", accountAddress.Hex(), fromAddress.Hex())
+	}
+	var (
+		bTx       []byte
+		mtTx      mt_types.Transaction
+		releaseTx func()
+		buildErr  error
+	)
+	exists, err := h.appCtx.PKS.HasPrivateKey(fromAddress)
+	if err != nil {
+		return "", fmt.Errorf("error checking private key store: %w", err)
+	}
+	if !exists {
+		bTx, mtTx, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTx(ethTx, h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas)
+	} else {
+		senderPkString, _ := h.appCtx.PKS.GetPrivateKey(fromAddress)
+		keyPair := bls.NewKeyPair(ethCommon.FromHex(senderPkString))
+		bTx, mtTx, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(
+			ethTx,
+			h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas,
+			keyPair.PrivateKey(),
+		)
+	}
+	if buildErr != nil {
+		return "", fmt.Errorf("failed to build transaction: %w", buildErr)
+	}
+	rs := h.appCtx.ClientRpc.SendRawTransactionBinary(
+		bTx,
+		releaseTx,
+		decodedTxBytes,
+		releaseDecodedOnce,
+		nil,
+	)
+	if rs.Error != nil {
+		return "", fmt.Errorf("failed to send transaction: %v", rs.Error)
+	}
+	if h.appCtx.Cfg.RewardAmount != nil && h.appCtx.Cfg.RewardAmount.Cmp(big.NewInt(0)) > 0 {
+		metaTxData, _, releaseFunc, err := h.appCtx.ClientRpc.BuildTransferTransaction(ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress), ethCommon.Address(pendingTx.Address), h.appCtx.Cfg.RewardAmount)
+		if err != nil {
+			logger.Error("Failed to build reward transfer transaction: %v", err)
+		} else {
+			rst := h.appCtx.ClientRpc.SendRawTransactionBinary(
+				metaTxData,
+				releaseFunc,
+				nil,
+				nil,
+				nil,
+			)
+			if rst.Error != nil {
+				logger.Error("Failed to send reward transaction: %v", rst.Error)
+			} else {
+				logger.Info("✅ Reward transfer sent successfully, tx hash: %v", rst.Result)
+			}
+		}
+	}
+	// Cập nhật trạng thái confirmed
+	if err := h.storage.MarkAccountConfirmed(
+		accountAddress,
+		mtTx.Hash().Bytes(),
+		pendingTx.BlsPublicKey,
+	); err != nil {
+		logger.Error("Failed to mark account as confirmed: %v", err)
+	}
+	// Xóa pending transaction
+	if err := h.storage.DeletePendingTransaction(accountAddress); err != nil {
+		logger.Error("Failed to delete pending transaction: %v", err)
+	}
+	// ✅ TẠO NOTIFICATION VÀ BROADCAST EVENT
+	msgNoti := fmt.Sprintf("Your account %s has been successfully confirmed!", accountAddress.Hex())
+
+	notification := &pb.Notification{
+		AccountAddress: accountAddress.Bytes(),
+		Message:        msgNoti,
+		CreatedAt:      currentTime,
+	}
+	if err := h.appCtx.LdbNotification.SaveNotification(notification); err != nil {
+		logger.Error("Failed to save notification: %v", err)
+		return "", fmt.Errorf("Failed to save notification: %v", err)
+	}
+	h.broadcastEvent("AccountConfirmed", accountAddress, big.NewInt(currentTime), msgNoti)
+	logger.Info("✅ Đã confirm account %s, tx hash: %v", accountAddress.Hex(), rs.Result)
+	return rs.Result.(string), nil
+}
+
 func (h *AccountHandlerNoReceipt) handleConfirmAccount(
 	tx mt_types.Transaction,
 	method *abi.Method,
@@ -204,15 +347,12 @@ func (h *AccountHandlerNoReceipt) handleConfirmAccount(
 	if err := h.verifyTimestamp(timestamp); err != nil {
 		return "", err
 	}
-
 	// Build and verify signature
 	message := buildMessageWithTimestamp(accountAddress.Bytes(), timestamp)
 	if err := h.verifyOwnerSignature(message, signatureBytes); err != nil {
 		return "", err
 	}
-
 	currentTime := time.Now().Unix()
-
 	pendingTx, err := h.storage.GetPendingTransaction(accountAddress)
 	if err != nil {
 		return "", fmt.Errorf("pending transaction not found: %w", err)
@@ -878,7 +1018,6 @@ func (h *AccountHandlerNoReceipt) handleGetPublickeyBls(
 ) (interface{}, error) {
 	// Lấy public key từ KeyPair
 	publicKeyString := h.appCtx.ClientRpc.KeyPair.PublicKey().String()
-
 	// Đảm bảo có prefix "0x" nếu chưa có
 	if !strings.HasPrefix(publicKeyString, "0x") {
 		publicKeyString = "0x" + publicKeyString

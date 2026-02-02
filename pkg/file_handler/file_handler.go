@@ -126,9 +126,10 @@ func (h *FileHandlerNoReceipt) HandleFileTransactionNoReceipt(
 		err := fmt.Errorf("dữ liệu input không hợp lệ")
 		return false, err
 	}
+	logger.Info("____HandleFileTransactionNoReceipt: %v", inputData)
 	method, err := h.abi.MethodById(inputData[:4])
 	if err != nil {
-		err = fmt.Errorf("Lỗi khi lấy method từ input data: %v", err)
+		err = fmt.Errorf("File: Lỗi khi lấy method từ input data: %v", err)
 		return false, err
 	}
 	var logicErr error

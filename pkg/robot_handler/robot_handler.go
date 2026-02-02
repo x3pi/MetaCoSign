@@ -107,11 +107,14 @@ func (h *RobotHandler) HandleRobotTransaction(
 
 	switch method.Name {
 	case "emitQuestion":
+		logger.Info("✅ [HandleRobotTransaction] emitQuestion")
 		return h.handleEmitQuestion(tx, method, inputData[4:], rawTransactionHex)
 	case "emitAnswer":
+		logger.Info("✅ [HandleRobotTransaction] emitAnswer")
 		return h.handleEmitAnswer(tx, method, inputData[4:], rawTransactionHex)
 
 	default:
+		logger.Error("❌ [HandleRobotTransaction] unknown method: %s", method.Name)
 		return false, nil, fmt.Errorf("unknown method: %s", method.Name)
 	}
 }
@@ -397,7 +400,6 @@ func (h *RobotHandler) executeSingleTransaction(
 	if rs.Error != nil {
 		return fmt.Errorf("RPC send error: %v", rs.Error)
 	}
-
 	newTxHash, ok := rs.Result.(string)
 	if !ok {
 		return fmt.Errorf("invalid result type from RPC")
