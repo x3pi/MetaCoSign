@@ -52,16 +52,24 @@ EXCLUDE_PATTERNS=(
     "--exclude=cmd/rpc-client/privatekey_db_encrypted"
     
     # Binary files (chỉ loại trừ file binary ở thư mục gốc, không phải thư mục con)
-    # KHÔNG dùng --exclude=rpc-client vì nó sẽ loại trừ cả cmd/rpc-client
-    # Chỉ exclude file binary nếu nó tồn tại ở root (sẽ được xử lý riêng nếu cần)
+    # Sử dụng ./rpc-client để chỉ loại trừ file binary ở root, không ảnh hưởng cmd/rpc-client
+    "--exclude=./rpc-client"
     "--exclude=build_app"
     # KHÔNG exclude "build" vì nó sẽ loại trừ pkg/bls/blst/build (source code đã generate)
     # Chỉ exclude thư mục build ở root nếu cần
     "--exclude=./build"
     
+    # Các file binary phổ biến (loại trừ ở mọi nơi)
+    "--exclude=*.out"
+    "--exclude=*.exe"
+    "--exclude=*.bin"
+    "--exclude=*.so"
+    "--exclude=*.dylib"
+    "--exclude=*.dll"
+    "--exclude=*.a"  # Static library files
+    
     # Backup files
     "--exclude=*.backup"
-    "--exclude=*.out"
     "--exclude=*.log"
     
     # Python cache
