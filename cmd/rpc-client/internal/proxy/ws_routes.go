@@ -19,6 +19,7 @@ type JSONRPCRequestRaw struct {
 // RouteWebSocketMessage routes incoming WebSocket JSON-RPC requests
 func (p *RpcReverseProxy) RouteWebSocketMessage(req models.JSONRPCRequestRaw) (*rpc_client.JSONRPCResponse, bool) {
 	switch req.Method {
+
 	case "eth_sendRawTransaction":
 		resp := handlers.HandleSendRawTransaction(
 			p.AppCtx,
