@@ -769,7 +769,6 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTx(
 	cfg *config.ClientConfig,
 	cfgCom *cfgCom.Config,
 	ldbContractFree *storage.ContractFreeGasStorage,
-	nonce uint64, // Nonce để cập nhật (nếu > 0 thì cập nhật, nếu = 0 thì dùng nonce từ account state)
 ) ([]byte, mt_types.Transaction, func(), error) {
 	sg := types.NewCancunSigner(ethTx.ChainId())
 	fromAddress, err := sg.Sender(ethTx)
@@ -835,10 +834,6 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTx(
 	}
 	transaction.UpdateRelatedAddresses(bRelatedAddresses)
 	transaction.UpdateDeriver(deviceKey, newDeviceKey)
-	// Cập nhật nonce nếu được truyền vào (nonce > 0), nếu không thì dùng nonce từ account state
-	if nonce > 0 {
-		transaction.SetNonce(nonce)
-	}
 	transaction.SetSign(c.KeyPair.PrivateKey())
 
 	// Create TransactionWithDeviceKey
@@ -860,7 +855,6 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(
 	cfgCom *cfgCom.Config,
 	ldbContractFree *storage.ContractFreeGasStorage,
 	private mt_common.PrivateKey,
-	nonce uint64, // Nonce để cập nhật (nếu > 0 thì cập nhật, nếu = 0 thì dùng nonce từ account state)
 ) ([]byte, mt_types.Transaction, func(), error) {
 
 	sg := types.NewCancunSigner(ethTx.ChainId())
@@ -915,10 +909,8 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(
 	}
 	transaction.UpdateRelatedAddresses(bRelatedAddresses)
 	transaction.UpdateDeriver(deviceKey, newDeviceKey)
-	// Cập nhật nonce nếu được truyền vào (nonce > 0), nếu không thì dùng nonce từ account state
-	if nonce > 0 {
-		transaction.SetNonce(nonce)
-	}
+	// Cập nhật nonce từ account state
+	transaction.SetNonce(as.Nonce())
 	transaction.SetSign(private)
 	// Create TransactionWithDeviceKey
 	transactionWithDeviceKey := &mt_proto.TransactionWithDeviceKey{

@@ -2,67 +2,29 @@ package abi_robot
 
 const RobotABI = `[
 	{
-		"inputs": [],
-		"stateMutability": "nonpayable",
-		"type": "constructor"
-	},
-	{
+		"anonymous": false,
 		"inputs": [
 			{
+				"indexed": false,
 				"internalType": "address",
-				"name": "target",
+				"name": "robot",
 				"type": "address"
-			}
-		],
-		"name": "AddressEmptyCode",
-		"type": "error"
-	},
-	{
-		"inputs": [
+			},
 			{
-				"internalType": "address",
-				"name": "implementation",
-				"type": "address"
-			}
-		],
-		"name": "ERC1967InvalidImplementation",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "ERC1967NonPayable",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "FailedCall",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "InvalidInitialization",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "NotInitializing",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "UUPSUnauthorizedCallContext",
-		"type": "error"
-	},
-	{
-		"inputs": [
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "conversationId",
+				"type": "uint256"
+			},
 			{
-				"internalType": "bytes32",
-				"name": "slot",
-				"type": "bytes32"
+				"indexed": false,
+				"internalType": "bytes",
+				"name": "answer",
+				"type": "bytes"
 			}
 		],
-		"name": "UUPSUnsupportedProxiableUUID",
-		"type": "error"
+		"name": "AnswerStored",
+		"type": "event"
 	},
 	{
 		"anonymous": false,
@@ -88,100 +50,50 @@ const RobotABI = `[
 		"inputs": [
 			{
 				"indexed": false,
-				"internalType": "bytes32",
-				"name": "sessionId",
-				"type": "bytes32"
-			},
-			{
-				"indexed": false,
-				"internalType": "bytes32",
-				"name": "actionId",
-				"type": "bytes32"
-			},
-			{
-				"indexed": false,
 				"internalType": "address",
-				"name": "operator",
+				"name": "user",
 				"type": "address"
 			},
 			{
 				"indexed": false,
-				"internalType": "bytes",
-				"name": "data",
-				"type": "bytes"
-			}
-		],
-		"name": "EmitSentence",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
+				"internalType": "uint256",
+				"name": "conversationId",
+				"type": "uint256"
+			},
 			{
 				"indexed": false,
-				"internalType": "uint64",
-				"name": "version",
-				"type": "uint64"
-			}
-		],
-		"name": "Initialized",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": true,
-				"internalType": "address",
-				"name": "implementation",
-				"type": "address"
-			}
-		],
-		"name": "Upgraded",
-		"type": "event"
-	},
-	{
-		"inputs": [],
-		"name": "UPGRADE_INTERFACE_VERSION",
-		"outputs": [
-			{
-				"internalType": "string",
-				"name": "",
-				"type": "string"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "bytes32",
-				"name": "sessionId",
-				"type": "bytes32"
-			},
-			{
-				"internalType": "bytes32",
-				"name": "actionId",
-				"type": "bytes32"
-			},
-			{
 				"internalType": "bytes",
-				"name": "data",
+				"name": "question",
 				"type": "bytes"
+			}
+		],
+		"name": "QuestionAsked",
+		"type": "event"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "_user",
+				"type": "address"
 			},
 			{
 				"internalType": "uint256",
-				"name": "time",
+				"name": "_conversationId",
 				"type": "uint256"
 			},
 			{
 				"internalType": "bytes",
-				"name": "sig",
+				"name": "_question",
+				"type": "bytes"
+			},
+			{
+				"internalType": "bytes",
+				"name": "_answer",
 				"type": "bytes"
 			}
 		],
-		"name": "dispatch",
+		"name": "emitAnswer",
 		"outputs": [],
 		"stateMutability": "nonpayable",
 		"type": "function"
@@ -207,6 +119,29 @@ const RobotABI = `[
 	{
 		"inputs": [
 			{
+				"internalType": "address",
+				"name": "_user",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "_conversationId",
+				"type": "uint256"
+			},
+			{
+				"internalType": "bytes",
+				"name": "_question",
+				"type": "bytes"
+			}
+		],
+		"name": "emitQuestion",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
 				"internalType": "bytes32",
 				"name": "txHash",
 				"type": "bytes32"
@@ -218,110 +153,68 @@ const RobotABI = `[
 		"type": "function"
 	},
 	{
-		"inputs": [],
-		"name": "getOwnerList",
-		"outputs": [
+		"inputs": [
 			{
-				"internalType": "address[]",
-				"name": "",
-				"type": "address[]"
+				"internalType": "uint256",
+				"name": "_conversationId",
+				"type": "uint256"
 			}
 		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "initialize",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
+		"name": "getMessageCount",
+		"outputs": [
 			{
 				"internalType": "uint256",
 				"name": "",
 				"type": "uint256"
 			}
 		],
-		"name": "ownerList",
-		"outputs": [
-			{
-				"internalType": "address",
-				"name": "",
-				"type": "address"
-			}
-		],
 		"stateMutability": "view",
 		"type": "function"
 	},
 	{
 		"inputs": [
 			{
-				"internalType": "address",
-				"name": "",
-				"type": "address"
-			}
-		],
-		"name": "owners",
-		"outputs": [
-			{
-				"internalType": "bool",
-				"name": "",
-				"type": "bool"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "proxiableUUID",
-		"outputs": [
-			{
-				"internalType": "bytes32",
-				"name": "",
-				"type": "bytes32"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "_owner",
-				"type": "address"
+				"internalType": "uint256",
+				"name": "_conversationId",
+				"type": "uint256"
 			},
 			{
-				"internalType": "bool",
-				"name": "_status",
-				"type": "bool"
-			}
-		],
-		"name": "setOwner",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "newImplementation",
-				"type": "address"
+				"internalType": "uint256",
+				"name": "_offset",
+				"type": "uint256"
 			},
 			{
-				"internalType": "bytes",
-				"name": "data",
-				"type": "bytes"
+				"internalType": "uint256",
+				"name": "_limit",
+				"type": "uint256"
 			}
 		],
-		"name": "upgradeToAndCall",
-		"outputs": [],
-		"stateMutability": "payable",
+		"name": "getMessagesByPagination",
+		"outputs": [
+			{
+				"components": [
+					{
+						"internalType": "bytes",
+						"name": "question",
+						"type": "bytes"
+					},
+					{
+						"internalType": "bytes",
+						"name": "answer",
+						"type": "bytes"
+					},
+					{
+						"internalType": "uint256",
+						"name": "timestamp",
+						"type": "uint256"
+					}
+				],
+				"internalType": "struct RobotMultiChat.Message[]",
+				"name": "",
+				"type": "tuple[]"
+			}
+		],
+		"stateMutability": "view",
 		"type": "function"
 	}
 ]`

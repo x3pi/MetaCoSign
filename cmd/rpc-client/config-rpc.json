@@ -15,6 +15,6 @@
   "ldb_artifact_registry": "./db/ldb_artifact_registry",
   "ldb_robot_transaction": "./db/ldb_robot_transaction",
   "owner_rpc_address": "0x0b143e894a600114c4a3729874214e5fc5ea9cbc",
-  "contracts_interceptor": ["0x00000000000000000000000000000000D844bb55","0xE74A88071fdc26f6b0453fE2B8b1d3e805b314E5"],
+  "contracts_interceptor": ["0x00000000000000000000000000000000D844bb55","0xCe8701dE3d5c1316a6f5dd90591453AFd9d1D80d"],
   "reward_amount": 1000000000000000000
 }

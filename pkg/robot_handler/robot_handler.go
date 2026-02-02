@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -31,7 +30,6 @@ type RobotHandler struct {
 	// Queue để đưa giao dịch lên chain với nonce tuần tự
 	txQueue chan *QueuedTransaction
 	// Map lưu session data tạm thời
-	sessions       sync.Map // sessionId => *SessionData
 	processedCount uint64
 	// Map để track các transaction đã xử lý (tránh duplicate)
 }
@@ -39,24 +37,12 @@ type RobotHandler struct {
 type QueuedTransaction struct {
 	RobotAddress      ethCommon.Address
 	RawTransactionHex string
-	InitialNonce      uint64
 	txHash            string
 	SessionID         uint64   // Deprecated: không dùng nữa, giữ lại để tương thích
 	Method            string   // Deprecated: không dùng nữa, giữ lại để tương thích
 	SessionId         [32]byte // Session ID từ dispatch
 	ActionId          [32]byte // Action ID từ dispatch
 	Data              []byte   // Data từ dispatch (input data gửi lên)
-}
-
-type SessionData struct {
-	SessionID         uint64
-	RobotAddress      ethCommon.Address
-	Sentences         []string
-	CreatedAt         time.Time
-	MerkleRoot        []byte
-	RawTransactionHex string // Lưu rawTransactionHex tạm vào RAM (không lưu DB)
-	InitialNonce      uint64 // Lưu nonce ban đầu để rebuild transaction
-	Method            string // Method name: "createSession" hoặc "emitSentence"
 }
 
 var (
@@ -120,8 +106,10 @@ func (h *RobotHandler) HandleRobotTransaction(
 	}
 
 	switch method.Name {
-	case "dispatch":
-		return h.handleDispatchImmediate(tx, method, inputData[4:], rawTransactionHex)
+	case "emitQuestion":
+		return h.handleEmitQuestion(tx, method, inputData[4:], rawTransactionHex)
+	case "emitAnswer":
+		return h.handleEmitAnswer(tx, method, inputData[4:], rawTransactionHex)
 
 	default:
 		return false, nil, fmt.Errorf("unknown method: %s", method.Name)
@@ -147,104 +135,118 @@ func (h *RobotHandler) HandleEthCall(ctx context.Context, data []byte) (interfac
 	}
 }
 
-// handleDispatchImmediate: Xử lý dispatch ngay, đưa vào queue và broadcast event
-func (h *RobotHandler) handleDispatchImmediate(
+// handleEmitQuestion xử lý emitQuestion, đưa vào queue và broadcast event QuestionAsked
+func (h *RobotHandler) handleEmitQuestion(
 	tx mt_types.Transaction,
 	method *abi.Method,
 	inputData []byte,
 	rawTransactionHex string,
 ) (bool, interface{}, error) {
-
 	args, err := method.Inputs.Unpack(inputData)
 	if err != nil {
-		logger.Error("❌ [dispatch] Failed to unpack input data: %v", err)
+		logger.Error("❌ [emitQuestion] Failed to unpack input data: %v", err)
 		return false, nil, fmt.Errorf("failed to unpack: %w", err)
 	}
 
-	if len(args) < 5 {
-		logger.Error("❌ [dispatch] Invalid args length: %d, expected 5 (sessionId, actionId, data, timestamp, sig)", len(args))
+	if len(args) < 3 {
+		logger.Error("❌ [emitQuestion] Invalid args length: %d", len(args))
 		return false, nil, fmt.Errorf("invalid args length")
 	}
 
-	sessionId, ok := args[0].([32]byte)
+	user, ok := args[0].(ethCommon.Address)
 	if !ok {
-		logger.Error("❌ [dispatch] sessionId wrong type: %T", args[0])
-		return false, nil, fmt.Errorf("sessionId type invalid")
+		return false, nil, fmt.Errorf("user wrong type")
 	}
 
-	actionId, ok := args[1].([32]byte)
+	conversationId, ok := args[1].(*big.Int)
 	if !ok {
-		logger.Error("❌ [dispatch] actionId wrong type: %T", args[1])
-		return false, nil, fmt.Errorf("actionId type invalid")
+		return false, nil, fmt.Errorf("conversationId wrong type")
 	}
 
-	data, ok := args[2].([]byte)
+	question, ok := args[2].([]byte)
 	if !ok {
-		logger.Error("❌ [dispatch] data wrong type: %T", args[2])
-		return false, nil, fmt.Errorf("data type invalid")
+		return false, nil, fmt.Errorf("question wrong type")
 	}
 
-	timestamp, ok := args[3].(*big.Int)
-	if !ok {
-		logger.Error("❌ [dispatch] timestamp wrong type: %T", args[3])
-		return false, nil, fmt.Errorf("timestamp type invalid")
-	}
-
-	sig, ok := args[4].([]byte)
-	if !ok {
-		logger.Error("❌ [dispatch] sig wrong type: %T", args[4])
-		return false, nil, fmt.Errorf("sig type invalid")
-	}
-
-	dataAsText := string(data)
-	fromAddress := tx.FromAddress()
-
-	// Verify timestamp (5 phút = 300 giây)
-	if err := utilsPkg.VerifyTimestamp(timestamp); err != nil {
-		logger.Error("❌ [dispatch] Timestamp verification failed: %v", err)
-		return false, nil, fmt.Errorf("timestamp verification failed: %w", err)
-	}
-
-	// Build message: sessionId (32) + actionId (32) + data (variable) + timestamp (32)
-	message := utilsPkg.BuildMessageForDispatch(sessionId, actionId, data, timestamp)
-
-	// Verify signature
-	signerAddress, err := utilsPkg.RecoverSignerAddress(message, sig)
-	if err != nil {
-		logger.Error("❌ [dispatch] Failed to recover signer address: %v", err)
-		return false, nil, fmt.Errorf("failed to recover signer: %w", err)
-	}
-
-	// Verify signer matches sender
-	if signerAddress != fromAddress {
-		logger.Error("❌ [dispatch] Signature mismatch: signer=%s, sender=%s", signerAddress.Hex(), fromAddress.Hex())
-		return false, nil, fmt.Errorf("signature mismatch: signer %s does not match sender %s", signerAddress.Hex(), fromAddress.Hex())
-	}
-
-	logger.Info("✅ [dispatch] Signature verified successfully for sender=%s", fromAddress.Hex())
-
-	sessionIdHex := ethCommon.BytesToHash(sessionId[:]).Hex()
-	actionIdHex := ethCommon.BytesToHash(actionId[:]).Hex()
 	txHash := tx.Hash().Hex()
+	var sessionId [32]byte
+	copy(sessionId[:], ethCommon.BigToHash(conversationId).Bytes())
 
-	// Đưa transaction vào queue để xử lý tuần tự
 	queuedTx := &QueuedTransaction{
 		RobotAddress:      tx.FromAddress(),
 		RawTransactionHex: rawTransactionHex,
-		InitialNonce:      tx.GetNonce(),
 		txHash:            txHash,
 		SessionId:         sessionId,
-		ActionId:          actionId,
-		Data:              data,
+		Data:              question,
 	}
+
 	select {
 	case h.txQueue <- queuedTx:
-		logger.Info("✅ Queued transaction for dispatch - sessionId=%s, actionId=%s, txHash=%s, data=%s", sessionIdHex, actionIdHex, txHash, dataAsText)
+		logger.Info("✅ Queued transaction for emitQuestion - conversationId=%s, txHash=%s", conversationId.String(), txHash)
 	default:
-		logger.Error("❌ Queue is full, cannot queue transaction for dispatch - sessionId=%s", sessionIdHex)
+		logger.Error("❌ Queue is full, cannot queue transaction for emitQuestion - conversationId=%s", conversationId.String())
 	}
-	operator := tx.FromAddress()
-	h.broadcastEvent("EmitSentence", sessionId, actionId, operator, data)
+
+	// Broadcast QuestionAsked event
+	h.broadcastEvent("QuestionAsked", user, conversationId, question)
+
+	return true, txHash, nil
+}
+
+// handleEmitAnswer xử lý emitAnswer, đưa vào queue và broadcast event AnswerStored
+func (h *RobotHandler) handleEmitAnswer(
+	tx mt_types.Transaction,
+	method *abi.Method,
+	inputData []byte,
+	rawTransactionHex string,
+) (bool, interface{}, error) {
+	args, err := method.Inputs.Unpack(inputData)
+	if err != nil {
+		logger.Error("❌ [emitAnswer] Failed to unpack input data: %v", err)
+		return false, nil, fmt.Errorf("failed to unpack: %w", err)
+	}
+
+	if len(args) < 4 {
+		logger.Error("❌ [emitAnswer] Invalid args length: %d", len(args))
+		return false, nil, fmt.Errorf("invalid args length")
+	}
+
+	user, ok := args[0].(ethCommon.Address)
+	if !ok {
+		return false, nil, fmt.Errorf("user wrong type")
+	}
+
+	conversationId, ok := args[1].(*big.Int)
+	if !ok {
+		return false, nil, fmt.Errorf("conversationId wrong type")
+	}
+
+	answer, ok := args[3].([]byte)
+	if !ok {
+		return false, nil, fmt.Errorf("answer wrong type")
+	}
+
+	txHash := tx.Hash().Hex()
+	var sessionId [32]byte
+	copy(sessionId[:], ethCommon.BigToHash(conversationId).Bytes())
+
+	queuedTx := &QueuedTransaction{
+		RobotAddress:      tx.FromAddress(),
+		RawTransactionHex: rawTransactionHex,
+		txHash:            txHash,
+		SessionId:         sessionId,
+		Data:              answer,
+	}
+
+	select {
+	case h.txQueue <- queuedTx:
+		logger.Info("✅ Queued transaction for emitAnswer - conversationId=%s, txHash=%s", conversationId.String(), txHash)
+	default:
+		logger.Error("❌ Queue is full, cannot queue transaction for emitAnswer - conversationId=%s", conversationId.String())
+	}
+
+	// Broadcast AnswerStored event
+	h.broadcastEvent("AnswerStored", user, conversationId, answer)
 
 	return true, txHash, nil
 }
@@ -297,22 +299,16 @@ func (h *RobotHandler) handleGetDataByTxhash(
 
 // processTransactionQueue: Worker chính xử lý hàng đợi giao dịch
 func (h *RobotHandler) processTransactionQueue() {
-	// Map để quản lý nonce theo từng address nội bộ trong worker
-	nonceMap := make(map[ethCommon.Address]uint64)
-	nonceMutex := sync.Mutex{}
-
 	logger.Info("🚀 RobotHandler Worker started processing queue...")
 
 	for queuedTx := range h.txQueue {
 		success := false
 		maxRetries := 3
 		var lastError error
-
 		// Vòng lặp Retry 3 lần
 		for attempt := 1; attempt <= maxRetries; attempt++ {
 			// Gọi hàm xử lý thực thi giao dịch
-			err := h.executeSingleTransaction(queuedTx, &nonceMap, &nonceMutex)
-
+			err := h.executeSingleTransaction(queuedTx)
 			if err == nil {
 				success = true
 				break
@@ -341,22 +337,19 @@ func (h *RobotHandler) processTransactionQueue() {
 			txHashBytes := ethCommon.HexToHash(queuedTx.txHash)
 			h.broadcastEvent("EmitError", txHashBytes, criticalMsg)
 			// Dừng chương trình ngay lập tức
-			time.Sleep(1 * time.Second)
-			logger.Error("🛑 Shutting down process due to critical transaction failure.")
-			os.Exit(1)
+			// time.Sleep(1 * time.Second)
+			// logger.Error("🛑 Shutting down process due to critical transaction failure.")
+			// os.Exit(1)
 		}
 	}
 }
 
-// executeSingleTransaction thực hiện một chu kỳ: Giải mã -> Tăng Nonce -> Build -> Gửi -> Chờ Receipt
+// executeSingleTransaction thực hiện một chu kỳ: Giải mã -> Build -> Gửi -> Chờ Receipt
 func (h *RobotHandler) executeSingleTransaction(
 	queuedTx *QueuedTransaction,
-	nonceMap *map[ethCommon.Address]uint64,
-	nonceMutex *sync.Mutex,
 ) error {
 	fromAddress := queuedTx.RobotAddress
 	count := atomic.AddUint64(&h.processedCount, 1)
-
 	// 1. Giải mã RawTransactionHex
 	decodedTxBytes, releaseDecoded, err := utils.DecodeHexPooled(queuedTx.RawTransactionHex)
 	if err != nil {
@@ -370,17 +363,9 @@ func (h *RobotHandler) executeSingleTransaction(
 		return fmt.Errorf("unmarshal binary error: %w", err)
 	}
 
-	// 3. Quản lý Nonce tuần tự
-	nonceMutex.Lock()
-	currentNonce, exists := (*nonceMap)[fromAddress]
-	if !exists {
-		currentNonce = queuedTx.InitialNonce
-	}
-	// Tạm thời tăng nonce trong map
-	(*nonceMap)[fromAddress] = currentNonce + 1
-	nonceMutex.Unlock()
-	logger.Info("🔄 Processing Tx: %s | Nonce: %v | Attempting send...", queuedTx.txHash, currentNonce)
-	// 4. Rebuild transaction với nonce mới
+	logger.Info("🔄 Processing Tx: %s | Attempting send...", queuedTx.txHash)
+
+	// 4. Rebuild transaction (nonce tự động từ account state)
 	var (
 		bTx       []byte
 		releaseTx func()
@@ -390,13 +375,13 @@ func (h *RobotHandler) executeSingleTransaction(
 	hasKey, _ := h.appCtx.PKS.HasPrivateKey(fromAddress)
 	if !hasKey {
 		bTx, _, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTx(
-			ethTx, h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas, currentNonce,
+			ethTx, h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas,
 		)
 	} else {
 		senderPkString, _ := h.appCtx.PKS.GetPrivateKey(fromAddress)
 		keyPair := bls.NewKeyPair(ethCommon.FromHex(senderPkString))
 		bTx, _, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(
-			ethTx, h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas, keyPair.PrivateKey(), currentNonce,
+			ethTx, h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas, keyPair.PrivateKey(),
 		)
 	}
 
@@ -404,41 +389,28 @@ func (h *RobotHandler) executeSingleTransaction(
 		if releaseTx != nil {
 			releaseTx()
 		}
-		h.rollbackNonce(fromAddress, nonceMap, nonceMutex)
 		return fmt.Errorf("build transaction error: %w", buildErr)
 	}
 
 	// 5. Gửi lên Chain
 	rs := h.appCtx.ClientRpc.SendRawTransactionBinary(bTx, releaseTx, nil, nil, nil)
 	if rs.Error != nil {
-		h.rollbackNonce(fromAddress, nonceMap, nonceMutex)
 		return fmt.Errorf("RPC send error: %v", rs.Error)
 	}
 
 	newTxHash, ok := rs.Result.(string)
 	if !ok {
-		h.rollbackNonce(fromAddress, nonceMap, nonceMutex)
 		return fmt.Errorf("invalid result type from RPC")
 	}
 
 	// 6. Chờ Receipt (đảm bảo transaction đã lên block trước khi xử lý tx tiếp theo)
 	_, err = h.waitForReceipt(newTxHash, 30*time.Second)
 	if err != nil {
-		h.rollbackNonce(fromAddress, nonceMap, nonceMutex)
 		return fmt.Errorf("wait for receipt timeout/error: %w", err)
 	}
 
 	logger.Info("✅ Tx Success: %s | Total Processed: %d", newTxHash, count)
 	return nil
-}
-
-// rollbackNonce giảm nonce trong map nếu giao dịch thất bại để retry lại với cùng nonce đó
-func (h *RobotHandler) rollbackNonce(addr ethCommon.Address, m *map[ethCommon.Address]uint64, mu *sync.Mutex) {
-	mu.Lock()
-	defer mu.Unlock()
-	if val, ok := (*m)[addr]; ok && val > 0 {
-		(*m)[addr]--
-	}
 }
 
 func (h *RobotHandler) broadcastEvent(
@@ -550,12 +522,8 @@ func (h *RobotHandler) waitForReceipt(txHash string, timeout time.Duration) (map
 
 			// Kiểm tra xem receipt có hợp lệ không (có blockNumber)
 			if blockNumber, ok := receipt["blockNumber"]; ok && blockNumber != nil {
-				// elapsed := time.Since(startTime)
-				// logger.Info("✅ Receipt received for txHash=%s after %v, blockNumber=%v",
-				// 	txHash, elapsed, blockNumber)
 				return receipt, nil
 			}
-
 			// Receipt không hợp lệ, tiếp tục chờ
 			time.Sleep(checkInterval)
 			continue
