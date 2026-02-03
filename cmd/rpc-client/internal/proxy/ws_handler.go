@@ -176,7 +176,6 @@ func (p *RpcReverseProxy) proxyWebSocketTraffic(
 	var wg sync.WaitGroup
 
 	wg.Add(2)
-
 	// Goroutine 1: Client → Upstream (with RPC method handling)
 	go func() {
 		defer func() {
@@ -278,14 +277,25 @@ func (p *RpcReverseProxy) proxyClientToUpstreamWithoutInterceptor(
 			}
 			return
 		}
-		// Forward tất cả requests trực tiếp lên chain, không có interceptor
-		if err := targetWriter.WriteJSON(req); err != nil {
-			logger.Error("Error writing to upstream for client %s: %v", clientConn.RemoteAddr(), err)
-			select {
-			case errChan <- fmt.Errorf("upstream write error: %w", err):
-			case <-quit:
+		rpcResp, handled := p.RouteWebSocketMessage(req)
+		if handled && rpcResp != nil {
+			if err := clientWriter.WriteJSON(rpcResp); err != nil {
+				logger.Error("Error writing RPC response to client %s: %v", clientConn.RemoteAddr(), err)
+				select {
+				case errChan <- fmt.Errorf("client write error: %w", err):
+				case <-quit:
+				}
+				return
 			}
-			return
+		} else {
+			if err := targetWriter.WriteJSON(req); err != nil {
+				logger.Error("Error writing to upstream for client %s: %v", clientConn.RemoteAddr(), err)
+				select {
+				case errChan <- fmt.Errorf("upstream write error: %w", err):
+				case <-quit:
+				}
+				return
+			}
 		}
 	}
 }
@@ -302,7 +312,6 @@ func (p *RpcReverseProxy) proxyWebSocketTrafficWithoutInterceptor(
 	var wg sync.WaitGroup
 
 	wg.Add(2)
-
 	// Goroutine 1: Client → Upstream (forward trực tiếp, không có interceptor)
 	go func() {
 		defer wg.Done()
@@ -329,7 +338,6 @@ func (p *RpcReverseProxy) proxyWebSocketTrafficWithoutInterceptor(
 	}
 
 	close(quit)
-
 	// Send close message to client
 	if finalError != nil {
 		if !isExpectedCloseError(finalError) {

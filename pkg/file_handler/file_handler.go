@@ -123,14 +123,14 @@ func (h *FileHandlerNoReceipt) HandleFileTransactionNoReceipt(
 	blockTime := uint64(time.Now().Unix())
 	inputData := tx.CallData().Input()
 	if len(inputData) < 4 {
-		err := fmt.Errorf("dữ liệu input không hợp lệ")
+		err := fmt.Errorf("FileHandler: Dữ liệu input không hợp lệ")
 		return false, err
 	}
 	logger.Info("____HandleFileTransactionNoReceipt: %v", inputData)
 	method, err := h.abi.MethodById(inputData[:4])
 	if err != nil {
-		err = fmt.Errorf("File: Lỗi khi lấy method từ input data: %v", err)
-		return false, err
+		logger.Warn("FileHandler: Lỗi khi lấy method từ input data: %v", err)
+		return false, nil
 	}
 	var logicErr error
 	var isCall bool = false

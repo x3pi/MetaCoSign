@@ -2,9 +2,132 @@ package abi_file
 
 const FileABI = `[
 	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "_owner",
+				"type": "address"
+			}
+		],
+		"name": "addOwner",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "target",
+				"type": "address"
+			}
+		],
+		"name": "AddressEmptyCode",
+		"type": "error"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "_server",
+				"type": "address"
+			}
+		],
+		"name": "addStorageServer",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "_validator",
+				"type": "address"
+			}
+		],
+		"name": "addValidator",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "bytes32",
+				"name": "fileKey",
+				"type": "bytes32"
+			},
+			{
+				"internalType": "address[]",
+				"name": "users",
+				"type": "address[]"
+			}
+		],
+		"name": "addWhitelist",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "bytes32",
+				"name": "fileKey",
+				"type": "bytes32"
+			}
+		],
+		"name": "confirmFileActive",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "implementation",
+				"type": "address"
+			}
+		],
+		"name": "ERC1967InvalidImplementation",
+		"type": "error"
+	},
+	{
 		"inputs": [],
-		"stateMutability": "payable",
-		"type": "constructor"
+		"name": "ERC1967NonPayable",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "FailedCall",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "InvalidInitialization",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "NotInitializing",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "UUPSUnauthorizedCallContext",
+		"type": "error"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "bytes32",
+				"name": "slot",
+				"type": "bytes32"
+			}
+		],
+		"name": "UUPSUnsupportedProxiableUUID",
+		"type": "error"
 	},
 	{
 		"anonymous": false,
@@ -24,6 +147,55 @@ const FileABI = `[
 		],
 		"name": "ChunkUploaded",
 		"type": "event"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "bytes32",
+				"name": "downloadKey",
+				"type": "bytes32"
+			}
+		],
+		"name": "confirmServerDownload",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "bytes32",
+				"name": "fileKey",
+				"type": "bytes32"
+			}
+		],
+		"name": "deleteFile",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "bytes32",
+				"name": "fileKey",
+				"type": "bytes32"
+			},
+			{
+				"internalType": "uint256",
+				"name": "start",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "limit",
+				"type": "uint256"
+			}
+		],
+		"name": "downloadFile",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
 	},
 	{
 		"anonymous": false,
@@ -165,6 +337,57 @@ const FileABI = `[
 		"type": "event"
 	},
 	{
+		"inputs": [],
+		"name": "initialize",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": false,
+				"internalType": "uint64",
+				"name": "version",
+				"type": "uint64"
+			}
+		],
+		"name": "Initialized",
+		"type": "event"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "bytes32",
+				"name": "fileKey",
+				"type": "bytes32"
+			}
+		],
+		"name": "lockFile",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "bytes32",
+				"name": "fileKey",
+				"type": "bytes32"
+			},
+			{
+				"internalType": "uint256",
+				"name": "downloadTimes",
+				"type": "uint256"
+			}
+		],
+		"name": "payForDownload",
+		"outputs": [],
+		"stateMutability": "payable",
+		"type": "function"
+	},
+	{
 		"anonymous": false,
 		"inputs": [
 			{
@@ -196,6 +419,178 @@ const FileABI = `[
 		"type": "event"
 	},
 	{
+		"inputs": [
+			{
+				"components": [
+					{
+						"internalType": "address",
+						"name": "owner",
+						"type": "address"
+					},
+					{
+						"internalType": "bytes32",
+						"name": "merkleRoot",
+						"type": "bytes32"
+					},
+					{
+						"internalType": "uint64",
+						"name": "contentLen",
+						"type": "uint64"
+					},
+					{
+						"internalType": "uint64",
+						"name": "totalChunks",
+						"type": "uint64"
+					},
+					{
+						"internalType": "uint64",
+						"name": "expireTime",
+						"type": "uint64"
+					},
+					{
+						"internalType": "string",
+						"name": "name",
+						"type": "string"
+					},
+					{
+						"internalType": "string",
+						"name": "ext",
+						"type": "string"
+					},
+					{
+						"internalType": "string",
+						"name": "contentDisposition",
+						"type": "string"
+					},
+					{
+						"internalType": "string",
+						"name": "contentID",
+						"type": "string"
+					},
+					{
+						"internalType": "enum FileStatus",
+						"name": "status",
+						"type": "uint8"
+					}
+				],
+				"internalType": "struct Info",
+				"name": "info",
+				"type": "tuple"
+			}
+		],
+		"name": "pushFileInfo",
+		"outputs": [
+			{
+				"internalType": "bytes32",
+				"name": "fileKey",
+				"type": "bytes32"
+			}
+		],
+		"stateMutability": "payable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "_owner",
+				"type": "address"
+			}
+		],
+		"name": "removeOwner",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "_server",
+				"type": "address"
+			}
+		],
+		"name": "removeStorageServer",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "_validator",
+				"type": "address"
+			}
+		],
+		"name": "removeValidator",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "bytes32",
+				"name": "fileKey",
+				"type": "bytes32"
+			},
+			{
+				"internalType": "uint64",
+				"name": "_newExpireTime",
+				"type": "uint64"
+			}
+		],
+		"name": "renewTime",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "_newPrice",
+				"type": "uint256"
+			}
+		],
+		"name": "setPricePerChunk",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "bytes32",
+				"name": "fileKey",
+				"type": "bytes32"
+			},
+			{
+				"internalType": "bool",
+				"name": "status",
+				"type": "bool"
+			}
+		],
+		"name": "setPublicStatus",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "string[]",
+				"name": "_addresses",
+				"type": "string[]"
+			}
+		],
+		"name": "setRustServerAddresses",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
 		"anonymous": false,
 		"inputs": [
 			{
@@ -221,53 +616,73 @@ const FileABI = `[
 		"type": "event"
 	},
 	{
-		"inputs": [],
-		"name": "CONTRACT_IDENTIFIER",
-		"outputs": [
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "implementation",
+				"type": "address"
+			}
+		],
+		"name": "Upgraded",
+		"type": "event"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "newImplementation",
+				"type": "address"
+			},
+			{
+				"internalType": "bytes",
+				"name": "data",
+				"type": "bytes"
+			}
+		],
+		"name": "upgradeToAndCall",
+		"outputs": [],
+		"stateMutability": "payable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "bytes32",
+				"name": "fileKey",
+				"type": "bytes32"
+			},
+			{
+				"internalType": "bytes",
+				"name": "chunkData",
+				"type": "bytes"
+			},
 			{
 				"internalType": "uint256",
-				"name": "",
+				"name": "chunkIndex",
+				"type": "uint256"
+			},
+			{
+				"internalType": "bytes32[]",
+				"name": "merkleProof",
+				"type": "bytes32[]"
+			}
+		],
+		"name": "uploadChunk",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "amount",
 				"type": "uint256"
 			}
 		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "_owner",
-				"type": "address"
-			}
-		],
-		"name": "addOwner",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "_server",
-				"type": "address"
-			}
-		],
-		"name": "addStorageServer",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "_validator",
-				"type": "address"
-			}
-		],
-		"name": "addValidator",
+		"name": "withdrawAmount",
 		"outputs": [],
 		"stateMutability": "nonpayable",
 		"type": "function"
@@ -286,74 +701,6 @@ const FileABI = `[
 				"internalType": "uint256",
 				"name": "",
 				"type": "uint256"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "bytes32",
-				"name": "fileKey",
-				"type": "bytes32"
-			}
-		],
-		"name": "confirmFileActive",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "bytes32",
-				"name": "downloadKey",
-				"type": "bytes32"
-			}
-		],
-		"name": "confirmServerDownload",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "bytes32",
-				"name": "fileKey",
-				"type": "bytes32"
-			}
-		],
-		"name": "deleteFile",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "bytes32",
-				"name": "fileKey",
-				"type": "bytes32"
-			},
-			{
-				"internalType": "uint256",
-				"name": "start",
-				"type": "uint256"
-			},
-			{
-				"internalType": "uint256",
-				"name": "limit",
-				"type": "uint256"
-			}
-		],
-		"name": "downloadFile",
-		"outputs": [
-			{
-				"internalType": "bytes[]",
-				"name": "",
-				"type": "bytes[]"
 			}
 		],
 		"stateMutability": "view",
@@ -665,12 +1012,50 @@ const FileABI = `[
 	{
 		"inputs": [
 			{
+				"internalType": "bytes32",
+				"name": "fileKey",
+				"type": "bytes32"
+			}
+		],
+		"name": "getWhitelist",
+		"outputs": [
+			{
+				"internalType": "address[]",
+				"name": "",
+				"type": "address[]"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
 				"internalType": "address",
 				"name": "_address",
 				"type": "address"
 			}
 		],
 		"name": "isOwner",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "bytes32",
+				"name": "",
+				"type": "bytes32"
+			}
+		],
+		"name": "isPublicFile",
 		"outputs": [
 			{
 				"internalType": "bool",
@@ -717,19 +1102,6 @@ const FileABI = `[
 			}
 		],
 		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "bytes32",
-				"name": "fileKey",
-				"type": "bytes32"
-			}
-		],
-		"name": "lockFile",
-		"outputs": [],
-		"stateMutability": "nonpayable",
 		"type": "function"
 	},
 	{
@@ -874,19 +1246,6 @@ const FileABI = `[
 		"type": "function"
 	},
 	{
-		"inputs": [],
-		"name": "owner",
-		"outputs": [
-			{
-				"internalType": "address",
-				"name": "",
-				"type": "address"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
 		"inputs": [
 			{
 				"internalType": "uint256",
@@ -925,24 +1284,6 @@ const FileABI = `[
 		"type": "function"
 	},
 	{
-		"inputs": [
-			{
-				"internalType": "bytes32",
-				"name": "fileKey",
-				"type": "bytes32"
-			},
-			{
-				"internalType": "uint256",
-				"name": "downloadTimes",
-				"type": "uint256"
-			}
-		],
-		"name": "payForDownload",
-		"outputs": [],
-		"stateMutability": "payable",
-		"type": "function"
-	},
-	{
 		"inputs": [],
 		"name": "pricePerChunk",
 		"outputs": [
@@ -956,131 +1297,16 @@ const FileABI = `[
 		"type": "function"
 	},
 	{
-		"inputs": [
-			{
-				"components": [
-					{
-						"internalType": "address",
-						"name": "owner",
-						"type": "address"
-					},
-					{
-						"internalType": "bytes32",
-						"name": "merkleRoot",
-						"type": "bytes32"
-					},
-					{
-						"internalType": "uint64",
-						"name": "contentLen",
-						"type": "uint64"
-					},
-					{
-						"internalType": "uint64",
-						"name": "totalChunks",
-						"type": "uint64"
-					},
-					{
-						"internalType": "uint64",
-						"name": "expireTime",
-						"type": "uint64"
-					},
-					{
-						"internalType": "string",
-						"name": "name",
-						"type": "string"
-					},
-					{
-						"internalType": "string",
-						"name": "ext",
-						"type": "string"
-					},
-					{
-						"internalType": "string",
-						"name": "contentDisposition",
-						"type": "string"
-					},
-					{
-						"internalType": "string",
-						"name": "contentID",
-						"type": "string"
-					},
-					{
-						"internalType": "enum FileStatus",
-						"name": "status",
-						"type": "uint8"
-					}
-				],
-				"internalType": "struct Info",
-				"name": "info",
-				"type": "tuple"
-			}
-		],
-		"name": "pushFileInfo",
+		"inputs": [],
+		"name": "proxiableUUID",
 		"outputs": [
 			{
 				"internalType": "bytes32",
-				"name": "fileKey",
+				"name": "",
 				"type": "bytes32"
 			}
 		],
-		"stateMutability": "payable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "_owner",
-				"type": "address"
-			}
-		],
-		"name": "removeOwner",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "_server",
-				"type": "address"
-			}
-		],
-		"name": "removeStorageServer",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "_validator",
-				"type": "address"
-			}
-		],
-		"name": "removeValidator",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "bytes32",
-				"name": "fileKey",
-				"type": "bytes32"
-			},
-			{
-				"internalType": "uint64",
-				"name": "_newExpireTime",
-				"type": "uint64"
-			}
-		],
-		"name": "renewTime",
-		"outputs": [],
-		"stateMutability": "nonpayable",
+		"stateMutability": "view",
 		"type": "function"
 	},
 	{
@@ -1113,32 +1339,6 @@ const FileABI = `[
 			}
 		],
 		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "uint256",
-				"name": "_newPrice",
-				"type": "uint256"
-			}
-		],
-		"name": "setPricePerChunk",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "string[]",
-				"name": "_addresses",
-				"type": "string[]"
-			}
-		],
-		"name": "setRustServerAddresses",
-		"outputs": [],
-		"stateMutability": "nonpayable",
 		"type": "function"
 	},
 	{
@@ -1180,31 +1380,16 @@ const FileABI = `[
 		"type": "function"
 	},
 	{
-		"inputs": [
+		"inputs": [],
+		"name": "UPGRADE_INTERFACE_VERSION",
+		"outputs": [
 			{
-				"internalType": "bytes32",
-				"name": "fileKey",
-				"type": "bytes32"
-			},
-			{
-				"internalType": "bytes",
-				"name": "chunkData",
-				"type": "bytes"
-			},
-			{
-				"internalType": "uint256",
-				"name": "chunkIndex",
-				"type": "uint256"
-			},
-			{
-				"internalType": "bytes32[]",
-				"name": "merkleProof",
-				"type": "bytes32[]"
+				"internalType": "string",
+				"name": "",
+				"type": "string"
 			}
 		],
-		"name": "uploadChunk",
-		"outputs": [],
-		"stateMutability": "nonpayable",
+		"stateMutability": "view",
 		"type": "function"
 	},
 	{
@@ -1243,26 +1428,6 @@ const FileABI = `[
 			}
 		],
 		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "uint256",
-				"name": "amount",
-				"type": "uint256"
-			}
-		],
-		"name": "withdrawAmount",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "withdrawFunds",
-		"outputs": [],
-		"stateMutability": "nonpayable",
 		"type": "function"
 	}
 ]`

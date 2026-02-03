@@ -28,6 +28,7 @@ func (p *RpcReverseProxy) RouteWebSocketMessage(req models.JSONRPCRequestRaw) (*
 	}()
 
 	switch req.Method {
+
 	case "eth_sendRawTransaction":
 		resp := p.handleWithPanicRecovery(func() interface{} {
 			return handlers.HandleSendRawTransaction(p.AppCtx, req)
