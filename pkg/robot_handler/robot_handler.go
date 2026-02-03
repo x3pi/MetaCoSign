@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"math/big"
@@ -24,14 +23,23 @@ import (
 	mt_types "github.com/meta-node-blockchain/meta-node/types"
 )
 
+// QueueInfo lưu thông tin về queue và thời gian hoạt động
+type QueueInfo struct {
+	queue        chan *QueuedTransaction
+	lastActivity time.Time
+	cancel       context.CancelFunc
+	mutex        sync.Mutex // Mutex riêng để update lastActivity
+}
+
 type RobotHandler struct {
 	abi    abi.ABI
 	appCtx *app.Context
-	// Queue để đưa giao dịch lên chain với nonce tuần tự
-	txQueue chan *QueuedTransaction
-	// Map lưu session data tạm thời
-	processedCount uint64
-	// Map để track các transaction đã xử lý (tránh duplicate)
+	// Map lưu queue info riêng cho từng địa chỉ ví from
+	txQueues map[ethCommon.Address]*QueueInfo
+	// Mutex để đảm bảo thread-safe khi tạo/xóa queue
+	queueMutex sync.RWMutex
+	// Timeout cho queue không hoạt động (mặc định 1 phút)
+	queueTimeout time.Duration
 }
 
 type QueuedTransaction struct {
@@ -61,13 +69,12 @@ func GetRobotHandler(appCtx *app.Context) (*RobotHandler, error) {
 		}
 
 		handler := &RobotHandler{
-			abi:     parsedABI,
-			appCtx:  appCtx,
-			txQueue: make(chan *QueuedTransaction, 5000),
+			abi:          parsedABI,
+			appCtx:       appCtx,
+			txQueues:     make(map[ethCommon.Address]*QueueInfo),
+			queueTimeout: 1 * time.Minute, // Timeout mặc định 1 phút
 		}
 
-		// Khởi động worker để xử lý queue
-		go handler.processTransactionQueue()
 		robotHandlerInstance = handler
 	})
 
@@ -89,6 +96,51 @@ func serializeInputData(sessionId, actionId [32]byte, data []byte) string {
 	return string(jsonBytes)
 }
 
+// Queue sẽ tự động cleanup sau queueTimeout (1 phút) không hoạt động
+func (h *RobotHandler) getOrCreateQueue(fromAddress ethCommon.Address) *QueueInfo {
+	// Đọc với RLock trước (nhanh hơn nếu queue đã tồn tại)
+	h.queueMutex.RLock()
+	queueInfo, exists := h.txQueues[fromAddress]
+	h.queueMutex.RUnlock()
+
+	if exists {
+		// Cập nhật lastActivity
+		queueInfo.mutex.Lock()
+		queueInfo.lastActivity = time.Now()
+		queueInfo.mutex.Unlock()
+		return queueInfo
+	}
+	// Nếu chưa tồn tại, dùng Lock để tạo mới
+	h.queueMutex.Lock()
+	defer h.queueMutex.Unlock()
+
+	// Double-check sau khi có Lock (tránh race condition)
+	queueInfo, exists = h.txQueues[fromAddress]
+	if exists {
+		queueInfo.mutex.Lock()
+		queueInfo.lastActivity = time.Now()
+		queueInfo.mutex.Unlock()
+		return queueInfo
+	}
+
+	// Tạo context với cancel để có thể dừng worker
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Tạo QueueInfo mới
+	queueInfo = &QueueInfo{
+		queue:        make(chan *QueuedTransaction, 1000),
+		lastActivity: time.Now(),
+		cancel:       cancel,
+	}
+	h.txQueues[fromAddress] = queueInfo
+
+	// Khởi động worker goroutine riêng cho địa chỉ này
+	go h.processTransactionQueueForAddress(ctx, fromAddress, queueInfo)
+	logger.Info("🚀 Created new queue and worker for address: %s", fromAddress.Hex())
+
+	return queueInfo
+}
+
 // HandleRobotTransaction xử lý giao dịch robot NGAY LẬP TỨC (không check nonce)
 func (h *RobotHandler) HandleRobotTransaction(
 	ctx context.Context,
@@ -107,10 +159,8 @@ func (h *RobotHandler) HandleRobotTransaction(
 
 	switch method.Name {
 	case "emitQuestion":
-		logger.Info("✅ [HandleRobotTransaction] emitQuestion")
 		return h.handleEmitQuestion(tx, method, inputData[4:], rawTransactionHex)
 	case "emitAnswer":
-		logger.Info("✅ [HandleRobotTransaction] emitAnswer")
 		return h.handleEmitAnswer(tx, method, inputData[4:], rawTransactionHex)
 
 	default:
@@ -182,16 +232,15 @@ func (h *RobotHandler) handleEmitQuestion(
 		SessionId:         sessionId,
 		Data:              question,
 	}
-
-	select {
-	case h.txQueue <- queuedTx:
-		logger.Info("✅ Queued transaction for emitQuestion - conversationId=%s, txHash=%s", conversationId.String(), txHash)
-	default:
-		logger.Error("❌ Queue is full, cannot queue transaction for emitQuestion - conversationId=%s", conversationId.String())
-	}
-
-	// Broadcast QuestionAsked event
 	h.broadcastEvent("QuestionAsked", user, conversationId, question)
+	// Lấy queue riêng cho địa chỉ ví from
+	queueInfo := h.getOrCreateQueue(tx.FromAddress())
+	select {
+	case queueInfo.queue <- queuedTx:
+	default:
+		logger.Error("❌ Queue is full for address %s, cannot queue transaction for emitQuestion - conversationId=%s",
+			tx.FromAddress().Hex(), conversationId.String())
+	}
 
 	return true, txHash, nil
 }
@@ -232,7 +281,7 @@ func (h *RobotHandler) handleEmitAnswer(
 	txHash := tx.Hash().Hex()
 	var sessionId [32]byte
 	copy(sessionId[:], ethCommon.BigToHash(conversationId).Bytes())
-
+	h.broadcastEvent("AnswerStored", user, conversationId, answer)
 	queuedTx := &QueuedTransaction{
 		RobotAddress:      tx.FromAddress(),
 		RawTransactionHex: rawTransactionHex,
@@ -240,16 +289,15 @@ func (h *RobotHandler) handleEmitAnswer(
 		SessionId:         sessionId,
 		Data:              answer,
 	}
-
+	// Lấy queue riêng cho địa chỉ ví from
+	queueInfo := h.getOrCreateQueue(tx.FromAddress())
 	select {
-	case h.txQueue <- queuedTx:
-		logger.Info("✅ Queued transaction for emitAnswer - conversationId=%s, txHash=%s", conversationId.String(), txHash)
-	default:
-		logger.Error("❌ Queue is full, cannot queue transaction for emitAnswer - conversationId=%s", conversationId.String())
-	}
+	case queueInfo.queue <- queuedTx:
 
-	// Broadcast AnswerStored event
-	h.broadcastEvent("AnswerStored", user, conversationId, answer)
+	default:
+		logger.Error("❌ Queue is full for address %s, cannot queue transaction for emitAnswer - conversationId=%s",
+			tx.FromAddress().Hex(), conversationId.String())
+	}
 
 	return true, txHash, nil
 }
@@ -273,7 +321,6 @@ func (h *RobotHandler) handleGetDataByTxhash(
 	switch v := args[0].(type) {
 	case [32]byte:
 		txHashHex = ethCommon.BytesToHash(v[:]).Hex()
-		logger.Info("🔵 [getDataByTxhash] Received bytes32: %s", txHashHex)
 	default:
 		logger.Error("❌ [getDataByTxhash] txHash wrong type: %T, value: %v", args[0], args[0])
 		return nil, fmt.Errorf("txHash must be bytes32, got %T", args[0])
@@ -300,50 +347,96 @@ func (h *RobotHandler) handleGetDataByTxhash(
 	return response, nil
 }
 
-// processTransactionQueue: Worker chính xử lý hàng đợi giao dịch
-func (h *RobotHandler) processTransactionQueue() {
-	logger.Info("🚀 RobotHandler Worker started processing queue...")
+// processTransactionQueueForAddress: Worker xử lý hàng đợi giao dịch cho một địa chỉ ví cụ thể
+// Tự động cleanup sau queueTimeout (1 phút) không hoạt động
+func (h *RobotHandler) processTransactionQueueForAddress(ctx context.Context, fromAddress ethCommon.Address, queueInfo *QueueInfo) {
+	logger.Info("🚀 RobotHandler Worker started for address: %s", fromAddress.Hex())
 
-	for queuedTx := range h.txQueue {
-		success := false
-		maxRetries := 3
-		var lastError error
-		// Vòng lặp Retry 3 lần
-		for attempt := 1; attempt <= maxRetries; attempt++ {
-			// Gọi hàm xử lý thực thi giao dịch
-			err := h.executeSingleTransaction(queuedTx)
-			if err == nil {
-				success = true
-				break
+	// Tạo ticker để check timeout định kỳ (mỗi 10 giây)
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			// Context bị cancel từ bên ngoài
+			logger.Info("� RobotHandler Worker stopped (context cancelled) for address: %s", fromAddress.Hex())
+			return
+		case <-ticker.C:
+			// Kiểm tra timeout
+			queueInfo.mutex.Lock()
+			idleTime := time.Since(queueInfo.lastActivity)
+			queueInfo.mutex.Unlock()
+			if idleTime > h.queueTimeout {
+				// Timeout - cleanup queue
+				logger.Info("⏰ Queue timeout for address %s (idle for %v), cleaning up...", fromAddress.Hex(), idleTime)
+				h.cleanupQueue(fromAddress)
+				return
 			}
+		case queuedTx, ok := <-queueInfo.queue:
+			if !ok {
+				// Channel đã bị đóng
+				logger.Info("🛑 RobotHandler Worker stopped (channel closed) for address: %s", fromAddress.Hex())
+				return
+			}
+			// Cập nhật lastActivity
+			queueInfo.mutex.Lock()
+			queueInfo.lastActivity = time.Now()
+			queueInfo.mutex.Unlock()
 
-			lastError = err
-
-			// Nếu thất bại, tính toán thời gian chờ tăng dần (Lần 1: 2s, Lần 2: 4s)
-			if attempt < maxRetries {
-				waitTime := time.Duration(attempt*2) * 400 * time.Millisecond
-				logger.Error("⚠️ [Attempt %d/%d] Tx %s failed: %v. Retrying in %v...",
-					attempt, maxRetries, queuedTx.txHash, err, waitTime)
-				time.Sleep(waitTime)
+			// Xử lý transaction
+			success := false
+			maxRetries := 3
+			var lastError error
+			// Vòng lặp Retry 3 lần
+			for attempt := 1; attempt <= maxRetries; attempt++ {
+				// Gọi hàm xử lý thực thi giao dịch
+				err := h.executeSingleTransaction(queuedTx)
+				if err == nil {
+					success = true
+					break
+				}
+				lastError = err
+				// Nếu thất bại, tính toán thời gian chờ tăng dần (Lần 1: 2s, Lần 2: 4s)
+				if attempt < maxRetries {
+					waitTime := time.Duration(attempt*2) * 400 * time.Millisecond
+					logger.Error("⚠️ [Attempt %d/%d] Tx %s (from=%s) failed: %v. Retrying in %v...",
+						attempt, maxRetries, queuedTx.txHash, fromAddress.Hex(), err, waitTime)
+					time.Sleep(waitTime)
+				}
+			}
+			// Nếu sau 3 lần vẫn lỗi -> Dừng toàn bộ chương trình
+			if !success {
+				criticalMsg := fmt.Sprintf("❌ [CRITICAL] Transaction %s (from=%s) failed after %d retries. System must stop to prevent nonce desync. Error: %v",
+					queuedTx.txHash, fromAddress.Hex(), maxRetries, lastError)
+				logger.Error(criticalMsg)
+				// Lưu lỗi cuối cùng vào LevelDB
+				inputDataStr := serializeInputData(queuedTx.SessionId, queuedTx.ActionId, queuedTx.Data)
+				h.appCtx.LdbRobotTransaction.SaveError(queuedTx.txHash, inputDataStr, criticalMsg)
+				// Phát tán event lỗi cuối cùng
+				txHashBytes := ethCommon.HexToHash(queuedTx.txHash)
+				h.broadcastEvent("EmitError", txHashBytes, criticalMsg)
+				// Dừng chương trình ngay lập tức
+				// time.Sleep(1 * time.Second)
+				// logger.Error("🛑 Shutting down process due to critical transaction failure.")
+				// os.Exit(1)
 			}
 		}
+	}
+}
 
-		// Nếu sau 3 lần vẫn lỗi -> Dừng toàn bộ chương trình
-		if !success {
-			criticalMsg := fmt.Sprintf("❌ [CRITICAL] Transaction %s failed after %d retries. System must stop to prevent nonce desync. Error: %v",
-				queuedTx.txHash, maxRetries, lastError)
-			logger.Error(criticalMsg)
-			// Lưu lỗi cuối cùng vào LevelDB
-			inputDataStr := serializeInputData(queuedTx.SessionId, queuedTx.ActionId, queuedTx.Data)
-			h.appCtx.LdbRobotTransaction.SaveError(queuedTx.txHash, inputDataStr, criticalMsg)
-			// Phát tán event lỗi cuối cùng
-			txHashBytes := ethCommon.HexToHash(queuedTx.txHash)
-			h.broadcastEvent("EmitError", txHashBytes, criticalMsg)
-			// Dừng chương trình ngay lập tức
-			// time.Sleep(1 * time.Second)
-			// logger.Error("🛑 Shutting down process due to critical transaction failure.")
-			// os.Exit(1)
-		}
+// cleanupQueue xóa queue của một địa chỉ ví khỏi map
+func (h *RobotHandler) cleanupQueue(fromAddress ethCommon.Address) {
+	h.queueMutex.Lock()
+	defer h.queueMutex.Unlock()
+
+	if queueInfo, exists := h.txQueues[fromAddress]; exists {
+		// Đóng channel
+		close(queueInfo.queue)
+		// Cancel context
+		queueInfo.cancel()
+		// Xóa khỏi map
+		delete(h.txQueues, fromAddress)
+		logger.Info("✅ Cleaned up queue for address: %s", fromAddress.Hex())
 	}
 }
 
@@ -352,33 +445,26 @@ func (h *RobotHandler) executeSingleTransaction(
 	queuedTx *QueuedTransaction,
 ) error {
 	fromAddress := queuedTx.RobotAddress
-	count := atomic.AddUint64(&h.processedCount, 1)
 	// 1. Giải mã RawTransactionHex
 	decodedTxBytes, releaseDecoded, err := utils.DecodeHexPooled(queuedTx.RawTransactionHex)
 	if err != nil {
 		return fmt.Errorf("decode hex error: %w", err)
 	}
 	defer releaseDecoded()
-
 	// 2. Unmarshal Ethereum transaction
 	ethTx := new(types.Transaction)
 	if err := ethTx.UnmarshalBinary(decodedTxBytes); err != nil {
 		return fmt.Errorf("unmarshal binary error: %w", err)
 	}
-
-	logger.Info("🔄 Processing Tx: %s | Attempting send...", queuedTx.txHash)
-
-	// 4. Rebuild transaction (nonce tự động từ account state)
 	var (
 		bTx       []byte
 		releaseTx func()
 		buildErr  error
 	)
-
 	hasKey, _ := h.appCtx.PKS.HasPrivateKey(fromAddress)
 	if !hasKey {
 		bTx, _, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTx(
-			ethTx, h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas,
+			ethTx, h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas, true,
 		)
 	} else {
 		senderPkString, _ := h.appCtx.PKS.GetPrivateKey(fromAddress)
@@ -387,14 +473,12 @@ func (h *RobotHandler) executeSingleTransaction(
 			ethTx, h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas, keyPair.PrivateKey(),
 		)
 	}
-
 	if buildErr != nil {
 		if releaseTx != nil {
 			releaseTx()
 		}
 		return fmt.Errorf("build transaction error: %w", buildErr)
 	}
-
 	// 5. Gửi lên Chain
 	rs := h.appCtx.ClientRpc.SendRawTransactionBinary(bTx, releaseTx, nil, nil, nil)
 	if rs.Error != nil {
@@ -410,8 +494,6 @@ func (h *RobotHandler) executeSingleTransaction(
 	if err != nil {
 		return fmt.Errorf("wait for receipt timeout/error: %w", err)
 	}
-
-	logger.Info("✅ Tx Success: %s | Total Processed: %d", newTxHash, count)
 	return nil
 }
 
@@ -510,7 +592,6 @@ func (h *RobotHandler) waitForReceipt(txHash string, timeout time.Duration) (map
 				time.Sleep(checkInterval)
 				continue
 			}
-
 			// Parse receipt
 			receiptBytes, err := json.Marshal(response.Result)
 			if err != nil {

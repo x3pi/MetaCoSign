@@ -71,7 +71,7 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 		tx mt_types.Transaction
 	)
 	if !exists {
-		bTx, tx, releaseTx, buildErr = appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTx(ethTx, appCtx.TcpCfg, appCtx.Cfg, appCtx.LdbContractFreeGas)
+		bTx, tx, releaseTx, buildErr = appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTx(ethTx, appCtx.TcpCfg, appCtx.Cfg, appCtx.LdbContractFreeGas, false)
 	} else {
 		senderPkString, _ := appCtx.PKS.GetPrivateKey(fromAddress)
 		keyPair := bls.NewKeyPair(ethCommon.FromHex(senderPkString))
@@ -90,13 +90,11 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 			if err != nil {
 				return utils.MakeInternalError(id, "Failed to get account: "+err.Error())
 			}
-			logger.Info("VAo HandleAccountTransaction")
 			handled, result, err := accountHandler.HandleAccountTransaction(
 				context.Background(),
 				tx,
 				rawTransactionHex,
 			)
-			logger.Info("Ket thuc HandleAccountTransaction")
 			if handled {
 				releaseDecodedOnce()
 				if releaseTx != nil {
@@ -155,19 +153,9 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 				if result != nil {
 					if txHashStr, ok := result.(string); ok && txHashStr != "" {
 						finalResult = txHashStr
-					} else {
-						finalResult = txHash
-						logger.Warn("⚠️ [sendRawTransaction] Result is not valid string (type=%T, value=%v), using tx.Hash(): %s",
-							result, result, finalResult)
 					}
 				} else {
 					finalResult = txHash
-					logger.Warn("⚠️ [sendRawTransaction] Result is nil, using tx.Hash(): %s", finalResult)
-				}
-				// Đảm bảo finalResult không bao giờ empty
-				if finalResult == "" {
-					finalResult = txHash
-					logger.Error("❌ [sendRawTransaction] finalResult is empty, using tx.Hash(): %s", finalResult)
 				}
 				response := rpc_client.JSONRPCResponse{
 					Jsonrpc: "2.0",
@@ -194,6 +182,64 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 			}
 			return utils.MakeInternalError(id, "method notfound in abi robot")
 		}
+		// contract fake sử dụng làm các nhiệm vụ khác
+		// if tx.ToAddress() == ethCommon.HexToAddress(appCtx.Cfg.ContractsInterceptor[2]) {
+		// 	robotHandler, err := robothandler.GetRobotHandler(appCtx)
+		// 	if err != nil {
+		// 		logger.Error("❌ [sendRawTransaction] Failed to get robot handler: %v", err)
+		// 		return utils.MakeInternalError(id, "Failed to get robot handler: "+err.Error())
+		// 	}
+		// 	handled, result, err := robotHandler.HandleRobotTransaction(
+		// 		context.Background(),
+		// 		tx,
+		// 		rawTransactionHex,
+		// 	)
+		// 	// Transaction đã được lưu trong robot_handler.handleDispatchImmediate
+		// 	if handled {
+		// 		releaseDecodedOnce()
+		// 		if releaseTx != nil {
+		// 			releaseTx()
+		// 		}
+		// 		if err != nil {
+		// 			logger.Error("❌ [sendRawTransaction] Robot handler transaction error: %v", err)
+		// 			return utils.MakeInternalError(id, "Account handler transaction error: "+err.Error())
+		// 		}
+		// 		// Luôn trả về transaction hash (string) để viem có thể parse được
+		// 		// ĐẢM BẢO KHÔNG BAO GIỜ NULL
+		// 		txHash := tx.Hash().Hex()
+		// 		var finalResult string
+		// 		if result != nil {
+		// 			if txHashStr, ok := result.(string); ok && txHashStr != "" {
+		// 				finalResult = txHashStr
+		// 			}
+		// 		} else {
+		// 			finalResult = txHash
+		// 		}
+		// 		response := rpc_client.JSONRPCResponse{
+		// 			Jsonrpc: "2.0",
+		// 			Result:  finalResult,
+		// 			Id:      id,
+		// 		}
+		// 		return response
+		// 	} else if !handled && err == nil {
+		// 		rs := appCtx.ClientRpc.SendRawTransactionBinary(bTx, releaseTx, decodedTxBytes, releaseDecodedOnce, nil)
+		// 		releaseDecodedOnce()
+		// 		if rs.Error != nil && tx.ToAddress() != (ethCommon.Address{}) {
+		// 			appCtx.ErrorDecoder.DecodeError(
+		// 				context.Background(),
+		// 				&rs,
+		// 				tx.ToAddress().Hex(),
+		// 				0,
+		// 			)
+		// 		}
+		// 		rs.Id = id
+		// 		if rs.Error != nil {
+		// 			logger.Info("✅✅✅ send raw rs.Error.Message : %s Code %d", rs.Error.Message, rs.Error.Code)
+		// 		}
+		// 		return rs
+		// 	}
+		// 	return utils.MakeInternalError(id, "method notfound in abi robot")
+		// }
 		fileAbi, _ := file_handler.GetFileAbi()
 		name, _ := fileAbi.ParseMethodName(tx)
 		if !(tx.ToAddress() == file_handler.PredictContractAddress(ethCommon.HexToAddress(appCtx.ClientTcp.GetClientContext().Config.OwnerFileStorageAddress)) && name == "uploadChunk") {

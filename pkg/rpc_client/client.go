@@ -769,6 +769,7 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTx(
 	cfg *config.ClientConfig,
 	cfgCom *cfgCom.Config,
 	ldbContractFree *storage.ContractFreeGasStorage,
+	isSetNonce bool,
 ) ([]byte, mt_types.Transaction, func(), error) {
 	sg := types.NewCancunSigner(ethTx.ChainId())
 	fromAddress, err := sg.Sender(ethTx)
@@ -779,6 +780,7 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTx(
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("BuildTransactionWithDeviceKeyFromEthTx lỗi khi get acccount state %v: %v", fromAddress, err)
 	}
+
 	if ethTx.To() == nil || *ethTx.To() != utils.GetAddressSelector(mt_common.ACCOUNT_SETTING_ADDRESS_SELECT) {
 		if len(as.PublicKeyBls()) == 0 {
 			return nil, nil, nil, fmt.Errorf("lỗi tài khoản chưa đăng ký public key bls trên chain")
@@ -832,10 +834,12 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTx(
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("error buidl  NewTransactionFromEth: %w", err)
 	}
+	if isSetNonce {
+		transaction.SetNonce(as.Nonce())
+	}
 	transaction.UpdateRelatedAddresses(bRelatedAddresses)
 	transaction.UpdateDeriver(deviceKey, newDeviceKey)
 	transaction.SetSign(c.KeyPair.PrivateKey())
-
 	// Create TransactionWithDeviceKey
 	transactionWithDeviceKey := &mt_proto.TransactionWithDeviceKey{
 		Transaction: transaction.Proto().(*mt_proto.Transaction),
@@ -846,6 +850,9 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTx(
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to marshal TransactionWithDeviceKey: %w", err)
 	}
+	// if !isFirst {
+	// 	logger.Info(")))))))))))))))))))))) build robot transaction: %v", transaction)
+	// }
 	return data, transaction, release, err
 }
 

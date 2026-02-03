@@ -71,6 +71,7 @@ func (sm *SubscriptionInterceptor) CreateSubscription(
 
 	return subID
 }
+
 // RemoveByConnection xóa tất cả subscriptions của một connection
 func (sm *SubscriptionInterceptor) RemoveByConnection(conn *websocket.Conn) {
 	sm.mu.Lock()
@@ -89,6 +90,7 @@ func (sm *SubscriptionInterceptor) RemoveByConnection(conn *websocket.Conn) {
 
 	delete(sm.connections, conn)
 }
+
 // SendEventToSubscription gửi event về đúng subscription ID
 func (sm *SubscriptionInterceptor) SendEventToSubscription(subID string, eventData map[string]interface{}) error {
 	sm.mu.RLock()
