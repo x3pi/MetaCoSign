@@ -85,6 +85,7 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 		return utils.MakeInternalError(id, "Failed to build transaction: "+buildErr.Error())
 	}
 	if tx != nil {
+		logger.Info("✅tx : %v", tx)
 		if tx.ToAddress() == ethCommon.HexToAddress(appCtx.Cfg.ContractsInterceptor[0]) {
 			accountHandler, err := account_handler.GetAccountHandler(appCtx)
 			if err != nil {

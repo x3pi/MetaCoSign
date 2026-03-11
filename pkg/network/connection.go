@@ -865,13 +865,14 @@ func (c *Connection) readLoop(tcpConn net.Conn, requestChan chan<- network.Reque
 			handleTerminalError(fmt.Errorf("unmarshal error: %w", err), "unmarshaling")
 			return
 		}
-
-		logger.Info(
-			"readLoop %s: received command %s (%d bytes body)",
-			remoteAddr,
-			msgProto.GetHeader().GetCommand(),
-			len(msgProto.GetBody()),
-		)
+		if msgProto.GetHeader().GetCommand() != "block_data_topic" {
+			logger.Info(
+				"readLoop %s: received command %s (%d bytes body)",
+				remoteAddr,
+				msgProto.GetHeader().GetCommand(),
+				len(msgProto.GetBody()),
+			)
+		}
 
 		req := requestPool.Get().(network.Request)
 		req.Reset(c, NewMessage(msgProto))

@@ -14,11 +14,17 @@ import (
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 )
 
+// TcpBroadcaster interface để broadcast event qua TCP (tránh circular import)
+type TcpBroadcaster interface {
+	BroadcastEvent(contractAddr string, topics []string, eventData map[string]interface{})
+}
+
 type SubscriptionInterceptor struct {
-	mu            sync.RWMutex
-	subscriptions map[string]*ClientSubscription // Key: Subscription ID
-	connections   map[*websocket.Conn][]*ClientSubscription
-	Cfg           *config.Config
+	mu             sync.RWMutex
+	subscriptions  map[string]*ClientSubscription // Key: Subscription ID
+	connections    map[*websocket.Conn][]*ClientSubscription
+	Cfg            *config.Config
+	tcpBroadcaster TcpBroadcaster // broadcast song song cho TCP subscribers
 }
 
 // ClientSubscription lưu thông tin subscription của 1 client
@@ -39,6 +45,14 @@ func NewSubscriptionInterceptor(cfg *config.Config) *SubscriptionInterceptor {
 		connections:   make(map[*websocket.Conn][]*ClientSubscription),
 		Cfg:           cfg,
 	}
+}
+
+// SetTcpBroadcaster gán TCP broadcaster (gọi sau khi TCP server khởi tạo)
+func (sm *SubscriptionInterceptor) SetTcpBroadcaster(tb TcpBroadcaster) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.tcpBroadcaster = tb
+	logger.Info("✅ SubscriptionInterceptor: TcpBroadcaster đã được gắn")
 }
 
 // CreateSubscription tạo một subscription mới cho client
@@ -119,11 +133,15 @@ func (sm *SubscriptionInterceptor) SendEventToSubscription(subID string, eventDa
 }
 
 // BroadcastEventToContract gửi event tới tất cả client đang subscribe contract này
+// Broadcast song song cho cả WS subscribers VÀ TCP subscribers
 func (sm *SubscriptionInterceptor) BroadcastEventToContract(contractAddr string, topics []string, eventData map[string]interface{}) {
 	sm.mu.RLock()
-	defer sm.mu.RUnlock()
+	tcpBroadcaster := sm.tcpBroadcaster
+	sm.mu.RUnlock()
 
-	count := 0
+	// === 1. Broadcast cho WS subscribers ===
+	sm.mu.RLock()
+	wsCount := 0
 	for subID, sub := range sm.subscriptions {
 		// Kiểm tra contract address khớp (case-insensitive)
 		addressMatch := false
@@ -134,7 +152,7 @@ func (sm *SubscriptionInterceptor) BroadcastEventToContract(contractAddr string,
 			}
 		}
 		if !addressMatch {
-			continue // Địa chỉ không khớp, bỏ qua
+			continue
 		}
 		if len(sub.Topics) > 0 && len(topics) > 0 {
 			topicMatch := false
@@ -149,12 +167,10 @@ func (sm *SubscriptionInterceptor) BroadcastEventToContract(contractAddr string,
 					break
 				}
 			}
-
 			if !topicMatch {
-				continue // Topic không khớp, bỏ qua
+				continue
 			}
 		}
-		// Gửi event
 		message := map[string]interface{}{
 			"jsonrpc": "2.0",
 			"method":  "eth_subscription",
@@ -166,11 +182,21 @@ func (sm *SubscriptionInterceptor) BroadcastEventToContract(contractAddr string,
 		if err := sub.ClientWriter.WriteJSON(message); err != nil {
 			logger.Error("Failed to send event to %s: %v", sub.ID, err)
 		} else {
-			count++
-			logger.Info("✅ Sent to subscription %s (created at %v)", subID, sub.CreatedAt)
+			wsCount++
+			logger.Info("✅ WS: Sent to subscription %s (created at %v)", subID, sub.CreatedAt)
 		}
 	}
-	logger.Info("📡 Broadcasted event to %d subscribers of contract %s", count, contractAddr)
+	sm.mu.RUnlock()
+
+	// === 2. Broadcast cho TCP subscribers ===
+	tcpCount := 0
+	if tcpBroadcaster != nil {
+		tcpBroadcaster.BroadcastEvent(contractAddr, topics, eventData)
+		tcpCount++ // TcpSubManager tự log chi tiết
+	}
+
+	logger.Info("📡 Broadcasted event to %d WS + TCP subscribers of contract %s", wsCount, contractAddr)
+	_ = tcpCount
 }
 
 // GetAllSubscriptions trả về danh sách tất cả subscription IDs

@@ -18,6 +18,7 @@ import (
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/app"
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/config"
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/internal/proxy"
+	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/internal/tcp_server"
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/setup"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 )
@@ -64,6 +65,14 @@ func main() {
 		}
 	}()
 	logger.Info("RPC Reverse Proxy initialized successfully")
+
+	// Initialize TCP RPC Server
+	tcpRpcServer, err := tcp_server.New(appCtx)
+	if err != nil {
+		logger.Error("Failed to initialize TCP RPC server: %v", err)
+		log.Fatalf("FATAL: TCP RPC server initialization failed: %v", err)
+	}
+	defer tcpRpcServer.Stop()
 
 	httpServer := setupHTTPServer(rpcProxy, cfg, defaultLogsDir)
 	// TLS setup
@@ -114,6 +123,19 @@ func main() {
 			logger.Info("Starting HTTPS server on port %s", cfg.HTTPSPort)
 			if err := httpsServer.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				log.Fatalf("FATAL: HTTPS server failed: %v", err)
+			}
+		}()
+	}
+
+	// Start TCP RPC Server
+	if cfg.TcpServerPort != "" {
+		serverRunning = true
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			logger.Info("Starting TCP RPC server on port %s", cfg.TcpServerPort)
+			if err := tcpRpcServer.ListenAndServe(cfg.TcpServerPort); err != nil {
+				log.Printf("TCP RPC server error: %v", err)
 			}
 		}()
 	}

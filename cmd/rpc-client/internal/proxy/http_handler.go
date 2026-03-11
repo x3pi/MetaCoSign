@@ -55,7 +55,6 @@ func (p *RpcReverseProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		)
 		utils.WriteJSON(w, resp)
 		return
-
 	case "net_version":
 		resp := rpc_client.JSONRPCResponse{
 			Jsonrpc: "2.0",
@@ -76,7 +75,6 @@ func (p *RpcReverseProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		resp := handlers.HandleEstimateGasRaw(p.AppCtx, json.RawMessage(callParam.Raw), id)
 		utils.WriteJSON(w, resp)
 		return
-
 	case "eth_call":
 		callParam := gjson.GetBytes(body, "params.0")
 		if !callParam.Exists() {

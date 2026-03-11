@@ -10,6 +10,7 @@ require (
 	github.com/ethereum/go-ethereum v1.14.12
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
+	github.com/herumi/bls-eth-go-binary v1.37.0
 	github.com/holiman/uint256 v1.3.1
 	github.com/otiai10/copy v1.14.0
 	github.com/quic-go/quic-go v0.50.0

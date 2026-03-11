@@ -31,6 +31,7 @@ type Config struct {
 	OwnerRpcAddress         string   `json:"owner_rpc_address"`
 	ContractsInterceptor    []string `json:"contracts_interceptor"` // Địa chỉ contract dùng để intercept
 	RewardAmount            *big.Int `json:"reward_amount"`         // Số lượng reward cho mỗi giao dịch được intercept
+	TcpServerPort           string   `json:"tcp_server_port"`       // Port cho TCP RPC server (ví dụ: ":9545")
 }
 
 func Load(path string, tcpCfgPath string) (*Config, *tcp_config.ClientConfig, error) {
