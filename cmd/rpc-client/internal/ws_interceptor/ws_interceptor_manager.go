@@ -139,64 +139,73 @@ func (sm *SubscriptionInterceptor) BroadcastEventToContract(contractAddr string,
 	tcpBroadcaster := sm.tcpBroadcaster
 	sm.mu.RUnlock()
 
-	// === 1. Broadcast cho WS subscribers ===
-	sm.mu.RLock()
-	wsCount := 0
-	for subID, sub := range sm.subscriptions {
-		// Kiểm tra contract address khớp (case-insensitive)
-		addressMatch := false
-		for _, addr := range sub.ContractAddresses {
-			if strings.EqualFold(addr, contractAddr) {
-				addressMatch = true
-				break
-			}
-		}
-		if !addressMatch {
-			continue
-		}
-		if len(sub.Topics) > 0 && len(topics) > 0 {
-			topicMatch := false
-			for _, subTopic := range sub.Topics {
-				for _, eventTopic := range topics {
-					if strings.EqualFold(subTopic, eventTopic) {
-						topicMatch = true
-						break
-					}
-				}
-				if topicMatch {
+	var wg sync.WaitGroup
+	var wsCount int
+
+	// === 1. Broadcast cho WS subscribers (goroutine) ===
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		sm.mu.RLock()
+		for subID, sub := range sm.subscriptions {
+			// Kiểm tra contract address khớp (case-insensitive)
+			addressMatch := false
+			for _, addr := range sub.ContractAddresses {
+				if strings.EqualFold(addr, contractAddr) {
+					addressMatch = true
 					break
 				}
 			}
-			if !topicMatch {
+			if !addressMatch {
 				continue
 			}
+			if len(sub.Topics) > 0 && len(topics) > 0 {
+				topicMatch := false
+				for _, subTopic := range sub.Topics {
+					for _, eventTopic := range topics {
+						if strings.EqualFold(subTopic, eventTopic) {
+							topicMatch = true
+							break
+						}
+					}
+					if topicMatch {
+						break
+					}
+				}
+				if !topicMatch {
+					continue
+				}
+			}
+			message := map[string]interface{}{
+				"jsonrpc": "2.0",
+				"method":  "eth_subscription",
+				"params": map[string]interface{}{
+					"subscription": sub.ID,
+					"result":       eventData,
+				},
+			}
+			if err := sub.ClientWriter.WriteJSON(message); err != nil {
+				logger.Error("Failed to send event to %s: %v", sub.ID, err)
+			} else {
+				wsCount++
+				logger.Info("✅ WS: Sent to subscription %s (created at %v)", subID, sub.CreatedAt)
+			}
 		}
-		message := map[string]interface{}{
-			"jsonrpc": "2.0",
-			"method":  "eth_subscription",
-			"params": map[string]interface{}{
-				"subscription": sub.ID,
-				"result":       eventData,
-			},
-		}
-		if err := sub.ClientWriter.WriteJSON(message); err != nil {
-			logger.Error("Failed to send event to %s: %v", sub.ID, err)
-		} else {
-			wsCount++
-			logger.Info("✅ WS: Sent to subscription %s (created at %v)", subID, sub.CreatedAt)
-		}
-	}
-	sm.mu.RUnlock()
+		sm.mu.RUnlock()
+	}()
 
-	// === 2. Broadcast cho TCP subscribers ===
-	tcpCount := 0
-	if tcpBroadcaster != nil {
-		tcpBroadcaster.BroadcastEvent(contractAddr, topics, eventData)
-		tcpCount++ // TcpSubManager tự log chi tiết
-	}
+	// === 2. Broadcast cho TCP subscribers (goroutine) ===
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if tcpBroadcaster != nil {
+			tcpBroadcaster.BroadcastEvent(contractAddr, topics, eventData)
+		}
+	}()
+
+	wg.Wait()
 
 	logger.Info("📡 Broadcasted event to %d WS + TCP subscribers of contract %s", wsCount, contractAddr)
-	_ = tcpCount
 }
 
 // GetAllSubscriptions trả về danh sách tất cả subscription IDs
