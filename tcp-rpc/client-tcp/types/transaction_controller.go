@@ -37,6 +37,7 @@ type TransactionController interface {
 		relatedAddress [][]byte,
 		lastDeviceKey common.Hash,
 		newDeviceKey common.Hash,
+		nonce uint64,
 		chainId uint64,
 	) (types.Transaction, error)
 

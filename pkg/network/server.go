@@ -79,13 +79,13 @@ func NewSocketServer(
 func (s *SocketServer) startWorkerPool() {
 	workerCount := s.config.HandlerWorkerPoolSize
 	logger.Info("Starting Worker Pool with %d workers...", workerCount)
-	logger.Info("Worker Pool Config - RequestChanSize: %d, NumCPU: %d", 
+	logger.Info("Worker Pool Config - RequestChanSize: %d, NumCPU: %d",
 		s.config.RequestChanSize, runtime.NumCPU())
 
 	s.wg.Add(workerCount)
 	activeWorkers := int32(0)
 	processedRequests := int64(0)
-	
+
 	for i := 0; i < workerCount; i++ {
 		go func(workerID int) {
 			defer s.wg.Done()
@@ -105,7 +105,7 @@ func (s *SocketServer) startWorkerPool() {
 						atomic.AddInt32(&activeWorkers, 1)
 						defer atomic.AddInt32(&activeWorkers, -1)
 						defer atomic.AddInt64(&processedRequests, 1)
-						
+
 						// Ensure request is put back into the pool after handling
 						defer func() {
 							if req, ok := request.(*Request); ok {
@@ -127,7 +127,7 @@ func (s *SocketServer) startWorkerPool() {
 			}
 		}(i)
 	}
-	
+
 	// Log worker pool stats định kỳ
 	go func() {
 		ticker := time.NewTicker(60 * time.Second) // Log mỗi 60 giây
@@ -140,7 +140,7 @@ func (s *SocketServer) startWorkerPool() {
 				active := atomic.LoadInt32(&activeWorkers)
 				processed := atomic.LoadInt64(&processedRequests)
 				queueLen := len(s.requestChan)
-				
+
 				// Lấy thống kê connections
 				stats := s.connectionsManager.Stats()
 				totalConnections := 0
@@ -149,35 +149,35 @@ func (s *SocketServer) startWorkerPool() {
 					totalConnections += int(count)
 					connectionsByType[typeName] = int(count)
 				}
-				
+
 				// Log chi tiết
 				logger.Info(
 					"Worker Pool Stats - Active: %d/%d, Queue: %d/%d, Processed: %d, TotalConnections: %d",
 					active, workerCount, queueLen, s.config.RequestChanSize, processed, totalConnections,
 				)
-				
+
 				// Log connections by type
 				if len(connectionsByType) > 0 {
 					logger.Info("Connections by type: %v", connectionsByType)
 				}
-				
+
 				// Tính số goroutines ước tính (mỗi connection = 2-3 goroutines: readLoop, writeLoop, HandleConnection)
 				estimatedGoroutinesFromConnections := totalConnections * 3
 				logger.Info(
 					"Estimated goroutines from connections: ~%d (connections: %d × 3)",
 					estimatedGoroutinesFromConnections, totalConnections,
 				)
-				
+
 				// Cảnh báo nếu có quá nhiều connections
 				if totalConnections > 500 {
 					logger.Warn("⚠️ Có quá nhiều connections (%d), có thể gây vấn đề về memory và goroutines", totalConnections)
 				}
-				
+
 				// Cảnh báo nếu queue quá dài
 				if queueLen > s.config.RequestChanSize/2 {
 					logger.Warn("⚠️ Request queue đang dài (%d/%d), có thể cần tăng worker pool", queueLen, s.config.RequestChanSize)
 				}
-				
+
 				// Cảnh báo nếu hơn 50% workers đang active
 				if active > int32(workerCount/2) {
 					logger.Warn("⚠️ Hơn 50%% workers đang active (%d/%d), có thể cần tăng worker pool", active, workerCount)
@@ -337,7 +337,7 @@ func (s *SocketServer) OnConnect(conn network.Connection) {
 	fmt.Printf("[ONCONNECT] ===== OnConnect được gọi =====\n")
 	fmt.Printf("[ONCONNECT] Remote address: %s\n", conn.RemoteAddrSafe())
 	fmt.Printf("[ONCONNECT] Node type: %s\n", s.nodeType)
-	
+
 	var addressForInitMsgBytes []byte
 	parentConn := s.connectionsManager.ParentConnection()
 	if parentConn != nil {

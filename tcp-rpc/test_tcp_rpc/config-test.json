@@ -9,7 +9,7 @@
   "eth_private_key":"48d0959736be4999d4fcfce48423e2e0f98610663ae3ee87f879eb69f74a0746",
   "cross_chain_abi_path": "../pkg/abi/cross_chain_abi.json",
   "demo_abi_path": "../pkg/abi/demo_abi.json",
-  "demo_contract_address":"0x6DEFc189faB95D67140d30dF43e434701DeB478E",
+  "demo_contract_address":"0xc6b68b40fee85f896e3Da5c8D3C2af2dA78dDD4d",
   "contact_private":"0x00000000000000000000000000000000D844bb55",
   "remote_chains": []
 }

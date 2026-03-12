@@ -158,8 +158,6 @@ func (srv *RpcTcpServer) handleSendRawTransaction(request t_network.Request) err
 	}
 
 	rawTxHex := params[0]
-	logger.Info("🔄 TCP eth_sendRawTransaction from %s (rawTx=%s...)",
-		conn.RemoteAddrSafe(), rawTxHex[:min(len(rawTxHex), 20)])
 
 	httpResp := handlers.ProcessSendRawTransaction(srv.AppCtx, rawTxHex, msgID)
 	resp := httpRespToTcpResp(httpResp, msgID)
@@ -183,7 +181,6 @@ func (srv *RpcTcpServer) handleEthCall(request t_network.Request) error {
 		})
 	}
 
-	logger.Info("🔄 TCP eth_call from %s", conn.RemoteAddrSafe())
 	httpResp := handlers.HandleEthCallRaw(srv.AppCtx, params[0], msgID)
 	resp := httpRespToTcpResp(httpResp, msgID)
 

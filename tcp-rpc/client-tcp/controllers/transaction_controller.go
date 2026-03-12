@@ -10,9 +10,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/meta-node-blockchain/tcp-rpc/client-tcp/client_context"
-	"github.com/meta-node-blockchain/tcp-rpc/client-tcp/command"
-	client_types "github.com/meta-node-blockchain/tcp-rpc/client-tcp/types"
+	"github.com/meta-node-blockchain/meta-node/tcp-rpc/client-tcp/client_context"
+	"github.com/meta-node-blockchain/meta-node/tcp-rpc/client-tcp/command"
+	client_types "github.com/meta-node-blockchain/meta-node/tcp-rpc/client-tcp/types"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	"github.com/meta-node-blockchain/meta-node/pkg/network"
 	pb "github.com/meta-node-blockchain/meta-node/pkg/proto"
@@ -93,9 +93,10 @@ func (tc *TransactionController) ReadTransaction(
 	relatedAddress [][]byte,
 	lastDeviceKey common.Hash,
 	newDeviceKey common.Hash,
+	nonce uint64,
 	chainId uint64,
 ) (types.Transaction, error) {
-	transaction := transaction.NewTransactionWithoutNonce(
+	transaction := transaction.NewTransaction(
 		fromAddress,
 		toAddress,
 		amount,
@@ -106,6 +107,7 @@ func (tc *TransactionController) ReadTransaction(
 		relatedAddress,
 		lastDeviceKey,
 		newDeviceKey,
+		nonce,
 		chainId,
 	)
 	transaction.SetSign(tc.clientContext.KeyPair.PrivateKey())

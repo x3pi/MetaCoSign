@@ -16,18 +16,18 @@ import (
 	e_types "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/meta-node-blockchain/tcp-rpc/client-tcp/client_context"
-	"github.com/meta-node-blockchain/tcp-rpc/client-tcp/command"
-	c_config "github.com/meta-node-blockchain/tcp-rpc/client-tcp/config"
-	"github.com/meta-node-blockchain/tcp-rpc/client-tcp/controllers"
-	c_network "github.com/meta-node-blockchain/tcp-rpc/client-tcp/network"
-	client_types "github.com/meta-node-blockchain/tcp-rpc/client-tcp/types"
 	"github.com/meta-node-blockchain/meta-node/pkg/bls"
 	p_common "github.com/meta-node-blockchain/meta-node/pkg/common"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	p_network "github.com/meta-node-blockchain/meta-node/pkg/network"
 	pb "github.com/meta-node-blockchain/meta-node/pkg/proto"
 	mt_transaction "github.com/meta-node-blockchain/meta-node/pkg/transaction"
+	"github.com/meta-node-blockchain/meta-node/tcp-rpc/client-tcp/client_context"
+	"github.com/meta-node-blockchain/meta-node/tcp-rpc/client-tcp/command"
+	c_config "github.com/meta-node-blockchain/meta-node/tcp-rpc/client-tcp/config"
+	"github.com/meta-node-blockchain/meta-node/tcp-rpc/client-tcp/controllers"
+	c_network "github.com/meta-node-blockchain/meta-node/tcp-rpc/client-tcp/network"
+	client_types "github.com/meta-node-blockchain/meta-node/tcp-rpc/client-tcp/types"
 	"github.com/meta-node-blockchain/meta-node/types"
 	t_network "github.com/meta-node-blockchain/meta-node/types/network"
 	"google.golang.org/protobuf/proto"
@@ -132,11 +132,6 @@ func NewClient(
 		config.NodeType(),
 		config.Version(),
 	)
-	// Set parent address for InitConnection messages
-	// This ensures the chain node registers this client under parent_address
-	// instead of the BLS-derived address from the KeyPair
-	parentAddress := common.HexToAddress(config.ParentAddress)
-	clientContext.SocketServer.SetParentAddress(parentAddress)
 
 	retryCount := 0
 	for {
@@ -796,6 +791,7 @@ func (client *Client) ReadTransaction(
 		bRelatedAddresses,
 		lastDeviceKey,
 		newDeviceKey,
+		nonce,
 		client.clientContext.Config.ChainId,
 	)
 	if err != nil {

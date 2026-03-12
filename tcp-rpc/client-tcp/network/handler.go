@@ -8,7 +8,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/meta-node-blockchain/tcp-rpc/client-tcp/command"
+	"github.com/meta-node-blockchain/meta-node/tcp-rpc/client-tcp/command"
 	"github.com/meta-node-blockchain/meta-node/pkg/loggerfile"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	pb "github.com/meta-node-blockchain/meta-node/pkg/proto"

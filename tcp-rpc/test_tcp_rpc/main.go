@@ -17,8 +17,8 @@ import (
 	e_types "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	client_tcp "github.com/meta-node-blockchain/meta-node/cmd/observer/client-tcp"
-	tcp_config "github.com/meta-node-blockchain/meta-node/cmd/observer/client-tcp/config"
+	client_tcp "github.com/meta-node-blockchain/meta-node/tcp-rpc/client-tcp"
+	tcp_config "github.com/meta-node-blockchain/meta-node/tcp-rpc/client-tcp/config"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	pb "github.com/meta-node-blockchain/meta-node/pkg/proto"
 	"google.golang.org/protobuf/proto"

@@ -1,8 +1,8 @@
 package client_context
 
 import (
-	"github.com/meta-node-blockchain/tcp-rpc/client-tcp/config"
-	client_types "github.com/meta-node-blockchain/tcp-rpc/client-tcp/types"
+	"github.com/meta-node-blockchain/meta-node/tcp-rpc/client-tcp/config"
+	client_types "github.com/meta-node-blockchain/meta-node/tcp-rpc/client-tcp/types"
 	"github.com/meta-node-blockchain/meta-node/pkg/bls"
 	"github.com/meta-node-blockchain/meta-node/types/network"
 )

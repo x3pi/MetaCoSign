@@ -1,6 +1,7 @@
 # TCP-RPC Client — Hướng dẫn sử dụng
-
-## Run test
+## Run rpc
+``` cd rpc-
+## Run test tcp-rpc
 
 ### Chỉ test demo các hàm
 
@@ -9,6 +10,17 @@
 ### Chỉ test đăng ký BLS
 
 ```go run main.go -test=bls```
+
+---
+
+### File proto mới
+
+```
+pkg/proto/rpc_receipt.proto
+pkg/proto/rpc_request.proto
+```
+
+### Trong đăng ký bls hàm confirmAdmin chỉ mới có receipt còn lại k có receipt
 
 ---
 
