@@ -25,15 +25,15 @@ const (
 // Tất cả fields dùng string để khớp với chain JSON output (hex format)
 type RpcLogEntry struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
-	Address          string                 `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`                                           // Contract address
-	Topics           []string               `protobuf:"bytes,2,rep,name=topics,proto3" json:"topics,omitempty"`                                             // Topics (event signature + indexed params)
-	Data             string                 `protobuf:"bytes,3,opt,name=data,proto3" json:"data,omitempty"`                                                 // Non-indexed event data (hex)
-	BlockNumber      string                 `protobuf:"bytes,4,opt,name=block_number,json=blockNumber,proto3" json:"block_number,omitempty"`                // Block number (hex)
-	TransactionHash  string                 `protobuf:"bytes,5,opt,name=transaction_hash,json=transactionHash,proto3" json:"transaction_hash,omitempty"`    // Transaction hash
-	BlockHash        string                 `protobuf:"bytes,6,opt,name=block_hash,json=blockHash,proto3" json:"block_hash,omitempty"`                      // Block hash
-	TransactionIndex string                 `protobuf:"bytes,7,opt,name=transaction_index,json=transactionIndex,proto3" json:"transaction_index,omitempty"` // Transaction index (hex)
-	LogIndex         string                 `protobuf:"bytes,8,opt,name=log_index,json=logIndex,proto3" json:"log_index,omitempty"`                         // Log index (hex)
-	Removed          bool                   `protobuf:"varint,9,opt,name=removed,proto3" json:"removed,omitempty"`                                          // Removed flag (reorg)
+	Address          string                 `protobuf:"bytes,1,opt,name=Address,proto3" json:"Address,omitempty"`                   // Contract address
+	Topics           []string               `protobuf:"bytes,2,rep,name=Topics,proto3" json:"Topics,omitempty"`                     // Topics (event signature + indexed params)
+	Data             string                 `protobuf:"bytes,3,opt,name=Data,proto3" json:"Data,omitempty"`                         // Non-indexed event data (hex)
+	BlockNumber      string                 `protobuf:"bytes,4,opt,name=BlockNumber,proto3" json:"BlockNumber,omitempty"`           // Block number (hex)
+	TransactionHash  string                 `protobuf:"bytes,5,opt,name=TransactionHash,proto3" json:"TransactionHash,omitempty"`   // Transaction hash
+	BlockHash        string                 `protobuf:"bytes,6,opt,name=BlockHash,proto3" json:"BlockHash,omitempty"`               // Block hash
+	TransactionIndex string                 `protobuf:"bytes,7,opt,name=TransactionIndex,proto3" json:"TransactionIndex,omitempty"` // Transaction index (hex)
+	LogIndex         string                 `protobuf:"bytes,8,opt,name=LogIndex,proto3" json:"LogIndex,omitempty"`                 // Log index (hex)
+	Removed          bool                   `protobuf:"varint,9,opt,name=Removed,proto3" json:"Removed,omitempty"`                  // Removed flag (reorg)
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -134,8 +134,8 @@ func (x *RpcLogEntry) GetRemoved() bool {
 // RpcEvent - Subscription event notification = subscription_id + log entry
 type RpcEvent struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	SubscriptionId string                 `protobuf:"bytes,1,opt,name=subscription_id,json=subscriptionId,proto3" json:"subscription_id,omitempty"` // Subscription ID (0xabc...)
-	Log            *RpcLogEntry           `protobuf:"bytes,2,opt,name=log,proto3" json:"log,omitempty"`                                             // Log entry data
+	SubscriptionId string                 `protobuf:"bytes,1,opt,name=SubscriptionId,proto3" json:"SubscriptionId,omitempty"` // Subscription ID (0xabc...)
+	Log            *RpcLogEntry           `protobuf:"bytes,2,opt,name=Log,proto3" json:"Log,omitempty"`                       // Log entry data
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -187,20 +187,22 @@ func (x *RpcEvent) GetLog() *RpcLogEntry {
 // RpcReceipt - Transaction receipt gửi qua TCP (pure protobuf)
 type RpcReceipt struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
-	TransactionHash   string                 `protobuf:"bytes,1,opt,name=transaction_hash,json=transactionHash,proto3" json:"transaction_hash,omitempty"`
-	From              string                 `protobuf:"bytes,2,opt,name=from,proto3" json:"from,omitempty"`
-	To                string                 `protobuf:"bytes,3,opt,name=to,proto3" json:"to,omitempty"`
-	ContractAddress   string                 `protobuf:"bytes,4,opt,name=contract_address,json=contractAddress,proto3" json:"contract_address,omitempty"` // Nếu deploy contract
-	Status            string                 `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`                                          // "0x1" = success, "0x0" = fail
-	GasUsed           string                 `protobuf:"bytes,6,opt,name=gas_used,json=gasUsed,proto3" json:"gas_used,omitempty"`                         // Hex string
-	CumulativeGasUsed string                 `protobuf:"bytes,7,opt,name=cumulative_gas_used,json=cumulativeGasUsed,proto3" json:"cumulative_gas_used,omitempty"`
-	EffectiveGasPrice string                 `protobuf:"bytes,8,opt,name=effective_gas_price,json=effectiveGasPrice,proto3" json:"effective_gas_price,omitempty"`
-	BlockHash         string                 `protobuf:"bytes,9,opt,name=block_hash,json=blockHash,proto3" json:"block_hash,omitempty"`
-	BlockNumber       string                 `protobuf:"bytes,10,opt,name=block_number,json=blockNumber,proto3" json:"block_number,omitempty"` // Hex string
-	TransactionIndex  string                 `protobuf:"bytes,11,opt,name=transaction_index,json=transactionIndex,proto3" json:"transaction_index,omitempty"`
-	Type              string                 `protobuf:"bytes,12,opt,name=type,proto3" json:"type,omitempty"` // Transaction type
-	Logs              []*RpcLogEntry         `protobuf:"bytes,13,rep,name=logs,proto3" json:"logs,omitempty"` // Dùng chung RpcLogEntry
-	LogsBloom         string                 `protobuf:"bytes,14,opt,name=logs_bloom,json=logsBloom,proto3" json:"logs_bloom,omitempty"`
+	TransactionHash   string                 `protobuf:"bytes,1,opt,name=TransactionHash,proto3" json:"TransactionHash,omitempty"`
+	From              string                 `protobuf:"bytes,2,opt,name=From,proto3" json:"From,omitempty"`
+	To                string                 `protobuf:"bytes,3,opt,name=To,proto3" json:"To,omitempty"`
+	ContractAddress   string                 `protobuf:"bytes,4,opt,name=ContractAddress,proto3" json:"ContractAddress,omitempty"` // Nếu deploy contract
+	Status            string                 `protobuf:"bytes,5,opt,name=Status,proto3" json:"Status,omitempty"`                   // "0x1" = success, "0x0" = fail
+	GasUsed           string                 `protobuf:"bytes,6,opt,name=GasUsed,proto3" json:"GasUsed,omitempty"`                 // Hex string
+	CumulativeGasUsed string                 `protobuf:"bytes,7,opt,name=CumulativeGasUsed,proto3" json:"CumulativeGasUsed,omitempty"`
+	EffectiveGasPrice string                 `protobuf:"bytes,8,opt,name=EffectiveGasPrice,proto3" json:"EffectiveGasPrice,omitempty"`
+	BlockHash         string                 `protobuf:"bytes,9,opt,name=BlockHash,proto3" json:"BlockHash,omitempty"`
+	BlockNumber       string                 `protobuf:"bytes,10,opt,name=BlockNumber,proto3" json:"BlockNumber,omitempty"` // Hex string
+	TransactionIndex  string                 `protobuf:"bytes,11,opt,name=TransactionIndex,proto3" json:"TransactionIndex,omitempty"`
+	Type              string                 `protobuf:"bytes,12,opt,name=Type,proto3" json:"Type,omitempty"` // Transaction type
+	Logs              []*RpcLogEntry         `protobuf:"bytes,13,rep,name=Logs,proto3" json:"Logs,omitempty"` // Dùng chung RpcLogEntry
+	LogsBloom         string                 `protobuf:"bytes,14,opt,name=LogsBloom,proto3" json:"LogsBloom,omitempty"`
+	ReturnData        []byte                 `protobuf:"bytes,15,opt,name=ReturnData,proto3" json:"ReturnData,omitempty"` // Return data từ EVM execution
+	Exception         string                 `protobuf:"bytes,16,opt,name=Exception,proto3" json:"Exception,omitempty"`   // Exception type nếu có lỗi
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -333,44 +335,59 @@ func (x *RpcReceipt) GetLogsBloom() string {
 	return ""
 }
 
+func (x *RpcReceipt) GetReturnData() []byte {
+	if x != nil {
+		return x.ReturnData
+	}
+	return nil
+}
+
+func (x *RpcReceipt) GetException() string {
+	if x != nil {
+		return x.Exception
+	}
+	return ""
+}
+
 var File_rpc_receipt_proto protoreflect.FileDescriptor
 
 const file_rpc_receipt_proto_rawDesc = "" +
 	"\n" +
-	"\x11rpc_receipt.proto\x12\vrpc_request\"\xa4\x02\n" +
+	"\x11rpc_receipt.proto\x12\vrpc_request\"\x9f\x02\n" +
 	"\vRpcLogEntry\x12\x18\n" +
-	"\aaddress\x18\x01 \x01(\tR\aaddress\x12\x16\n" +
-	"\x06topics\x18\x02 \x03(\tR\x06topics\x12\x12\n" +
-	"\x04data\x18\x03 \x01(\tR\x04data\x12!\n" +
-	"\fblock_number\x18\x04 \x01(\tR\vblockNumber\x12)\n" +
-	"\x10transaction_hash\x18\x05 \x01(\tR\x0ftransactionHash\x12\x1d\n" +
+	"\aAddress\x18\x01 \x01(\tR\aAddress\x12\x16\n" +
+	"\x06Topics\x18\x02 \x03(\tR\x06Topics\x12\x12\n" +
+	"\x04Data\x18\x03 \x01(\tR\x04Data\x12 \n" +
+	"\vBlockNumber\x18\x04 \x01(\tR\vBlockNumber\x12(\n" +
+	"\x0fTransactionHash\x18\x05 \x01(\tR\x0fTransactionHash\x12\x1c\n" +
+	"\tBlockHash\x18\x06 \x01(\tR\tBlockHash\x12*\n" +
+	"\x10TransactionIndex\x18\a \x01(\tR\x10TransactionIndex\x12\x1a\n" +
+	"\bLogIndex\x18\b \x01(\tR\bLogIndex\x12\x18\n" +
+	"\aRemoved\x18\t \x01(\bR\aRemoved\"^\n" +
+	"\bRpcEvent\x12&\n" +
+	"\x0eSubscriptionId\x18\x01 \x01(\tR\x0eSubscriptionId\x12*\n" +
+	"\x03Log\x18\x02 \x01(\v2\x18.rpc_request.RpcLogEntryR\x03Log\"\x9c\x04\n" +
 	"\n" +
-	"block_hash\x18\x06 \x01(\tR\tblockHash\x12+\n" +
-	"\x11transaction_index\x18\a \x01(\tR\x10transactionIndex\x12\x1b\n" +
-	"\tlog_index\x18\b \x01(\tR\blogIndex\x12\x18\n" +
-	"\aremoved\x18\t \x01(\bR\aremoved\"_\n" +
-	"\bRpcEvent\x12'\n" +
-	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\x12*\n" +
-	"\x03log\x18\x02 \x01(\v2\x18.rpc_request.RpcLogEntryR\x03log\"\xe9\x03\n" +
+	"RpcReceipt\x12(\n" +
+	"\x0fTransactionHash\x18\x01 \x01(\tR\x0fTransactionHash\x12\x12\n" +
+	"\x04From\x18\x02 \x01(\tR\x04From\x12\x0e\n" +
+	"\x02To\x18\x03 \x01(\tR\x02To\x12(\n" +
+	"\x0fContractAddress\x18\x04 \x01(\tR\x0fContractAddress\x12\x16\n" +
+	"\x06Status\x18\x05 \x01(\tR\x06Status\x12\x18\n" +
+	"\aGasUsed\x18\x06 \x01(\tR\aGasUsed\x12,\n" +
+	"\x11CumulativeGasUsed\x18\a \x01(\tR\x11CumulativeGasUsed\x12,\n" +
+	"\x11EffectiveGasPrice\x18\b \x01(\tR\x11EffectiveGasPrice\x12\x1c\n" +
+	"\tBlockHash\x18\t \x01(\tR\tBlockHash\x12 \n" +
+	"\vBlockNumber\x18\n" +
+	" \x01(\tR\vBlockNumber\x12*\n" +
+	"\x10TransactionIndex\x18\v \x01(\tR\x10TransactionIndex\x12\x12\n" +
+	"\x04Type\x18\f \x01(\tR\x04Type\x12,\n" +
+	"\x04Logs\x18\r \x03(\v2\x18.rpc_request.RpcLogEntryR\x04Logs\x12\x1c\n" +
+	"\tLogsBloom\x18\x0e \x01(\tR\tLogsBloom\x12\x1e\n" +
 	"\n" +
-	"RpcReceipt\x12)\n" +
-	"\x10transaction_hash\x18\x01 \x01(\tR\x0ftransactionHash\x12\x12\n" +
-	"\x04from\x18\x02 \x01(\tR\x04from\x12\x0e\n" +
-	"\x02to\x18\x03 \x01(\tR\x02to\x12)\n" +
-	"\x10contract_address\x18\x04 \x01(\tR\x0fcontractAddress\x12\x16\n" +
-	"\x06status\x18\x05 \x01(\tR\x06status\x12\x19\n" +
-	"\bgas_used\x18\x06 \x01(\tR\agasUsed\x12.\n" +
-	"\x13cumulative_gas_used\x18\a \x01(\tR\x11cumulativeGasUsed\x12.\n" +
-	"\x13effective_gas_price\x18\b \x01(\tR\x11effectiveGasPrice\x12\x1d\n" +
-	"\n" +
-	"block_hash\x18\t \x01(\tR\tblockHash\x12!\n" +
-	"\fblock_number\x18\n" +
-	" \x01(\tR\vblockNumber\x12+\n" +
-	"\x11transaction_index\x18\v \x01(\tR\x10transactionIndex\x12\x12\n" +
-	"\x04type\x18\f \x01(\tR\x04type\x12,\n" +
-	"\x04logs\x18\r \x03(\v2\x18.rpc_request.RpcLogEntryR\x04logs\x12\x1d\n" +
-	"\n" +
-	"logs_bloom\x18\x0e \x01(\tR\tlogsBloomB5Z3github.com/meta-node-blockchain/meta-node/pkg/protob\x06proto3"
+	"ReturnData\x18\x0f \x01(\fR\n" +
+	"ReturnData\x12\x1c\n" +
+	"\tException\x18\x10 \x01(\tR\tExceptionB\bZ\x06/protob\x06proto3"
 
 var (
 	file_rpc_receipt_proto_rawDescOnce sync.Once
@@ -391,8 +408,8 @@ var file_rpc_receipt_proto_goTypes = []any{
 	(*RpcReceipt)(nil),  // 2: rpc_request.RpcReceipt
 }
 var file_rpc_receipt_proto_depIdxs = []int32{
-	0, // 0: rpc_request.RpcEvent.log:type_name -> rpc_request.RpcLogEntry
-	0, // 1: rpc_request.RpcReceipt.logs:type_name -> rpc_request.RpcLogEntry
+	0, // 0: rpc_request.RpcEvent.Log:type_name -> rpc_request.RpcLogEntry
+	0, // 1: rpc_request.RpcReceipt.Logs:type_name -> rpc_request.RpcLogEntry
 	2, // [2:2] is the sub-list for method output_type
 	2, // [2:2] is the sub-list for method input_type
 	2, // [2:2] is the sub-list for extension type_name

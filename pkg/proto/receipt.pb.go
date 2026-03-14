@@ -350,6 +350,103 @@ func (x *Receipt) GetRHash() []byte {
 	return nil
 }
 
+type GetTransactionReceiptRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	TransactionHash []byte                 `protobuf:"bytes,1,opt,name=TransactionHash,proto3" json:"TransactionHash,omitempty"` // Hash của transaction cần lấy receipt
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *GetTransactionReceiptRequest) Reset() {
+	*x = GetTransactionReceiptRequest{}
+	mi := &file_receipt_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetTransactionReceiptRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetTransactionReceiptRequest) ProtoMessage() {}
+
+func (x *GetTransactionReceiptRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_receipt_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetTransactionReceiptRequest.ProtoReflect.Descriptor instead.
+func (*GetTransactionReceiptRequest) Descriptor() ([]byte, []int) {
+	return file_receipt_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *GetTransactionReceiptRequest) GetTransactionHash() []byte {
+	if x != nil {
+		return x.TransactionHash
+	}
+	return nil
+}
+
+// GetTransactionReceiptResponse - Response chứa receipt data
+type GetTransactionReceiptResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Receipt       *RpcReceipt            `protobuf:"bytes,1,opt,name=Receipt,proto3" json:"Receipt,omitempty"` // RpcReceipt (null nếu không tìm thấy)
+	Error         string                 `protobuf:"bytes,2,opt,name=Error,proto3" json:"Error,omitempty"`     // Error message nếu có lỗi
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetTransactionReceiptResponse) Reset() {
+	*x = GetTransactionReceiptResponse{}
+	mi := &file_receipt_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetTransactionReceiptResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetTransactionReceiptResponse) ProtoMessage() {}
+
+func (x *GetTransactionReceiptResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_receipt_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetTransactionReceiptResponse.ProtoReflect.Descriptor instead.
+func (*GetTransactionReceiptResponse) Descriptor() ([]byte, []int) {
+	return file_receipt_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *GetTransactionReceiptResponse) GetReceipt() *RpcReceipt {
+	if x != nil {
+		return x.Receipt
+	}
+	return nil
+}
+
+func (x *GetTransactionReceiptResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
 type Receipts struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Receipts      []*Receipt             `protobuf:"bytes,1,rep,name=Receipts,proto3" json:"Receipts,omitempty"`
@@ -359,7 +456,7 @@ type Receipts struct {
 
 func (x *Receipts) Reset() {
 	*x = Receipts{}
-	mi := &file_receipt_proto_msgTypes[1]
+	mi := &file_receipt_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -371,7 +468,7 @@ func (x *Receipts) String() string {
 func (*Receipts) ProtoMessage() {}
 
 func (x *Receipts) ProtoReflect() protoreflect.Message {
-	mi := &file_receipt_proto_msgTypes[1]
+	mi := &file_receipt_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -384,7 +481,7 @@ func (x *Receipts) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Receipts.ProtoReflect.Descriptor instead.
 func (*Receipts) Descriptor() ([]byte, []int) {
-	return file_receipt_proto_rawDescGZIP(), []int{1}
+	return file_receipt_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Receipts) GetReceipts() []*Receipt {
@@ -398,7 +495,7 @@ var File_receipt_proto protoreflect.FileDescriptor
 
 const file_receipt_proto_rawDesc = "" +
 	"\n" +
-	"\rreceipt.proto\x12\areceipt\x1a\x0fevent_log.proto\"\xf7\x03\n" +
+	"\rreceipt.proto\x12\areceipt\x1a\x0fevent_log.proto\x1a\x11rpc_receipt.proto\"\xf7\x03\n" +
 	"\aReceipt\x12(\n" +
 	"\x0fTransactionHash\x18\x01 \x01(\fR\x0fTransactionHash\x12 \n" +
 	"\vFromAddress\x18\x02 \x01(\fR\vFromAddress\x12\x1c\n" +
@@ -413,7 +510,12 @@ const file_receipt_proto_rawDesc = "" +
 	"\tEventLogs\x18\v \x03(\v2\x13.event_log.EventLogR\tEventLogs\x12*\n" +
 	"\x10TransactionIndex\x18\f \x01(\x04R\x10TransactionIndex\x12H\n" +
 	"\x0eProcessingType\x18\r \x01(\x0e2 .receipt.RECEIPT_PROCESSING_TYPER\x0eProcessingType\x12\x14\n" +
-	"\x05RHash\x18\x0e \x01(\fR\x05RHash\"8\n" +
+	"\x05RHash\x18\x0e \x01(\fR\x05RHash\"H\n" +
+	"\x1cGetTransactionReceiptRequest\x12(\n" +
+	"\x0fTransactionHash\x18\x01 \x01(\fR\x0fTransactionHash\"h\n" +
+	"\x1dGetTransactionReceiptResponse\x121\n" +
+	"\aReceipt\x18\x01 \x01(\v2\x17.rpc_request.RpcReceiptR\aReceipt\x12\x14\n" +
+	"\x05Error\x18\x02 \x01(\tR\x05Error\"8\n" +
 	"\bReceipts\x12,\n" +
 	"\bReceipts\x18\x01 \x03(\v2\x10.receipt.ReceiptR\bReceipts*T\n" +
 	"\x17RECEIPT_PROCESSING_TYPE\x12\x1c\n" +
@@ -459,26 +561,30 @@ func file_receipt_proto_rawDescGZIP() []byte {
 }
 
 var file_receipt_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_receipt_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_receipt_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_receipt_proto_goTypes = []any{
-	(RECEIPT_PROCESSING_TYPE)(0), // 0: receipt.RECEIPT_PROCESSING_TYPE
-	(RECEIPT_STATUS)(0),          // 1: receipt.RECEIPT_STATUS
-	(EXCEPTION)(0),               // 2: receipt.EXCEPTION
-	(*Receipt)(nil),              // 3: receipt.Receipt
-	(*Receipts)(nil),             // 4: receipt.Receipts
-	(*EventLog)(nil),             // 5: event_log.EventLog
+	(RECEIPT_PROCESSING_TYPE)(0),          // 0: receipt.RECEIPT_PROCESSING_TYPE
+	(RECEIPT_STATUS)(0),                   // 1: receipt.RECEIPT_STATUS
+	(EXCEPTION)(0),                        // 2: receipt.EXCEPTION
+	(*Receipt)(nil),                       // 3: receipt.Receipt
+	(*GetTransactionReceiptRequest)(nil),  // 4: receipt.GetTransactionReceiptRequest
+	(*GetTransactionReceiptResponse)(nil), // 5: receipt.GetTransactionReceiptResponse
+	(*Receipts)(nil),                      // 6: receipt.Receipts
+	(*EventLog)(nil),                      // 7: event_log.EventLog
+	(*RpcReceipt)(nil),                    // 8: rpc_request.RpcReceipt
 }
 var file_receipt_proto_depIdxs = []int32{
 	1, // 0: receipt.Receipt.Status:type_name -> receipt.RECEIPT_STATUS
 	2, // 1: receipt.Receipt.Exception:type_name -> receipt.EXCEPTION
-	5, // 2: receipt.Receipt.EventLogs:type_name -> event_log.EventLog
+	7, // 2: receipt.Receipt.EventLogs:type_name -> event_log.EventLog
 	0, // 3: receipt.Receipt.ProcessingType:type_name -> receipt.RECEIPT_PROCESSING_TYPE
-	3, // 4: receipt.Receipts.Receipts:type_name -> receipt.Receipt
-	5, // [5:5] is the sub-list for method output_type
-	5, // [5:5] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	8, // 4: receipt.GetTransactionReceiptResponse.Receipt:type_name -> rpc_request.RpcReceipt
+	3, // 5: receipt.Receipts.Receipts:type_name -> receipt.Receipt
+	6, // [6:6] is the sub-list for method output_type
+	6, // [6:6] is the sub-list for method input_type
+	6, // [6:6] is the sub-list for extension type_name
+	6, // [6:6] is the sub-list for extension extendee
+	0, // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_receipt_proto_init() }
@@ -487,13 +593,14 @@ func file_receipt_proto_init() {
 		return
 	}
 	file_event_log_proto_init()
+	file_rpc_receipt_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_receipt_proto_rawDesc), len(file_receipt_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   2,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -817,7 +817,6 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTx(
 			return nil, nil, nil, fmt.Errorf("Contract is not allowed: %v", err)
 		}
 	}
-
 	deviceKey, err := c.GetDeviceKey(as.LastHash())
 	if err != nil {
 		logger.Info("lỗi khi get deviceKey", err)

@@ -4,12 +4,13 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/client-tcp/command"
-	"github.com/meta-node-blockchain/meta-node/pkg/logger"
+	"github.com/meta-node-blockchain/meta-node/tcp-rpc/client-tcp/command"
 	"github.com/meta-node-blockchain/meta-node/pkg/loggerfile"
+	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	pb "github.com/meta-node-blockchain/meta-node/pkg/proto"
 	"github.com/meta-node-blockchain/meta-node/pkg/receipt"
 	"github.com/meta-node-blockchain/meta-node/pkg/smart_contract"
@@ -18,6 +19,7 @@ import (
 	"github.com/meta-node-blockchain/meta-node/pkg/transaction"
 	"github.com/meta-node-blockchain/meta-node/types"
 	"github.com/meta-node-blockchain/meta-node/types/network"
+	"google.golang.org/protobuf/proto"
 )
 
 var ErrorCommandNotFound = errors.New("command not found")
@@ -26,16 +28,19 @@ type Handler struct {
 	accountStateChan     chan types.AccountState
 	receiptChan          chan types.Receipt
 	eventLogChan         chan types.EventLogs
-	transactionErrorChan chan types.TransactionError
+	transactionErrorChan chan *transaction.TransactionHashWithError
 	deviceKeyChan        chan types.LastDeviceKey
 	nonceChan            chan uint64
+	pendingRpcRequests   *sync.Map       // map[string]chan *pb.RpcResponse
+	pendingChainRequests *sync.Map       // map[string]chan []byte — chain-direct responses
+	eventCallbacks       sync.Map        // map[subscriptionID]func([]byte)
 }
 
 func NewHandler(
 	accountStateChan chan types.AccountState,
 	receiptChan chan types.Receipt,
 	deviceKeyChan chan types.LastDeviceKey,
-	transactionErrorChan chan types.TransactionError,
+	transactionErrorChan chan *transaction.TransactionHashWithError,
 	nonceChan chan uint64,
 ) *Handler {
 	return &Handler{
@@ -59,14 +64,7 @@ func (h *Handler) HandleRequest(request network.Request) (err error) {
 	case command.Nonce:
 		return h.handleNonce(request)
 	case command.TransactionError:
-		transactionError := &transaction.TransactionHashWithError{}
-		_ = transactionError.Unmarshal(request.Message().Body())
-		logger.Error("TransactionError Code : %v", transactionError.Proto().Code)
-		logger.Error("TransactionError Output : %v", common.Bytes2Hex(transactionError.Proto().Output))
-		logger.Error("TransactionError Description: %v", transactionError.Proto().Description)
-		logger.Error("TransactionError Hash: %v", common.BytesToHash(transactionError.Proto().Hash))
-
-		return nil
+		return h.handleTransactionError(request)
 	case command.Receipt:
 		return h.handleReceipt(request)
 	case command.DeviceKey:
@@ -81,6 +79,14 @@ func (h *Handler) HandleRequest(request network.Request) (err error) {
 	case command.ServerBusy:
 		logger.Error("ServerBusy")
 		return nil
+	case command.RpcResponse:
+		return h.handleRpcResponse(request)
+	case command.RpcEvent:
+		return h.handleRpcEvent(request)
+
+	// Chain-direct responses — dispatch bằng header ID
+	case command.ChainId, command.TransactionReceipt, command.BlockNumber:
+		return h.handleChainResponse(request)
 	}
 	return ErrorCommandNotFound
 }
@@ -91,6 +97,14 @@ func (h *Handler) SetEventLogsChan(ch chan types.EventLogs) {
 
 func (h *Handler) GetEventLogsChan() chan types.EventLogs {
 	return h.eventLogChan
+}
+
+func (h *Handler) SetPendingRpcRequests(pending *sync.Map) {
+	h.pendingRpcRequests = pending
+}
+
+func (h *Handler) SetPendingChainRequests(pending *sync.Map) {
+	h.pendingChainRequests = pending
 }
 
 /*
@@ -132,7 +146,16 @@ func (h *Handler) handleAccountState(request network.Request) (err error) {
 	h.accountStateChan <- accountState
 	return nil
 }
-
+func (h *Handler) handleTransactionError(request network.Request) (err error) {
+	transactionError := &transaction.TransactionHashWithError{}
+	err = transactionError.Unmarshal(request.Message().Body())
+	if err != nil {
+		return err
+	}
+	// logger.Debug(fmt.Sprintf("Receive Account state: \n%v", accountState))
+	h.transactionErrorChan <- transactionError
+	return nil
+}
 func (h *Handler) handleNonce(request network.Request) (err error) {
 	numBytes := request.Message().Body()
 	num := uint64(0)
@@ -187,6 +210,7 @@ func (h *Handler) handleReceipt(request network.Request) (err error) {
 	if err != nil {
 		return err
 	}
+	// Receipt sẽ được xử lý qua receiptChan, không cần log ở đây
 	if h.receiptChan != nil {
 		h.receiptChan <- receipt
 	} else {
@@ -232,5 +256,98 @@ func (h *Handler) handleStats(request network.Request) (err error) {
 		return err
 	}
 	logger.Info(fmt.Sprintf("Receive Stats: \n%v", stats))
+	return nil
+}
+
+// handleRpcResponse xử lý response từ RPC TCP server
+// Route response đến đúng caller dựa trên request ID
+func (h *Handler) handleRpcResponse(request network.Request) error {
+	resp := &pb.RpcResponse{}
+	if err := proto.Unmarshal(request.Message().Body(), resp); err != nil {
+		logger.Error("handleRpcResponse: unmarshal error: %v", err)
+		return err
+	}
+	// logger.Info("📥 Received RpcResponse: id=%s", resp.Id)
+
+	if h.pendingRpcRequests == nil {
+		logger.Warn("handleRpcResponse: pendingRpcRequests not set, dropping response")
+		return nil
+	}
+
+	// sync.Map: LoadAndDelete - lock-free, thread-safe
+	val, ok := h.pendingRpcRequests.LoadAndDelete(resp.Id)
+	if ok {
+		ch := val.(chan *pb.RpcResponse)
+		ch <- resp
+	} else {
+		logger.Warn("handleRpcResponse: no pending request for id=%s, dropping", resp.Id)
+	}
+	return nil
+}
+
+// handleRpcEvent xử lý subscription event push từ RPC server
+// Dispatch event đến callback tương ứng theo subscription_id
+func (h *Handler) handleRpcEvent(request network.Request) error {
+	event := &pb.RpcEvent{}
+	body := request.Message().Body()
+	if err := proto.Unmarshal(body, event); err != nil {
+		logger.Error("handleRpcEvent: unmarshal error: %v", err)
+		return err
+	}
+	addr := ""
+	if event.Log != nil {
+		addr = event.Log.Address
+	}
+	logger.Info("📡 Received RpcEvent: subId=%s, contract=%s", event.SubscriptionId, addr)
+
+	// Tìm callback theo subscription_id
+	if cb, ok := h.eventCallbacks.Load(event.SubscriptionId); ok {
+		cb.(func([]byte))(body)
+	} else {
+		logger.Warn("handleRpcEvent: no callback for subId=%s, dropping event", event.SubscriptionId)
+	}
+	return nil
+}
+
+// RegisterEventCallback đăng ký callback cho 1 subscription ID
+// Gọi sau khi RpcSubscribe trả về subID
+func (h *Handler) RegisterEventCallback(subID string, cb func([]byte)) {
+	h.eventCallbacks.Store(subID, cb)
+}
+
+// RemoveEventCallback xoá callback khi unsubscribe
+func (h *Handler) RemoveEventCallback(subID string) {
+	h.eventCallbacks.Delete(subID)
+}
+
+// SetEventCallback backward compat — dùng key "_default"
+func (h *Handler) SetEventCallback(cb func([]byte)) {
+	h.eventCallbacks.Store("_default", cb)
+}
+
+// AddEventCallback backward compat — dùng key tự tăng
+func (h *Handler) AddEventCallback(cb func([]byte)) {
+	h.eventCallbacks.Store("_default", cb)
+}
+
+// handleChainResponse xử lý response từ chain trực tiếp (ChainId, TransactionReceipt, BlockNumber)
+// Dispatch bằng header ID — gửi raw body bytes vào channel
+func (h *Handler) handleChainResponse(request network.Request) error {
+	msg := request.Message()
+	id := msg.ID()
+	body := msg.Body()
+
+	if h.pendingChainRequests == nil {
+		logger.Warn("handleChainResponse: pendingChainRequests not set, dropping")
+		return nil
+	}
+
+	val, ok := h.pendingChainRequests.LoadAndDelete(id)
+	if ok {
+		ch := val.(chan []byte)
+		ch <- body
+	} else {
+		logger.Warn("handleChainResponse: no pending request for id=%s cmd=%s", id, msg.Command())
+	}
 	return nil
 }

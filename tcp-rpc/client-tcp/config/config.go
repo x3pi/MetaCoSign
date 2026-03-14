@@ -2,8 +2,6 @@ package config
 
 import (
 	"encoding/json"
-	"errors"
-	"fmt"
 	"os"
 	"strings"
 
@@ -45,28 +43,11 @@ type ClientConfig struct {
 
 	// Supervisor fields (merged from config-1.json)
 	LogPath string `json:"log_path"`
-
-	// Demo contract config
-	CrossChainAbiPath_  string  `json:"cross_chain_abi_path"`
-	CrossChainContract_ string  `json:"cross_chain_contract"`
-	CrossChainAbi       abi.ABI `json:"-"` // Parsed ABI object
-
 	// Demo ABI config
 	DemoAbiPath_        string  `json:"demo_abi_path"`
 	DemoContractAddress string  `json:"demo_contract_address"`
 	DemoAbi             abi.ABI `json:"-"`
 	EthPrivateKey       string  `json:"eth_private_key"`
-
-	// Remote chains to listen events from (B, C, D...)
-	RemoteChains []RemoteChain `json:"remote_chains"`
-}
-
-func (c *ClientConfig) CrossChainAbiPath() string {
-	return c.CrossChainAbiPath_
-}
-
-func (c *ClientConfig) CrossChainContract() common.Address {
-	return common.HexToAddress(c.CrossChainContract_)
 }
 
 func (c *ClientConfig) ConnectionAddress() string {
@@ -83,22 +64,6 @@ func (c *ClientConfig) Version() string {
 
 func (c *ClientConfig) PrivateKey() []byte {
 	return common.FromHex(c.PrivateKey_)
-}
-
-// GetRemoteChainConnectionAddress tìm parent_connection_address theo nationId.
-// Tìm cả local chain (nếu nationIdStr == NationId) và remote chains.
-func (c *ClientConfig) GetRemoteChainConnectionAddress(nationIdStr string) string {
-	// Check local chain
-	if fmt.Sprintf("%d", c.NationId) == nationIdStr {
-		return c.ParentConnectionAddress
-	}
-	// Check remote chains
-	for _, rc := range c.RemoteChains {
-		if fmt.Sprintf("%d", rc.NationId) == nationIdStr {
-			return rc.ParentConnectionAddress
-		}
-	}
-	return ""
 }
 
 func (c *ClientConfig) Address() common.Address {
@@ -124,22 +89,6 @@ func LoadConfig(configPath string) (types.Config, error) {
 	config.TransactionFee = uint256.NewInt(0).SetBytes(common.FromHex(config.TransactionFeeHex))
 
 	// Load ABI file if path is specified
-	if config.CrossChainAbiPath_ != "" {
-		abiData, err := os.ReadFile(config.CrossChainAbiPath_)
-		if err != nil {
-			return nil, err
-		}
-		// Parse ABI JSON into abi.ABI object
-		parsedAbi, err := abi.JSON(strings.NewReader(string(abiData)))
-		if err != nil {
-			logger.Error("Failed to parse ABI JSON: %v", err)
-			return nil, err
-		}
-		config.CrossChainAbi = parsedAbi
-	} else {
-		logger.Error("CrossChainAbiPath is empty")
-		return nil, errors.New("CrossChainAbiPath is empty")
-	}
 
 	// Load Demo ABI if path is specified
 	if config.DemoAbiPath_ != "" {

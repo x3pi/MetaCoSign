@@ -40,7 +40,19 @@ const (
 	RpcEthChainId            = "eth_chainId"            // eth_chainId
 	RpcEthSendRawTransaction = "eth_sendRawTransaction" // eth_sendRawTransaction
 
+	// TCP-direct commands (RPC Server → TCP → Chain, không dùng HTTP)
+	TcpGetChainId = "tcp_getChainId"
+
 	// RPC TCP Response/Event - nhận từ RPC server
 	RpcResponse = "RpcResponse"
 	RpcEvent    = "RpcEvent" // eth_subscription event push từ server
+
+	// Chain-direct commands — gửi thẳng lên chain, không qua RPC proxy
+	// Dùng header ID để match request/response
+	GetChainId           = "GetChainId"
+	ChainId              = "ChainId"
+	GetTransactionReceipt = "GetTransactionReceipt"
+	TransactionReceipt    = "TransactionReceipt"
+	GetBlockNumber        = "GetBlockNumber"
+	BlockNumber           = "BlockNumber"
 )

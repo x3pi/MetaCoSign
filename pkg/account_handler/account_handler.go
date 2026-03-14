@@ -200,18 +200,6 @@ func (h *AccountHandlerNoReceipt) handleConfirmAccountWithoutSign(
 		return "", fmt.Errorf("lỗi khi unpack input data: %v", err)
 	}
 	accountAddress, _ := args[0].(ethCommon.Address)
-	// timestamp, _ := args[1].(*big.Int)
-	// signatureBytes, _ := args[2].([]byte)
-
-	// Verify timestamp
-	// if err := h.verifyTimestamp(timestamp); err != nil {
-	// 	return "", err
-	// }
-	// Build and verify signature
-	// message := buildMessageWithTimestamp(accountAddress.Bytes(), timestamp)
-	// if err := h.verifyOwnerSignature(message, signatureBytes); err != nil {
-	// 	return "", err
-	// }
 	currentTime := time.Now().Unix()
 	pendingTx, err := h.storage.GetPendingTransaction(accountAddress)
 	if err != nil {
@@ -282,6 +270,14 @@ func (h *AccountHandlerNoReceipt) handleConfirmAccountWithoutSign(
 	if rs.Error != nil {
 		return "", fmt.Errorf("failed to send transaction: %v", rs.Error)
 	}
+
+	// 6. Chờ Receipt (đảm bảo transaction đã lên block trước khi xử lý tx tiếp theo)
+	newTxHash := rs.Result.(string)
+	_, err = h.appCtx.ClientRpc.WaitForReceipt(newTxHash, 30*time.Second)
+	if err != nil {
+		logger.Error("Wait for confirm account receipt error: %v", err)
+	}
+
 	if h.appCtx.Cfg.RewardAmount != nil && h.appCtx.Cfg.RewardAmount.Cmp(big.NewInt(0)) > 0 {
 		metaTxData, _, releaseFunc, err := h.appCtx.ClientRpc.BuildTransferTransaction(ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress), ethCommon.Address(pendingTx.Address), h.appCtx.Cfg.RewardAmount)
 		if err != nil {
@@ -422,6 +418,14 @@ func (h *AccountHandlerNoReceipt) handleConfirmAccount(
 	if rs.Error != nil {
 		return "", fmt.Errorf("failed to send transaction: %v", rs.Error)
 	}
+
+	// 6. Chờ Receipt
+	newTxHash := rs.Result.(string)
+	_, err = h.appCtx.ClientRpc.WaitForReceipt(newTxHash, 30*time.Second)
+	if err != nil {
+		logger.Error("Wait for confirm account receipt error: %v", err)
+	}
+
 	if h.appCtx.Cfg.RewardAmount != nil && h.appCtx.Cfg.RewardAmount.Cmp(big.NewInt(0)) > 0 {
 		metaTxData, _, releaseFunc, err := h.appCtx.ClientRpc.BuildTransferTransaction(ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress), ethCommon.Address(pendingTx.Address), h.appCtx.Cfg.RewardAmount)
 		if err != nil {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -37,11 +38,12 @@ type Client struct {
 	deviceKeyChan    chan types.LastDeviceKey
 	nonce            chan uint64
 
-	transactionErrorChan  chan types.TransactionError
+	transactionErrorChan  chan *mt_transaction.TransactionHashWithError
 	transactionController client_types.TransactionController
 	subscribeSCAddresses  []common.Address
 
-	keepAliveStop chan struct{}
+	keepAliveStop        chan struct{}
+	pendingChainRequests sync.Map // map[string]chan []byte — chain-direct (header ID matching)
 }
 
 type receiptRequestType int
@@ -82,7 +84,7 @@ func NewClient(
 		receiptRequests:  make(chan receiptRequest),
 		deviceKeyChan:    make(chan types.LastDeviceKey, 1),
 
-		transactionErrorChan: make(chan types.TransactionError, 1),
+		transactionErrorChan: make(chan *mt_transaction.TransactionHashWithError, 1),
 		nonce:                make(chan uint64, 1),
 	}
 
@@ -107,6 +109,7 @@ func NewClient(
 		client.transactionErrorChan,
 		client.nonce,
 	)
+	clientContext.Handler.SetPendingChainRequests(&client.pendingChainRequests)
 	clientContext.SocketServer, _ = p_network.NewSocketServer(
 		nil,
 		clientContext.KeyPair,
@@ -372,7 +375,7 @@ func (client *Client) SendTransaction(
 		return nil, err
 	}
 
-	receipt, err := client.waitReceipt(tx.Hash(), 10*time.Second)
+	receipt, err := client.waitReceipt(tx.Hash(), pendingReceiptTTL)
 	if err != nil {
 		logger.DebugP(err.Error())
 		return nil, err
@@ -509,7 +512,7 @@ func (client *Client) AddAccountForClient(privateKey string, chainId string) (ty
 		return nil, err
 	}
 
-	receipt, err := client.waitReceipt(tx.Hash(), 20*time.Second)
+	receipt, err := client.waitReceipt(tx.Hash(), pendingReceiptTTL)
 	if err != nil {
 		return nil, err
 	}
@@ -619,9 +622,6 @@ func (client *Client) SendTransactionWithDeviceKey(
 		command.GetAccountState,
 		fromAddress.Bytes(),
 	)
-	logger.Info("TcpRemoteAddr: %v", parentConn.TcpRemoteAddr())
-
-	logger.Info("TcpLocalAddr: %v", parentConn.TcpLocalAddr())
 	// Lắng nghe tài khoản trong kênh accountStateChan bằng for range
 	for as := range client.accountStateChan {
 		// Nếu không phải tài khoản mong muốn, tiếp tục lắng nghe mà không bỏ dữ liệu
@@ -685,7 +685,7 @@ func (client *Client) SendTransactionWithDeviceKey(
 		}
 
 		// Chờ biên lai giao dịch (receipt)
-		receipt, err := client.waitReceipt(tx.Hash(), 0)
+		receipt, err := client.waitReceipt(tx.Hash(), pendingReceiptTTL)
 		if err != nil {
 			return nil, err
 		}
@@ -858,7 +858,7 @@ func NewStorageClient(
 		accountStateChan:     make(chan types.AccountState, 1),
 		receiptChan:          make(chan types.Receipt, 1),
 		receiptRequests:      make(chan receiptRequest),
-		transactionErrorChan: make(chan types.TransactionError, 1),
+		transactionErrorChan: make(chan *mt_transaction.TransactionHashWithError, 1),
 		subscribeSCAddresses: listSCAddress,
 	}
 
@@ -1104,7 +1104,7 @@ func (client *Client) SendTransactionWithFullInfo(
 			return nil, err
 		}
 
-		receipt, err := client.waitReceipt(tx.Hash(), 0)
+		receipt, err := client.waitReceipt(tx.Hash(), pendingReceiptTTL)
 		if err != nil {
 			return nil, err
 		}

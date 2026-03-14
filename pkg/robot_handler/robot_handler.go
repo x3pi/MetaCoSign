@@ -18,7 +18,6 @@ import (
 	"github.com/meta-node-blockchain/meta-node/pkg/bls"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	"github.com/meta-node-blockchain/meta-node/pkg/robot_handler/abi_robot"
-	"github.com/meta-node-blockchain/meta-node/pkg/rpc_client"
 	utilsPkg "github.com/meta-node-blockchain/meta-node/pkg/utils"
 	mt_types "github.com/meta-node-blockchain/meta-node/types"
 )
@@ -490,7 +489,7 @@ func (h *RobotHandler) executeSingleTransaction(
 	}
 
 	// 6. Chờ Receipt (đảm bảo transaction đã lên block trước khi xử lý tx tiếp theo)
-	_, err = h.waitForReceipt(newTxHash, 30*time.Second)
+	_, err = h.appCtx.ClientRpc.WaitForReceipt(newTxHash, 30*time.Second)
 	if err != nil {
 		return fmt.Errorf("wait for receipt timeout/error: %w", err)
 	}
@@ -554,68 +553,4 @@ func (h *RobotHandler) broadcastEvent(
 	return nil
 }
 
-// waitForReceipt chờ receipt từ RPC với timeout 30s
-func (h *RobotHandler) waitForReceipt(txHash string, timeout time.Duration) (map[string]interface{}, error) {
-	startTime := time.Now()
-	checkInterval := 100 * time.Millisecond // Check mỗi 500ms
-	maxAttempts := int(timeout / checkInterval)
 
-	for attempt := 0; attempt < maxAttempts; attempt++ {
-		// Gọi RPC eth_getTransactionReceipt trực tiếp
-		request := &rpc_client.JSONRPCRequest{
-			Jsonrpc: "2.0",
-			Method:  "eth_getTransactionReceipt",
-			Params:  []interface{}{txHash},
-			Id:      1,
-		}
-
-		response := h.appCtx.ClientRpc.SendHTTPRequest(request)
-
-		// Nếu có lỗi, kiểm tra xem có phải là "not found" không
-		if response.Error != nil {
-			// Nếu lỗi là "not found" hoặc transaction chưa được mined, tiếp tục chờ
-			if strings.Contains(response.Error.Message, "not found") ||
-				strings.Contains(response.Error.Message, "Not Found") ||
-				strings.Contains(strings.ToLower(response.Error.Message), "pending") {
-				time.Sleep(checkInterval)
-				continue
-			}
-			return nil, fmt.Errorf("RPC error: %s", response.Error.Message)
-		}
-
-		// Nếu có result và không null, transaction đã được mined
-		if response.Result != nil {
-			// Kiểm tra xem result có phải là null không (JSON null)
-			resultStr := fmt.Sprintf("%v", response.Result)
-			if resultStr == "<nil>" || resultStr == "null" || resultStr == "" {
-				// Receipt chưa có, tiếp tục chờ
-				time.Sleep(checkInterval)
-				continue
-			}
-			// Parse receipt
-			receiptBytes, err := json.Marshal(response.Result)
-			if err != nil {
-				return nil, fmt.Errorf("failed to marshal receipt: %w", err)
-			}
-
-			var receipt map[string]interface{}
-			if err := json.Unmarshal(receiptBytes, &receipt); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal receipt: %w", err)
-			}
-
-			// Kiểm tra xem receipt có hợp lệ không (có blockNumber)
-			if blockNumber, ok := receipt["blockNumber"]; ok && blockNumber != nil {
-				return receipt, nil
-			}
-			// Receipt không hợp lệ, tiếp tục chờ
-			time.Sleep(checkInterval)
-			continue
-		}
-
-		// Không có result, tiếp tục chờ
-		time.Sleep(checkInterval)
-	}
-
-	elapsed := time.Since(startTime)
-	return nil, fmt.Errorf("timeout (%v) waiting for receipt with txHash %s", elapsed, txHash)
-}

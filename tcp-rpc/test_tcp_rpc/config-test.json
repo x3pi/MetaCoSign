@@ -5,11 +5,9 @@
   "chain_id": 991,
   "nation_id": 1,
   "parent_connection_type": "client",
-  "parent_address": "0x0b143e894a600114c4a3729874214e5fc5ea9cbc",
-  "eth_private_key":"48d0959736be4999d4fcfce48423e2e0f98610663ae3ee87f879eb69f74a0746",
-  "cross_chain_abi_path": "../pkg/abi/cross_chain_abi.json",
+  "parent_address": "0x781E6EC6EBDCA11Be4B53865a34C0c7f10b6da6e",
+  "eth_private_key":"992d48ebc2dbeb5fa65b53f5727a1c3f7c9d4730bab45d0fc6166c5481671d0f",
   "demo_abi_path": "../pkg/abi/demo_abi.json",
-  "demo_contract_address":"0xc6b68b40fee85f896e3Da5c8D3C2af2dA78dDD4d",
-  "contact_private":"0x00000000000000000000000000000000D844bb55",
-  "remote_chains": []
+  "demo_contract_address":"0xe18c204168d5C75E78D0b149d5E5C4c8Fb84Def2",
+  "contact_private":"0x00000000000000000000000000000000D844bb55"
 }

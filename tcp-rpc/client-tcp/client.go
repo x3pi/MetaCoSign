@@ -47,8 +47,9 @@ type Client struct {
 	transactionController client_types.TransactionController
 	subscribeSCAddresses  []common.Address
 
-	keepAliveStop      chan struct{}
-	pendingRpcRequests sync.Map // map[string]chan *pb.RpcResponse
+	keepAliveStop        chan struct{}
+	pendingRpcRequests   sync.Map // map[string]chan *pb.RpcResponse  — cho RPC proxy
+	pendingChainRequests sync.Map // map[string]chan []byte           — cho chain-direct (header ID matching)
 }
 
 type receiptRequestType int
@@ -75,6 +76,7 @@ type receiptRequest struct {
 const (
 	pendingReceiptTTL        = 60 * time.Second
 	defaultKeepAliveInterval = 30 * time.Second
+	defaultRpcTimeout        = 60 * time.Second
 )
 
 type pendingReceipt struct {
@@ -124,6 +126,7 @@ func NewClient(
 	)
 	// Set pending RPC requests vào handler (sync.Map)
 	clientContext.Handler.SetPendingRpcRequests(&client.pendingRpcRequests)
+	clientContext.Handler.SetPendingChainRequests(&client.pendingChainRequests)
 	clientContext.SocketServer, _ = p_network.NewSocketServer(
 		nil,
 		clientContext.KeyPair,
@@ -197,7 +200,7 @@ func (client *Client) sendRpcRequest(cmd string, body []byte, timeout time.Durat
 	if parentConn == nil || !parentConn.IsConnect() {
 		return nil, fmt.Errorf("parent connection not available")
 	}
-
+	// logger.Info("📤 Sending %s to RPC TCP server... (wallet=%s)", cmd, client.clientContext.Config.ParentAddress)
 	// Tạo UUID riêng cho request
 	reqID := uuid.New().String()
 	respCh := make(chan *pb.RpcResponse, 1)
@@ -206,11 +209,11 @@ func (client *Client) sendRpcRequest(cmd string, body []byte, timeout time.Durat
 	client.pendingRpcRequests.Store(reqID, respCh)
 
 	// Tạo message proto với ID tự chọn
+	walletAddr := common.HexToAddress(client.clientContext.Config.ParentAddress)
 	msg := p_network.NewMessage(&pb.Message{
 		Header: &pb.Header{
 			Command:   cmd,
-			Version:   client.clientContext.Config.Version(),
-			ToAddress: parentConn.Address().Bytes(),
+			ToAddress: walletAddr.Bytes(),
 			ID:        reqID,
 		},
 		Body: body,
@@ -235,26 +238,9 @@ func (client *Client) sendRpcRequest(cmd string, body []byte, timeout time.Durat
 	}
 }
 
-// RpcNetVersion gửi command NetVersion qua TCP và trả về chain ID
-func (client *Client) RpcNetVersion() (string, error) {
-	resp, err := client.sendRpcRequest(command.RpcNetVersion, nil, 10*time.Second)
-	if err != nil {
-		return "", err
-	}
-	if resp.Error != nil {
-		return "", fmt.Errorf("RPC error: code=%d, message=%s", resp.Error.Code, resp.Error.Message)
-	}
-	var chainId string
-	if err := json.Unmarshal(resp.Result, &chainId); err != nil {
-		return string(resp.Result), nil
-	}
-	logger.Info("✅ RpcNetVersion result: %s", chainId)
-	return chainId, nil
-}
-
-// RpcGetChainId gửi command EthChainId qua TCP - trả về hex (ví dụ: "0x3df")
+// RpcGetChainId gửi command eth_getChainId qua TCP
 func (client *Client) RpcGetChainId() (string, error) {
-	resp, err := client.sendRpcRequest(command.RpcEthChainId, nil, 10*time.Second)
+	resp, err := client.sendRpcRequest("eth_getChainId", nil, defaultRpcTimeout)
 	if err != nil {
 		return "", err
 	}
@@ -272,7 +258,7 @@ func (client *Client) RpcGetChainId() (string, error) {
 // RpcSendRawTransaction gửi raw transaction hex qua TCP
 func (client *Client) RpcSendRawTransaction(rawTxHex string) (string, error) {
 	params, _ := json.Marshal([]string{rawTxHex})
-	resp, err := client.sendRpcRequest(command.RpcEthSendRawTransaction, params, 30*time.Second)
+	resp, err := client.sendRpcRequest("eth_sendRawTransaction", params, defaultRpcTimeout)
 	if err != nil {
 		return "", err
 	}
@@ -288,27 +274,6 @@ func (client *Client) RpcSendRawTransaction(rawTxHex string) (string, error) {
 	return txHash, nil
 }
 
-// RpcGetPendingNonce lấy pending nonce cho address qua TCP
-func (client *Client) RpcGetPendingNonce(address common.Address) (uint64, error) {
-	params, _ := json.Marshal([]interface{}{address.Hex(), "pending"})
-	resp, err := client.sendRpcRequest("eth_getTransactionCount", params, 20*time.Second)
-	if err != nil {
-		return 0, err
-	}
-	if resp.Error != nil {
-		return 0, fmt.Errorf("RPC error: code=%d, message=%s", resp.Error.Code, resp.Error.Message)
-	}
-	var nonceHex string
-	if err := json.Unmarshal(resp.Result, &nonceHex); err != nil {
-		return 0, fmt.Errorf("failed to parse nonce result: %w", err)
-	}
-	nonce := new(big.Int)
-	nonceHex = strings.TrimPrefix(nonceHex, "0x")
-	nonce.SetString(nonceHex, 16)
-	logger.Info("✅ RpcGetPendingNonce for %s: %d", address.Hex(), nonce.Uint64())
-	return nonce.Uint64(), nil
-}
-
 // RpcEthCall gọi eth_call qua TCP (đọc contract, không tạo giao dịch)
 // to: contract address, data: ABI-encoded function call
 func (client *Client) RpcEthCall(to common.Address, data []byte) ([]byte, error) {
@@ -317,7 +282,7 @@ func (client *Client) RpcEthCall(to common.Address, data []byte) ([]byte, error)
 		"data": "0x" + hex.EncodeToString(data),
 	}
 	params, _ := json.Marshal([]interface{}{callObj, "latest"})
-	resp, err := client.sendRpcRequest("eth_call", params, 20*time.Second)
+	resp, err := client.sendRpcRequest("eth_call", params, defaultRpcTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -338,11 +303,31 @@ func (client *Client) RpcEthCall(to common.Address, data []byte) ([]byte, error)
 	return resultBytes, nil
 }
 
+// RpcGetPendingNonce lấy pending nonce cho address qua TCP
+func (client *Client) RpcGetPendingNonce(address common.Address) (uint64, error) {
+	params, _ := json.Marshal([]interface{}{address.Hex(), "pending"})
+	resp, err := client.sendRpcRequest("eth_getTransactionCount", params, defaultRpcTimeout)
+	if err != nil {
+		return 0, err
+	}
+	if resp.Error != nil {
+		return 0, fmt.Errorf("RPC error: code=%d, message=%s", resp.Error.Code, resp.Error.Message)
+	}
+	var nonceHex string
+	if err := json.Unmarshal(resp.Result, &nonceHex); err != nil {
+		return 0, fmt.Errorf("failed to parse nonce result: %w", err)
+	}
+	nonce := new(big.Int)
+	nonceHex = strings.TrimPrefix(nonceHex, "0x")
+	nonce.SetString(nonceHex, 16)
+	return nonce.Uint64(), nil
+}
+
 // RpcGetTransactionReceipt lấy receipt của transaction qua TCP
 // Trả về *pb.RpcReceipt (protobuf) - nil nếu receipt chưa có
 func (client *Client) RpcGetTransactionReceipt(txHash string) (*pb.RpcReceipt, error) {
 	params, _ := json.Marshal([]string{txHash})
-	resp, err := client.sendRpcRequest("eth_getTransactionReceipt", params, 15*time.Second)
+	resp, err := client.sendRpcRequest("eth_getTransactionReceipt", params, defaultRpcTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -382,7 +367,7 @@ func (client *Client) RpcSubscribe(contractAddrs []string, topics []string, call
 	}
 
 	params, _ := json.Marshal([]interface{}{"logs", filter})
-	resp, err := client.sendRpcRequest("eth_subscribe", params, 10*time.Second)
+	resp, err := client.sendRpcRequest("eth_subscribe", params, defaultRpcTimeout)
 	if err != nil {
 		return "", err
 	}
@@ -403,7 +388,7 @@ func (client *Client) RpcSubscribe(contractAddrs []string, topics []string, call
 // RpcUnsubscribe gửi eth_unsubscribe qua TCP + xoá callback
 func (client *Client) RpcUnsubscribe(subID string) (bool, error) {
 	params, _ := json.Marshal([]string{subID})
-	resp, err := client.sendRpcRequest("eth_unsubscribe", params, 10*time.Second)
+	resp, err := client.sendRpcRequest("eth_unsubscribe", params, defaultRpcTimeout)
 	if err != nil {
 		return false, err
 	}
@@ -419,19 +404,8 @@ func (client *Client) RpcUnsubscribe(subID string) (bool, error) {
 	return result, nil
 }
 
-// RpcCustomCall gửi bất kỳ RPC method nào qua TCP, trả về raw JSON result
-func (client *Client) RpcCustomCall(method string, params []byte, timeout time.Duration) (json.RawMessage, error) {
-	resp, err := client.sendRpcRequest(method, params, timeout)
-	if err != nil {
-		return nil, err
-	}
-	if resp.Error != nil {
-		return nil, fmt.Errorf("RPC error: code=%d, message=%s", resp.Error.Code, resp.Error.Message)
-	}
-	return json.RawMessage(resp.Result), nil
-}
-
 // ================================== END RPC======================================
+
 func (client *Client) startKeepAliveLoop() {
 	client.keepAliveStop = make(chan struct{})
 	go func() {
@@ -798,7 +772,8 @@ func (client *Client) ReadTransaction(
 		return nil, err
 	}
 	logger.Info("[Client] Tx Hash : %v", tx.Hash().Hex())
-	receipt, err := client.FindReceiptByHashWithType(tx.Hash(), matchByReceiptHash)
+	// cần sửa ở version cũ
+	receipt, err := client.FindReceiptByHash(tx.Hash())
 	if err != nil {
 		return nil, err
 	}

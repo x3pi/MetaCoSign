@@ -114,7 +114,6 @@ func (x *BlsAccountData) GetConfirmTxHash() []byte {
 	return nil
 }
 
-// PendingTransaction lưu giao dịch chưa confirm
 type PendingTransaction struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	Address           []byte                 `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
@@ -123,6 +122,8 @@ type PendingTransaction struct {
 	CreatedAt         int64                  `protobuf:"varint,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	Nonce             uint64                 `protobuf:"varint,5,opt,name=nonce,proto3" json:"nonce,omitempty"`
 	OriginalGasPrice  uint64                 `protobuf:"varint,6,opt,name=original_gas_price,json=originalGasPrice,proto3" json:"original_gas_price,omitempty"`
+	BTx               []byte                 `protobuf:"bytes,7,opt,name=b_tx,json=bTx,proto3" json:"b_tx,omitempty"`                  // Lưu sẵn bTx đã build (meta-node tx bytes)
+	MtTxHash          []byte                 `protobuf:"bytes,8,opt,name=mt_tx_hash,json=mtTxHash,proto3" json:"mt_tx_hash,omitempty"` // Lưu sẵn hash của meta-node tx
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -197,6 +198,20 @@ func (x *PendingTransaction) GetOriginalGasPrice() uint64 {
 		return x.OriginalGasPrice
 	}
 	return 0
+}
+
+func (x *PendingTransaction) GetBTx() []byte {
+	if x != nil {
+		return x.BTx
+	}
+	return nil
+}
+
+func (x *PendingTransaction) GetMtTxHash() []byte {
+	if x != nil {
+		return x.MtTxHash
+	}
+	return nil
 }
 
 type Notification struct {
@@ -355,7 +370,7 @@ const file_bls_account_proto_rawDesc = "" +
 	"\x10register_tx_hash\x18\x04 \x01(\fR\x0eregisterTxHash\x12!\n" +
 	"\fis_confirmed\x18\x05 \x01(\bR\visConfirmed\x12!\n" +
 	"\fconfirmed_at\x18\x06 \x01(\x03R\vconfirmedAt\x12&\n" +
-	"\x0fconfirm_tx_hash\x18\a \x01(\fR\rconfirmTxHash\"\xe7\x01\n" +
+	"\x0fconfirm_tx_hash\x18\a \x01(\fR\rconfirmTxHash\"\x98\x02\n" +
 	"\x12PendingTransaction\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\fR\aaddress\x12$\n" +
 	"\x0ebls_public_key\x18\x02 \x01(\fR\fblsPublicKey\x12.\n" +
@@ -363,7 +378,10 @@ const file_bls_account_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x04 \x01(\x03R\tcreatedAt\x12\x14\n" +
 	"\x05nonce\x18\x05 \x01(\x04R\x05nonce\x12,\n" +
-	"\x12original_gas_price\x18\x06 \x01(\x04R\x10originalGasPrice\"\x80\x01\n" +
+	"\x12original_gas_price\x18\x06 \x01(\x04R\x10originalGasPrice\x12\x11\n" +
+	"\x04b_tx\x18\a \x01(\fR\x03bTx\x12\x1c\n" +
+	"\n" +
+	"mt_tx_hash\x18\b \x01(\fR\bmtTxHash\"\x80\x01\n" +
 	"\fNotification\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12'\n" +
 	"\x0faccount_address\x18\x02 \x01(\fR\x0eaccountAddress\x12\x18\n" +

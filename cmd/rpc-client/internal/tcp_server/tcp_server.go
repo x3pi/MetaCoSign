@@ -3,6 +3,7 @@ package tcp_server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -11,6 +12,8 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/app"
 	"github.com/meta-node-blockchain/meta-node/pkg/bls"
+	"github.com/meta-node-blockchain/meta-node/pkg/connection_manager"
+	"github.com/meta-node-blockchain/meta-node/pkg/connection_manager/connection_client"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	"github.com/meta-node-blockchain/meta-node/pkg/network"
 	t_network "github.com/meta-node-blockchain/meta-node/types/network"
@@ -30,7 +33,13 @@ type RpcTcpServer struct {
 	wsRelayMu          sync.Mutex              // bảo vệ wsRelayRunning
 	wsRelayCtx         context.Context         // context riêng cho WS relay
 	wsRelayCancel      context.CancelFunc      // cancel WS relay
+
+	// Per-address chain connections with TTL (2 min)
+	chainConnManager *connection_manager.ConnectionManager
 }
+
+// chainConnTTL is the TTL for per-address chain connections
+const chainConnTTL = 2 * time.Minute
 
 // RpcHandler implements network.Handler interface
 type RpcHandler struct {
@@ -82,7 +91,7 @@ func New(appCtx *app.Context) (*RpcTcpServer, error) {
 	socketServer.AddOnDisconnectedCallBack(func(conn t_network.Connection) {
 		srv.OnConnectionClosed(conn)
 	})
-
+	srv.chainConnManager = connection_manager.NewConnectionManager(socketServer, srv.messageSender)
 	logger.Info("🔌 TCP RPC Server initialized (with subscription support)")
 	return srv, nil
 }
@@ -90,8 +99,25 @@ func New(appCtx *app.Context) (*RpcTcpServer, error) {
 // ListenAndServe khởi động TCP server
 // WS relay chỉ start khi có subscription cho non-intercepted contracts (lazy)
 func (srv *RpcTcpServer) ListenAndServe(address string) error {
-	logger.Info("🔌 TCP RPC Server starting on %s", address)
 	return srv.socketServer.Listen(address)
+}
+
+// getOrCreateChainConn returns or creates a ConnectionClient for a specific fromAddress.
+// The connection is cached with a 2-minute TTL that resets on each access.
+func (srv *RpcTcpServer) getOrCreateChainConn(fromAddr string) (*connection_client.ConnectionClient, error) {
+	if srv.chainConnManager == nil {
+		return nil, fmt.Errorf("chainConnManager not initialized")
+	}
+	if srv.AppCtx.ClientTcp == nil {
+		return nil, fmt.Errorf("ClientTcp not configured")
+	}
+
+	cfg := srv.AppCtx.ClientTcp.GetClientContext().Config
+	chainAddr := cfg.ParentConnectionAddress
+	if chainAddr == "" {
+		return nil, fmt.Errorf("chain TCP address not configured")
+	}
+	return srv.chainConnManager.GetOrCreateConnectionClientWithTTL(fromAddr, chainAddr, chainConnTTL)
 }
 
 // Stop dừng TCP server

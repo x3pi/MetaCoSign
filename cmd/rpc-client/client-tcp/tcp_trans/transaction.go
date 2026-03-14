@@ -11,8 +11,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	ethCom "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/client-tcp"
-	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/client-tcp/command"
+	client "github.com/meta-node-blockchain/meta-node/cmd/rpc-client/client-tcp"
+	"github.com/meta-node-blockchain/meta-node/tcp-rpc/client-tcp/command"
 	tcp_config "github.com/meta-node-blockchain/meta-node/cmd/rpc-client/client-tcp/config"
 	"github.com/meta-node-blockchain/meta-node/pkg/file_handler/abi_file"
 	"github.com/meta-node-blockchain/meta-node/pkg/models/file_model"
@@ -43,6 +43,7 @@ func GetFileInfoTransaction(c *client.Client, config *tcp_config.ClientConfig, f
 	if err != nil {
 		return nil, fmt.Errorf("lỗi parse fileInfo: %v", err)
 	}
+
 	return fileInfo, nil
 }
 func GetRustServerAddressesListTransaction(c *client.Client, config *tcp_config.ClientConfig, originalTx types.Transaction) ([]string, error) {

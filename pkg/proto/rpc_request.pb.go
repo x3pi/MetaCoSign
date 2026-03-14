@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.10
 // 	protoc        v3.21.12
-// source: pkg/proto/rpc_request.proto
+// source: rpc_request.proto
 
 package proto
 
@@ -34,7 +34,7 @@ type RpcRequest struct {
 
 func (x *RpcRequest) Reset() {
 	*x = RpcRequest{}
-	mi := &file_pkg_proto_rpc_request_proto_msgTypes[0]
+	mi := &file_rpc_request_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -46,7 +46,7 @@ func (x *RpcRequest) String() string {
 func (*RpcRequest) ProtoMessage() {}
 
 func (x *RpcRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_proto_rpc_request_proto_msgTypes[0]
+	mi := &file_rpc_request_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -59,7 +59,7 @@ func (x *RpcRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RpcRequest.ProtoReflect.Descriptor instead.
 func (*RpcRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_proto_rpc_request_proto_rawDescGZIP(), []int{0}
+	return file_rpc_request_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *RpcRequest) GetJsonrpc() string {
@@ -103,7 +103,7 @@ type RpcResponse struct {
 
 func (x *RpcResponse) Reset() {
 	*x = RpcResponse{}
-	mi := &file_pkg_proto_rpc_request_proto_msgTypes[1]
+	mi := &file_rpc_request_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -115,7 +115,7 @@ func (x *RpcResponse) String() string {
 func (*RpcResponse) ProtoMessage() {}
 
 func (x *RpcResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_proto_rpc_request_proto_msgTypes[1]
+	mi := &file_rpc_request_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -128,7 +128,7 @@ func (x *RpcResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RpcResponse.ProtoReflect.Descriptor instead.
 func (*RpcResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_proto_rpc_request_proto_rawDescGZIP(), []int{1}
+	return file_rpc_request_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *RpcResponse) GetJsonrpc() string {
@@ -171,7 +171,7 @@ type RpcError struct {
 
 func (x *RpcError) Reset() {
 	*x = RpcError{}
-	mi := &file_pkg_proto_rpc_request_proto_msgTypes[2]
+	mi := &file_rpc_request_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -183,7 +183,7 @@ func (x *RpcError) String() string {
 func (*RpcError) ProtoMessage() {}
 
 func (x *RpcError) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_proto_rpc_request_proto_msgTypes[2]
+	mi := &file_rpc_request_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -196,7 +196,7 @@ func (x *RpcError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RpcError.ProtoReflect.Descriptor instead.
 func (*RpcError) Descriptor() ([]byte, []int) {
-	return file_pkg_proto_rpc_request_proto_rawDescGZIP(), []int{2}
+	return file_rpc_request_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *RpcError) GetCode() int32 {
@@ -220,11 +220,11 @@ func (x *RpcError) GetData() string {
 	return ""
 }
 
-var File_pkg_proto_rpc_request_proto protoreflect.FileDescriptor
+var File_rpc_request_proto protoreflect.FileDescriptor
 
-const file_pkg_proto_rpc_request_proto_rawDesc = "" +
+const file_rpc_request_proto_rawDesc = "" +
 	"\n" +
-	"\x1bpkg/proto/rpc_request.proto\x12\vrpc_request\"f\n" +
+	"\x11rpc_request.proto\x12\vrpc_request\"f\n" +
 	"\n" +
 	"RpcRequest\x12\x18\n" +
 	"\ajsonrpc\x18\x01 \x01(\tR\ajsonrpc\x12\x16\n" +
@@ -242,24 +242,24 @@ const file_pkg_proto_rpc_request_proto_rawDesc = "" +
 	"\x04data\x18\x03 \x01(\tR\x04dataB5Z3github.com/meta-node-blockchain/meta-node/pkg/protob\x06proto3"
 
 var (
-	file_pkg_proto_rpc_request_proto_rawDescOnce sync.Once
-	file_pkg_proto_rpc_request_proto_rawDescData []byte
+	file_rpc_request_proto_rawDescOnce sync.Once
+	file_rpc_request_proto_rawDescData []byte
 )
 
-func file_pkg_proto_rpc_request_proto_rawDescGZIP() []byte {
-	file_pkg_proto_rpc_request_proto_rawDescOnce.Do(func() {
-		file_pkg_proto_rpc_request_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_pkg_proto_rpc_request_proto_rawDesc), len(file_pkg_proto_rpc_request_proto_rawDesc)))
+func file_rpc_request_proto_rawDescGZIP() []byte {
+	file_rpc_request_proto_rawDescOnce.Do(func() {
+		file_rpc_request_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_rpc_request_proto_rawDesc), len(file_rpc_request_proto_rawDesc)))
 	})
-	return file_pkg_proto_rpc_request_proto_rawDescData
+	return file_rpc_request_proto_rawDescData
 }
 
-var file_pkg_proto_rpc_request_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
-var file_pkg_proto_rpc_request_proto_goTypes = []any{
+var file_rpc_request_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_rpc_request_proto_goTypes = []any{
 	(*RpcRequest)(nil),  // 0: rpc_request.RpcRequest
 	(*RpcResponse)(nil), // 1: rpc_request.RpcResponse
 	(*RpcError)(nil),    // 2: rpc_request.RpcError
 }
-var file_pkg_proto_rpc_request_proto_depIdxs = []int32{
+var file_rpc_request_proto_depIdxs = []int32{
 	2, // 0: rpc_request.RpcResponse.error:type_name -> rpc_request.RpcError
 	1, // [1:1] is the sub-list for method output_type
 	1, // [1:1] is the sub-list for method input_type
@@ -268,26 +268,26 @@ var file_pkg_proto_rpc_request_proto_depIdxs = []int32{
 	0, // [0:1] is the sub-list for field type_name
 }
 
-func init() { file_pkg_proto_rpc_request_proto_init() }
-func file_pkg_proto_rpc_request_proto_init() {
-	if File_pkg_proto_rpc_request_proto != nil {
+func init() { file_rpc_request_proto_init() }
+func file_rpc_request_proto_init() {
+	if File_rpc_request_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_proto_rpc_request_proto_rawDesc), len(file_pkg_proto_rpc_request_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_rpc_request_proto_rawDesc), len(file_rpc_request_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_pkg_proto_rpc_request_proto_goTypes,
-		DependencyIndexes: file_pkg_proto_rpc_request_proto_depIdxs,
-		MessageInfos:      file_pkg_proto_rpc_request_proto_msgTypes,
+		GoTypes:           file_rpc_request_proto_goTypes,
+		DependencyIndexes: file_rpc_request_proto_depIdxs,
+		MessageInfos:      file_rpc_request_proto_msgTypes,
 	}.Build()
-	File_pkg_proto_rpc_request_proto = out.File
-	file_pkg_proto_rpc_request_proto_goTypes = nil
-	file_pkg_proto_rpc_request_proto_depIdxs = nil
+	File_rpc_request_proto = out.File
+	file_rpc_request_proto_goTypes = nil
+	file_rpc_request_proto_depIdxs = nil
 }

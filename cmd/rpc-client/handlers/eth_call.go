@@ -101,7 +101,6 @@ func processEthCallParams(appCtx *app.Context, id interface{}, callObjectRaw jso
 	}
 
 	rs := appCtx.ClientRpc.SendCallTransaction(bTx)
-	logger.Info("_______________-rs: %v", rs)
 	// Sử dụng helper function để tránh code lặp lại
 	// Hàm này tự động extract revert data và decode error
 	if decoded.HasTo && appCtx.ErrorDecoder != nil {

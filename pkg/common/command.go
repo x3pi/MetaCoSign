@@ -26,13 +26,21 @@ const (
 
 	GetDeviceKey = "GetDeviceKey"
 	DeviceKey    = "DeviceKey"
+	Response = "Response"
 
 	// Monitor
 	MonitorData = "MonitorData"
 
-	Ping = "Ping"
-
-	Response = "Response"
-
 	ServerBusy = "ServerBusy"
+	GetLogs    = "GetLogs"
+	Logs       = "Logs"
+
+	GetTransactionReceipt = "GetTransactionReceipt"
+	TransactionReceipt    = "TransactionReceipt"
+
+	GetTransactionByHash = "GetTransactionByHash"
+	TransactionByHash    = "TransactionByHash"
+
+	GetChainId = "GetChainId"
+	ChainId    = "ChainId"
 )
