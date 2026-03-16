@@ -55,4 +55,12 @@ const (
 	TransactionReceipt    = "TransactionReceipt"
 	GetBlockNumber        = "GetBlockNumber"
 	BlockNumber           = "BlockNumber"
+
+	GetLogs               = "GetLogs"
+	Logs                  = "Logs"
+
+	GetTransactionByHash  = "GetTransactionByHash"
+	TransactionByHash     = "TransactionByHash"
+
+	TransactionSuccess    = "TransactionSuccess"
 )

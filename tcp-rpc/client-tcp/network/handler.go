@@ -85,7 +85,8 @@ func (h *Handler) HandleRequest(request network.Request) (err error) {
 		return h.handleRpcEvent(request)
 
 	// Chain-direct responses — dispatch bằng header ID
-	case command.ChainId, command.TransactionReceipt, command.BlockNumber:
+	case command.ChainId, command.TransactionReceipt, command.BlockNumber,
+		command.Logs, command.TransactionByHash, command.TransactionSuccess:
 		return h.handleChainResponse(request)
 	}
 	return ErrorCommandNotFound

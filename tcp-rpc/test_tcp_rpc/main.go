@@ -387,6 +387,62 @@ func testBlsRegistration(
 	fmt.Printf("     BLS PubKey:      0x%s\n", blsPubKeyHex)
 }
 
+// ===================== TEST: Chain Direct =====================
+
+func testChainDirect(tcpClient *client_tcp.Client) {
+	fmt.Println("\n╔══════════════════════════════════════════════════════╗")
+	fmt.Println("║  TEST: Chain-Direct (ChainId, BlockNumber, GetLogs)  ║")
+	fmt.Println("╚══════════════════════════════════════════════════════╝")
+
+	// 1. ChainGetChainId
+	fmt.Println("\n─── 1. ChainGetChainId ───")
+	chainId, err := tcpClient.ChainGetChainId()
+	if err != nil {
+		fmt.Printf("  ❌ ChainGetChainId: %v\n", err)
+	} else {
+		fmt.Printf("  ✅ ChainId = %d\n", chainId)
+	}
+
+	// 2. ChainGetBlockNumber
+	fmt.Println("\n─── 2. ChainGetBlockNumber ───")
+	blockNum, err := tcpClient.ChainGetBlockNumber()
+	if err != nil {
+		fmt.Printf("  ❌ ChainGetBlockNumber: %v\n", err)
+	} else {
+		fmt.Printf("  ✅ BlockNumber = %d\n", blockNum)
+	}
+
+	// 3. ChainGetLogs (latest block range)
+	fmt.Println("\n─── 3. ChainGetLogs ───")
+	if blockNum > 0 {
+		fromBlock := fmt.Sprintf("0x%x", blockNum-1)
+		toBlock := fmt.Sprintf("0x%x", blockNum)
+		fmt.Printf("  ℹ️  Querying logs from block %s to %s\n", fromBlock, toBlock)
+
+		logsResp, err := tcpClient.ChainGetLogs(nil, fromBlock, toBlock, nil, nil)
+		if err != nil {
+			fmt.Printf("  ❌ ChainGetLogs: %v\n", err)
+		} else {
+			fmt.Printf("  ✅ Got %d logs\n", len(logsResp.Logs))
+			for i, log := range logsResp.Logs {
+				fmt.Printf("    [%d] addr=%x block=%d txHash=%x topics=%d\n",
+					i,
+					log.Address[:6],
+					log.BlockNumber,
+					log.TransactionHash[:6],
+					len(log.Topics),
+				)
+				if i >= 4 {
+					fmt.Printf("    ... (%d more)\n", len(logsResp.Logs)-5)
+					break
+				}
+			}
+		}
+	} else {
+		fmt.Println("  ⚠️ BlockNumber = 0, skipping GetLogs test")
+	}
+}
+
 // ===================== MAIN =====================
 
 func main() {
@@ -396,7 +452,7 @@ func main() {
 	})
 
 	configPath := flag.String("config", "config-test.json", "Path to TCP client config")
-	testSuite := flag.String("test", "all", "Test suite: demo, bls, all")
+	testSuite := flag.String("test", "all", "Test suite: demo, bls, chain, all")
 	flag.Parse()
 
 	fmt.Println("╔══════════════════════════════════════════════════════╗")
@@ -429,13 +485,16 @@ func main() {
 		demoABI, _ := abi.JSON(strings.NewReader(string(demoAbiBytes)))
 		contractAddr := common.HexToAddress(cfg.DemoContractAddress)
 		testDemoContract(tcpClient, demoABI, contractAddr, ethPrivKey, fromAddr, signer)
-
 	case "bls":
 		accountABI, _ := abi.JSON(strings.NewReader(accountAbiJSON))
 		accountContract := common.HexToAddress("0x00000000000000000000000000000000D844bb55")
 		testBlsRegistration(tcpClient, accountABI, accountContract, ethPrivKey, fromAddr, signer)
-
+	case "chain":
+		testChainDirect(tcpClient)
 	case "all":
+		// Chain-direct test
+		testChainDirect(tcpClient)
+
 		// Demo test
 		demoAbiBytes, _ := os.ReadFile(cfg.DemoAbiPath_)
 		demoABI, _ := abi.JSON(strings.NewReader(string(demoAbiBytes)))
@@ -448,7 +507,7 @@ func main() {
 		testBlsRegistration(tcpClient, accountABI, accountContract, ethPrivKey, fromAddr, signer)
 
 	default:
-		fmt.Printf("  ❌ Unknown test suite: %s (use: demo, bls, all)\n", *testSuite)
+		fmt.Printf("  ❌ Unknown test suite: %s (use: demo, bls, chain, all)\n", *testSuite)
 	}
 
 	fmt.Println("\n╔══════════════════════════════════════════════════════╗")

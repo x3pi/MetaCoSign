@@ -12,6 +12,7 @@ import (
 	p_network "github.com/meta-node-blockchain/meta-node/pkg/network"
 	pb "github.com/meta-node-blockchain/meta-node/pkg/proto"
 	"github.com/meta-node-blockchain/meta-node/tcp-rpc/client-tcp/command"
+	"google.golang.org/protobuf/proto"
 )
 
 // ===================== Chain-Direct Methods =====================
@@ -53,7 +54,7 @@ func (client *Client) sendChainRequest(cmd string, body []byte, timeout time.Dur
 
 // ChainGetChainId lấy chain ID trực tiếp từ chain (raw uint64)
 func (client *Client) ChainGetChainId() (uint64, error) {
-	resp, err := client.sendChainRequest(command.GetChainId, nil, 10*time.Second)
+	resp, err := client.sendChainRequest(command.GetChainId, nil, 60*time.Second)
 	if err != nil {
 		return 0, err
 	}
@@ -67,7 +68,7 @@ func (client *Client) ChainGetChainId() (uint64, error) {
 
 // ChainGetBlockNumber lấy block number trực tiếp từ chain (raw uint64)
 func (client *Client) ChainGetBlockNumber() (uint64, error) {
-	resp, err := client.sendChainRequest(command.GetBlockNumber, nil, 10*time.Second)
+	resp, err := client.sendChainRequest(command.GetBlockNumber, nil, 60*time.Second)
 	if err != nil {
 		return 0, err
 	}
@@ -82,10 +83,75 @@ func (client *Client) ChainGetBlockNumber() (uint64, error) {
 // ChainGetTransactionReceipt lấy receipt trực tiếp từ chain theo txHash
 // Trả về raw response bytes — caller tự unmarshal nếu cần
 func (client *Client) ChainGetTransactionReceipt(txHash common.Hash) ([]byte, error) {
-	resp, err := client.sendChainRequest(command.GetTransactionReceipt, txHash.Bytes(), 15*time.Second)
+	resp, err := client.sendChainRequest(command.GetTransactionReceipt, txHash.Bytes(), 60*time.Second)
 	if err != nil {
 		return nil, err
 	}
 	logger.Info("✅ ChainGetTransactionReceipt: %s (%d bytes)", txHash.Hex(), len(resp))
 	return resp, nil
+}
+
+// ChainGetLogs lấy logs từ chain theo filter criteria
+// Trả về *pb.GetLogsResponse đã parsed
+func (client *Client) ChainGetLogs(
+	blockHash []byte,
+	fromBlock string,
+	toBlock string,
+	addresses []common.Address,
+	topics [][]common.Hash,
+) (*pb.GetLogsResponse, error) {
+	// Build GetLogsRequest proto
+	request := &pb.GetLogsRequest{}
+	if len(blockHash) > 0 {
+		request.BlockHash = blockHash
+	}
+	if fromBlock != "" {
+		request.FromBlock = []byte(fromBlock)
+	}
+	if toBlock != "" {
+		request.ToBlock = []byte(toBlock)
+	}
+	if len(addresses) > 0 {
+		request.Addresses = make([][]byte, len(addresses))
+		for i, addr := range addresses {
+			request.Addresses[i] = addr.Bytes()
+		}
+	}
+	if len(topics) > 0 {
+		request.Topics = make([]*pb.TopicFilter, len(topics))
+		for i, topicList := range topics {
+			if len(topicList) > 0 {
+				hashes := make([][]byte, len(topicList))
+				for j, hash := range topicList {
+					hashes[j] = hash.Bytes()
+				}
+				request.Topics[i] = &pb.TopicFilter{
+					Hashes: hashes,
+				}
+			}
+		}
+	}
+
+	requestBytes, err := proto.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal GetLogsRequest: %w", err)
+	}
+
+	resp, err := client.sendChainRequest(command.GetLogs, requestBytes, 60*time.Second)
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse response
+	response := &pb.GetLogsResponse{}
+	if err := proto.Unmarshal(resp, response); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal GetLogsResponse: %w", err)
+	}
+
+	if response.Error != "" {
+		return nil, fmt.Errorf("server error: %s", response.Error)
+	}
+
+	logger.Info("✅ ChainGetLogs: %d logs found", len(response.Logs))
+	return response, nil
 }

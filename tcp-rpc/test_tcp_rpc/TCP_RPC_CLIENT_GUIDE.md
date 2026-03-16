@@ -8,23 +8,14 @@
 ``` cd rpc-client -> go run main.go ```
 
 ## Run test tcp-rpc
+
 ```go run main.go -test=demo```
 
 ```go run main.go -test=bls```
 
-```go run main.go -test=batch-bls -n 10```
+```go run main.go -test=chain```
 
-```go run main.go -test=tps -n 10000 -c 50```
-
-# Test TCP
-
-go run main.go -test=tps-single -mode=tcp -wallets=200 -txpw=5 -rounds=5 -pause=2
-
-# Test HTTP (chạy riêng, sau khi TCP xong + đợi chain settle)
-
-go run main.go -test=tps-single -mode=http -wallets=200 -txpw=5 -rounds=5 -pause=2
-
--
+```go run main.go -test=all```
 
 ### File proto mới
 

@@ -1,6 +1,17 @@
 
+```go run main.go -test=batch-bls -n 10```
+
+```go run main.go -test=tps -n 10000 -c 50```
+
+# Test TCP
+
+go run main.go -test=tps-single -mode=tcp -wallets=200 -txpw=5 -rounds=5 -pause=2
+
+# Test HTTP (chạy riêng, sau khi TCP xong + đợi chain settle)
+
+go run main.go -test=tps-single -mode=http -wallets=200 -txpw=5 -rounds=5 -pause=2
 ╔══════════════════════════════════════════════════════════════╗
-║  AGGREGATE: TCP-DIRECT (5 rounds)                         
+║  AGGREGATE: TCP-DIRECT (5 rounds)
 ╠══════════════════════════════════════════════════════════════╣
 ║  Config:  200 wallets × 5 tx/wallet = 1000 total/round
 ║  ─────────────────────────────────────────────────
@@ -18,7 +29,7 @@
 ╚══════════════════════════════════════════════════════════════╝
 
 ╔══════════════════════════════════════════════════════════════╗
-║  AGGREGATE: HTTP-FORWARD (5 rounds)                         
+║  AGGREGATE: HTTP-FORWARD (5 rounds)
 ╠══════════════════════════════════════════════════════════════╣
 ║  Config:  200 wallets × 5 tx/wallet = 1000 total/round
 ║  ─────────────────────────────────────────────────
