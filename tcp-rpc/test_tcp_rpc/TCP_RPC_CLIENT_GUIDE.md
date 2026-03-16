@@ -1,17 +1,20 @@
 # TCP-RPC Client — Hướng dẫn sử dụng
 
-"parent_address": "0x781E6EC6EBDCA11Be4B53865a34C0c7f10b6da6e",
-  "eth_private_key":"992d48ebc2dbeb5fa65b53f5727a1c3f7c9d4730bab45d0fc6166c5481671d0f",
-
 ## Run rpc
 
 ``` cd rpc-client -> go run main.go ```
 
 ## Run test tcp-rpc
 
+# test crud
+
 ```go run main.go -test=demo```
 
+# test đăng ký bls
+
 ```go run main.go -test=bls```
+
+# goi các hàm trên chain 4200
 
 ```go run main.go -test=chain```
 

@@ -490,6 +490,12 @@ func main() {
 		accountContract := common.HexToAddress("0x00000000000000000000000000000000D844bb55")
 		testBlsRegistration(tcpClient, accountABI, accountContract, ethPrivKey, fromAddr, signer)
 	case "chain":
+		if !strings.HasSuffix(cfg.ParentConnectionAddress, ":4200") {
+			fmt.Printf("\n  ❌ Chain-direct test yêu cầu kết nối trực tiếp đến chain (port 4200)\n")
+			fmt.Printf("     Config hiện tại: %s\n", cfg.ParentConnectionAddress)
+			fmt.Printf("     Hãy đổi parent_connection_address thành \" 139.59.243.85:4200\" trong config\n")
+			os.Exit(1)
+		}
 		testChainDirect(tcpClient)
 	case "all":
 		// Chain-direct test

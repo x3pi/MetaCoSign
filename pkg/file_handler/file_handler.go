@@ -129,8 +129,8 @@ func (h *FileHandlerNoReceipt) HandleFileTransactionNoReceipt(
 	logger.Info("____HandleFileTransactionNoReceipt: %v", inputData)
 	method, err := h.abi.MethodById(inputData[:4])
 	if err != nil {
-		logger.Warn("FileHandler: Lỗi khi lấy method từ input data: %v", err)
-		return false, nil
+		err := fmt.Errorf("FileHandler: Lỗi khi lấy method từ input data: %v", err)
+		return true, err
 	}
 	var logicErr error
 	var isCall bool = false
