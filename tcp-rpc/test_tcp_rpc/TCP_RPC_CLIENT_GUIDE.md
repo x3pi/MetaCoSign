@@ -1,25 +1,30 @@
 # TCP-RPC Client — Hướng dẫn sử dụng
+
 "parent_address": "0x781E6EC6EBDCA11Be4B53865a34C0c7f10b6da6e",
   "eth_private_key":"992d48ebc2dbeb5fa65b53f5727a1c3f7c9d4730bab45d0fc6166c5481671d0f",
+
 ## Run rpc
 
 ``` cd rpc-client -> go run main.go ```
 
 ## Run test tcp-rpc
-
-### Chỉ test demo các hàm
-
-# 5000 requests, 100 concurrent
-
-go run . -test tps -n 1000 -c 100
-
 ```go run main.go -test=demo```
-
-### Chỉ test đăng ký BLS
 
 ```go run main.go -test=bls```
 
----
+```go run main.go -test=batch-bls -n 10```
+
+```go run main.go -test=tps -n 10000 -c 50```
+
+# Test TCP
+
+go run main.go -test=tps-single -mode=tcp -wallets=200 -txpw=5 -rounds=5 -pause=2
+
+# Test HTTP (chạy riêng, sau khi TCP xong + đợi chain settle)
+
+go run main.go -test=tps-single -mode=http -wallets=200 -txpw=5 -rounds=5 -pause=2
+
+-
 
 ### File proto mới
 

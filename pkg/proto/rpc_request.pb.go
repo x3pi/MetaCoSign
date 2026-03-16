@@ -220,6 +220,338 @@ func (x *RpcError) GetData() string {
 	return ""
 }
 
+// TcpSendTxRequest - request gửi raw transaction qua TCP dạng binary (không JSON)
+// Client gửi raw eth tx bytes trực tiếp, không cần hex encode → nhanh hơn
+type TcpSendTxRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RawTx         []byte                 `protobuf:"bytes,1,opt,name=raw_tx,json=rawTx,proto3" json:"raw_tx,omitempty"` // raw ethereum tx bytes (đã decode từ hex)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TcpSendTxRequest) Reset() {
+	*x = TcpSendTxRequest{}
+	mi := &file_rpc_request_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TcpSendTxRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TcpSendTxRequest) ProtoMessage() {}
+
+func (x *TcpSendTxRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_rpc_request_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TcpSendTxRequest.ProtoReflect.Descriptor instead.
+func (*TcpSendTxRequest) Descriptor() ([]byte, []int) {
+	return file_rpc_request_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *TcpSendTxRequest) GetRawTx() []byte {
+	if x != nil {
+		return x.RawTx
+	}
+	return nil
+}
+
+// TcpEthCallRequest - request eth_call qua TCP dạng binary
+type TcpEthCallRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	To            []byte                 `protobuf:"bytes,1,opt,name=to,proto3" json:"to,omitempty"`     // contract address (20 bytes)
+	Data          []byte                 `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"` // ABI-encoded function call data (raw bytes, không hex)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TcpEthCallRequest) Reset() {
+	*x = TcpEthCallRequest{}
+	mi := &file_rpc_request_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TcpEthCallRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TcpEthCallRequest) ProtoMessage() {}
+
+func (x *TcpEthCallRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_rpc_request_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TcpEthCallRequest.ProtoReflect.Descriptor instead.
+func (*TcpEthCallRequest) Descriptor() ([]byte, []int) {
+	return file_rpc_request_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *TcpEthCallRequest) GetTo() []byte {
+	if x != nil {
+		return x.To
+	}
+	return nil
+}
+
+func (x *TcpEthCallRequest) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+// TcpAddressParam - param chung chứa 1 address (20 bytes)
+type TcpAddressParam struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Address       []byte                 `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TcpAddressParam) Reset() {
+	*x = TcpAddressParam{}
+	mi := &file_rpc_request_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TcpAddressParam) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TcpAddressParam) ProtoMessage() {}
+
+func (x *TcpAddressParam) ProtoReflect() protoreflect.Message {
+	mi := &file_rpc_request_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TcpAddressParam.ProtoReflect.Descriptor instead.
+func (*TcpAddressParam) Descriptor() ([]byte, []int) {
+	return file_rpc_request_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *TcpAddressParam) GetAddress() []byte {
+	if x != nil {
+		return x.Address
+	}
+	return nil
+}
+
+// TcpHashParam - param chung chứa 1 hash (32 bytes)
+type TcpHashParam struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Hash          []byte                 `protobuf:"bytes,1,opt,name=hash,proto3" json:"hash,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TcpHashParam) Reset() {
+	*x = TcpHashParam{}
+	mi := &file_rpc_request_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TcpHashParam) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TcpHashParam) ProtoMessage() {}
+
+func (x *TcpHashParam) ProtoReflect() protoreflect.Message {
+	mi := &file_rpc_request_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TcpHashParam.ProtoReflect.Descriptor instead.
+func (*TcpHashParam) Descriptor() ([]byte, []int) {
+	return file_rpc_request_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *TcpHashParam) GetHash() []byte {
+	if x != nil {
+		return x.Hash
+	}
+	return nil
+}
+
+// TcpGetNonceResponse - response nonce qua TCP (không cần hex parse)
+type TcpGetNonceResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Nonce         uint64                 `protobuf:"varint,1,opt,name=nonce,proto3" json:"nonce,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TcpGetNonceResponse) Reset() {
+	*x = TcpGetNonceResponse{}
+	mi := &file_rpc_request_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TcpGetNonceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TcpGetNonceResponse) ProtoMessage() {}
+
+func (x *TcpGetNonceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_rpc_request_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TcpGetNonceResponse.ProtoReflect.Descriptor instead.
+func (*TcpGetNonceResponse) Descriptor() ([]byte, []int) {
+	return file_rpc_request_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *TcpGetNonceResponse) GetNonce() uint64 {
+	if x != nil {
+		return x.Nonce
+	}
+	return 0
+}
+
+// TcpSubscribeRequest - subscribe events qua TCP
+type TcpSubscribeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Addresses     [][]byte               `protobuf:"bytes,1,rep,name=addresses,proto3" json:"addresses,omitempty"` // contract addresses (mỗi address 20 bytes)
+	Topics        [][]byte               `protobuf:"bytes,2,rep,name=topics,proto3" json:"topics,omitempty"`       // topic hashes (mỗi topic 32 bytes)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TcpSubscribeRequest) Reset() {
+	*x = TcpSubscribeRequest{}
+	mi := &file_rpc_request_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TcpSubscribeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TcpSubscribeRequest) ProtoMessage() {}
+
+func (x *TcpSubscribeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_rpc_request_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TcpSubscribeRequest.ProtoReflect.Descriptor instead.
+func (*TcpSubscribeRequest) Descriptor() ([]byte, []int) {
+	return file_rpc_request_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *TcpSubscribeRequest) GetAddresses() [][]byte {
+	if x != nil {
+		return x.Addresses
+	}
+	return nil
+}
+
+func (x *TcpSubscribeRequest) GetTopics() [][]byte {
+	if x != nil {
+		return x.Topics
+	}
+	return nil
+}
+
+// TcpUnsubscribeRequest - unsubscribe qua TCP
+type TcpUnsubscribeRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	SubscriptionId string                 `protobuf:"bytes,1,opt,name=subscription_id,json=subscriptionId,proto3" json:"subscription_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *TcpUnsubscribeRequest) Reset() {
+	*x = TcpUnsubscribeRequest{}
+	mi := &file_rpc_request_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TcpUnsubscribeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TcpUnsubscribeRequest) ProtoMessage() {}
+
+func (x *TcpUnsubscribeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_rpc_request_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TcpUnsubscribeRequest.ProtoReflect.Descriptor instead.
+func (*TcpUnsubscribeRequest) Descriptor() ([]byte, []int) {
+	return file_rpc_request_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *TcpUnsubscribeRequest) GetSubscriptionId() string {
+	if x != nil {
+		return x.SubscriptionId
+	}
+	return ""
+}
+
 var File_rpc_request_proto protoreflect.FileDescriptor
 
 const file_rpc_request_proto_rawDesc = "" +
@@ -239,7 +571,23 @@ const file_rpc_request_proto_rawDesc = "" +
 	"\bRpcError\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\x05R\x04code\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x12\n" +
-	"\x04data\x18\x03 \x01(\tR\x04dataB5Z3github.com/meta-node-blockchain/meta-node/pkg/protob\x06proto3"
+	"\x04data\x18\x03 \x01(\tR\x04data\")\n" +
+	"\x10TcpSendTxRequest\x12\x15\n" +
+	"\x06raw_tx\x18\x01 \x01(\fR\x05rawTx\"7\n" +
+	"\x11TcpEthCallRequest\x12\x0e\n" +
+	"\x02to\x18\x01 \x01(\fR\x02to\x12\x12\n" +
+	"\x04data\x18\x02 \x01(\fR\x04data\"+\n" +
+	"\x0fTcpAddressParam\x12\x18\n" +
+	"\aaddress\x18\x01 \x01(\fR\aaddress\"\"\n" +
+	"\fTcpHashParam\x12\x12\n" +
+	"\x04hash\x18\x01 \x01(\fR\x04hash\"+\n" +
+	"\x13TcpGetNonceResponse\x12\x14\n" +
+	"\x05nonce\x18\x01 \x01(\x04R\x05nonce\"K\n" +
+	"\x13TcpSubscribeRequest\x12\x1c\n" +
+	"\taddresses\x18\x01 \x03(\fR\taddresses\x12\x16\n" +
+	"\x06topics\x18\x02 \x03(\fR\x06topics\"@\n" +
+	"\x15TcpUnsubscribeRequest\x12'\n" +
+	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionIdB5Z3github.com/meta-node-blockchain/meta-node/pkg/protob\x06proto3"
 
 var (
 	file_rpc_request_proto_rawDescOnce sync.Once
@@ -253,11 +601,18 @@ func file_rpc_request_proto_rawDescGZIP() []byte {
 	return file_rpc_request_proto_rawDescData
 }
 
-var file_rpc_request_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_rpc_request_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_rpc_request_proto_goTypes = []any{
-	(*RpcRequest)(nil),  // 0: rpc_request.RpcRequest
-	(*RpcResponse)(nil), // 1: rpc_request.RpcResponse
-	(*RpcError)(nil),    // 2: rpc_request.RpcError
+	(*RpcRequest)(nil),            // 0: rpc_request.RpcRequest
+	(*RpcResponse)(nil),           // 1: rpc_request.RpcResponse
+	(*RpcError)(nil),              // 2: rpc_request.RpcError
+	(*TcpSendTxRequest)(nil),      // 3: rpc_request.TcpSendTxRequest
+	(*TcpEthCallRequest)(nil),     // 4: rpc_request.TcpEthCallRequest
+	(*TcpAddressParam)(nil),       // 5: rpc_request.TcpAddressParam
+	(*TcpHashParam)(nil),          // 6: rpc_request.TcpHashParam
+	(*TcpGetNonceResponse)(nil),   // 7: rpc_request.TcpGetNonceResponse
+	(*TcpSubscribeRequest)(nil),   // 8: rpc_request.TcpSubscribeRequest
+	(*TcpUnsubscribeRequest)(nil), // 9: rpc_request.TcpUnsubscribeRequest
 }
 var file_rpc_request_proto_depIdxs = []int32{
 	2, // 0: rpc_request.RpcResponse.error:type_name -> rpc_request.RpcError
@@ -279,7 +634,7 @@ func file_rpc_request_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_rpc_request_proto_rawDesc), len(file_rpc_request_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -256,9 +256,43 @@ func (client *Client) RpcGetChainId() (string, error) {
 }
 
 // RpcSendRawTransaction gửi raw transaction hex qua TCP
+// Dùng proto TcpSendTxRequest (binary) thay vì JSON → nhanh hơn ~50%
 func (client *Client) RpcSendRawTransaction(rawTxHex string) (string, error) {
+	// Decode hex → raw bytes
+	hexStr := strings.TrimPrefix(rawTxHex, "0x")
+	rawBytes, err := hex.DecodeString(hexStr)
+	if err != nil {
+		return "", fmt.Errorf("invalid raw tx hex: %w", err)
+	}
+	// Encode proto: gửi binary trực tiếp
+	tcpReq := &pb.TcpSendTxRequest{RawTx: rawBytes}
+	body, err := proto.Marshal(tcpReq)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal TcpSendTxRequest: %w", err)
+	}
+	resp, err := client.sendRpcRequest("eth_sendRawTransaction", body, defaultRpcTimeout)
+	if err != nil {
+		return "", err
+	}
+	if resp.Error != nil {
+		return "", fmt.Errorf("RPC error: code=%d, message=%s, data=%s",
+			resp.Error.Code, resp.Error.Message, resp.Error.Data)
+	}
+	// Parse proto TcpHashParam response
+	hashResp := &pb.TcpHashParam{}
+	if err := proto.Unmarshal(resp.Result, hashResp); err != nil {
+		return "", fmt.Errorf("failed to parse TcpHashParam response: %w", err)
+	}
+	txHash := common.BytesToHash(hashResp.Hash).Hex()
+	logger.Info("✅ RpcSendRawTransaction result: %s", txHash)
+	return txHash, nil
+}
+
+// RpcHttpSendRawTransaction gửi raw transaction qua HTTP forward (http_sendRawTransaction command)
+// Khác với RpcSendRawTransaction (TCP-direct to chain), method này forward qua HTTP proxy
+func (client *Client) RpcHttpSendRawTransaction(rawTxHex string) (string, error) {
 	params, _ := json.Marshal([]string{rawTxHex})
-	resp, err := client.sendRpcRequest("eth_sendRawTransaction", params, defaultRpcTimeout)
+	resp, err := client.sendRpcRequest("http_sendRawTransaction", params, defaultRpcTimeout)
 	if err != nil {
 		return "", err
 	}
@@ -270,19 +304,22 @@ func (client *Client) RpcSendRawTransaction(rawTxHex string) (string, error) {
 	if err := json.Unmarshal(resp.Result, &txHash); err != nil {
 		return string(resp.Result), nil
 	}
-	logger.Info("✅ RpcSendRawTransaction result: %s", txHash)
+	logger.Info("✅ RpcHttpSendRawTransaction result: %s", txHash)
 	return txHash, nil
 }
 
 // RpcEthCall gọi eth_call qua TCP (đọc contract, không tạo giao dịch)
-// to: contract address, data: ABI-encoded function call
+// Dùng proto TcpEthCallRequest (binary) thay vì JSON → nhanh hơn
 func (client *Client) RpcEthCall(to common.Address, data []byte) ([]byte, error) {
-	callObj := map[string]string{
-		"to":   to.Hex(),
-		"data": "0x" + hex.EncodeToString(data),
+	tcpReq := &pb.TcpEthCallRequest{
+		To:   to.Bytes(),
+		Data: data, // raw ABI-encoded bytes, không cần hex encode
 	}
-	params, _ := json.Marshal([]interface{}{callObj, "latest"})
-	resp, err := client.sendRpcRequest("eth_call", params, defaultRpcTimeout)
+	body, err := proto.Marshal(tcpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal TcpEthCallRequest: %w", err)
+	}
+	resp, err := client.sendRpcRequest("eth_call", body, defaultRpcTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -290,44 +327,44 @@ func (client *Client) RpcEthCall(to common.Address, data []byte) ([]byte, error)
 		return nil, fmt.Errorf("RPC error: code=%d, message=%s, data=%s",
 			resp.Error.Code, resp.Error.Message, resp.Error.Data)
 	}
-	var resultHex string
-	if err := json.Unmarshal(resp.Result, &resultHex); err != nil {
-		return nil, fmt.Errorf("failed to parse eth_call result: %w", err)
-	}
-	resultHex = strings.TrimPrefix(resultHex, "0x")
-	resultBytes, err := hex.DecodeString(resultHex)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode hex result: %w", err)
-	}
-	logger.Info("✅ RpcEthCall result: 0x%s", resultHex)
-	return resultBytes, nil
+	// Server trả raw bytes trực tiếp — không cần hex decode
+	logger.Info("✅ RpcEthCall result: %d bytes", len(resp.Result))
+	return resp.Result, nil
 }
 
 // RpcGetPendingNonce lấy pending nonce cho address qua TCP
+// Dùng proto TcpGetNonceRequest/TcpGetNonceResponse (binary, không JSON)
 func (client *Client) RpcGetPendingNonce(address common.Address) (uint64, error) {
-	params, _ := json.Marshal([]interface{}{address.Hex(), "pending"})
-	resp, err := client.sendRpcRequest("eth_getTransactionCount", params, defaultRpcTimeout)
+	tcpReq := &pb.TcpAddressParam{Address: address.Bytes()}
+	body, err := proto.Marshal(tcpReq)
+	if err != nil {
+		return 0, fmt.Errorf("failed to marshal TcpGetNonceRequest: %w", err)
+	}
+	resp, err := client.sendRpcRequest("eth_getTransactionCount", body, defaultRpcTimeout)
 	if err != nil {
 		return 0, err
 	}
 	if resp.Error != nil {
 		return 0, fmt.Errorf("RPC error: code=%d, message=%s", resp.Error.Code, resp.Error.Message)
 	}
-	var nonceHex string
-	if err := json.Unmarshal(resp.Result, &nonceHex); err != nil {
-		return 0, fmt.Errorf("failed to parse nonce result: %w", err)
+	// Parse proto TcpGetNonceResponse
+	nonceResp := &pb.TcpGetNonceResponse{}
+	if err := proto.Unmarshal(resp.Result, nonceResp); err != nil {
+		return 0, fmt.Errorf("failed to parse TcpGetNonceResponse: %w", err)
 	}
-	nonce := new(big.Int)
-	nonceHex = strings.TrimPrefix(nonceHex, "0x")
-	nonce.SetString(nonceHex, 16)
-	return nonce.Uint64(), nil
+	return nonceResp.Nonce, nil
 }
 
 // RpcGetTransactionReceipt lấy receipt của transaction qua TCP
-// Trả về *pb.RpcReceipt (protobuf) - nil nếu receipt chưa có
+// Gửi TcpHashParam (binary hash), nhận RpcReceipt proto
 func (client *Client) RpcGetTransactionReceipt(txHash string) (*pb.RpcReceipt, error) {
-	params, _ := json.Marshal([]string{txHash})
-	resp, err := client.sendRpcRequest("eth_getTransactionReceipt", params, defaultRpcTimeout)
+	hashBytes := common.HexToHash(txHash)
+	tcpReq := &pb.TcpHashParam{Hash: hashBytes.Bytes()}
+	body, err := proto.Marshal(tcpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal TcpHashParam: %w", err)
+	}
+	resp, err := client.sendRpcRequest("eth_getTransactionReceipt", body, defaultRpcTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -354,30 +391,28 @@ func (client *Client) RpcGetTransactionReceipt(txHash string) (*pb.RpcReceipt, e
 // callback: hàm xử lý event khi nhận được (nhận raw protobuf RpcEvent bytes)
 // Trả về subscription ID
 func (client *Client) RpcSubscribe(contractAddrs []string, topics []string, callback func([]byte)) (string, error) {
-	filter := map[string]interface{}{}
-	if len(contractAddrs) > 0 {
-		if len(contractAddrs) == 1 {
-			filter["address"] = contractAddrs[0]
-		} else {
-			filter["address"] = contractAddrs
-		}
+	// Convert hex strings → bytes
+	tcpReq := &pb.TcpSubscribeRequest{}
+	for _, addr := range contractAddrs {
+		tcpReq.Addresses = append(tcpReq.Addresses, common.HexToAddress(addr).Bytes())
 	}
-	if len(topics) > 0 {
-		filter["topics"] = topics
+	for _, topic := range topics {
+		tcpReq.Topics = append(tcpReq.Topics, common.HexToHash(topic).Bytes())
 	}
 
-	params, _ := json.Marshal([]interface{}{"logs", filter})
-	resp, err := client.sendRpcRequest("eth_subscribe", params, defaultRpcTimeout)
+	body, err := proto.Marshal(tcpReq)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal TcpSubscribeRequest: %w", err)
+	}
+	resp, err := client.sendRpcRequest("eth_subscribe", body, defaultRpcTimeout)
 	if err != nil {
 		return "", err
 	}
 	if resp.Error != nil {
 		return "", fmt.Errorf("RPC error: code=%d, message=%s", resp.Error.Code, resp.Error.Message)
 	}
-	var subID string
-	if err := json.Unmarshal(resp.Result, &subID); err != nil {
-		subID = string(resp.Result)
-	}
+	// Server trả subscription ID as raw string bytes
+	subID := string(resp.Result)
 
 	// Đăng ký callback cho subscription này
 	client.clientContext.Handler.RegisterEventCallback(subID, callback)
@@ -386,17 +421,22 @@ func (client *Client) RpcSubscribe(contractAddrs []string, topics []string, call
 }
 
 // RpcUnsubscribe gửi eth_unsubscribe qua TCP + xoá callback
+// Dùng proto TcpUnsubscribeRequest
 func (client *Client) RpcUnsubscribe(subID string) (bool, error) {
-	params, _ := json.Marshal([]string{subID})
-	resp, err := client.sendRpcRequest("eth_unsubscribe", params, defaultRpcTimeout)
+	tcpReq := &pb.TcpUnsubscribeRequest{SubscriptionId: subID}
+	body, err := proto.Marshal(tcpReq)
+	if err != nil {
+		return false, fmt.Errorf("failed to marshal TcpUnsubscribeRequest: %w", err)
+	}
+	resp, err := client.sendRpcRequest("eth_unsubscribe", body, defaultRpcTimeout)
 	if err != nil {
 		return false, err
 	}
 	if resp.Error != nil {
 		return false, fmt.Errorf("RPC error: code=%d, message=%s", resp.Error.Code, resp.Error.Message)
 	}
-	var result bool
-	json.Unmarshal(resp.Result, &result)
+	// Server trả 1 byte: 1=true, 0=false
+	result := len(resp.Result) > 0 && resp.Result[0] == 1
 
 	// Xoá callback
 	client.clientContext.Handler.RemoveEventCallback(subID)

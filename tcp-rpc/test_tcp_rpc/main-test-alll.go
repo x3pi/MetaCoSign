@@ -3,6 +3,7 @@ package main
 // import (
 // 	"crypto/ecdsa"
 // 	"encoding/hex"
+// 	"encoding/json"
 // 	"flag"
 // 	"fmt"
 // 	"math/big"
@@ -324,6 +325,97 @@ package main
 // 	fmt.Printf("     BLS PubKey:      0x%s\n", blsPubKeyHex)
 // }
 
+// // testBatchBlsRegistration đăng ký hàng loạt 1000 ví và lưu config
+// func testBatchBlsRegistration(
+// 	tcpClient *client_tcp.Client,
+// 	accountABI abi.ABI,
+// 	accountContract common.Address,
+// 	adminPrivKey *ecdsa.PrivateKey,
+// 	adminAddr common.Address,
+// 	signer e_types.Signer,
+// 	count int,
+// 	baseCfg *tcp_config.ClientConfig,
+// ) {
+// 	fmt.Printf("\n🚀 BATCH BLS REGISTRATION: %d wallets\n", count)
+
+// 	// 1. Lấy BLS PubKey từ server một lần duy nhất
+// 	getBlsData, _ := accountABI.Pack("getPublickeyBls")
+// 	blsResult, err := tcpClient.RpcEthCall(accountContract, getBlsData)
+// 	if err != nil {
+// 		fmt.Printf("  ❌ Không lấy được BLS PubKey: %v\n", err)
+// 		return
+// 	}
+// 	serverBlsPubKey := strings.Trim(string(blsResult), "\"")
+// 	blsPubKeyHex := strings.TrimPrefix(serverBlsPubKey, "0x")
+// 	blsPubKey, _ := hex.DecodeString(blsPubKeyHex)
+// 	fmt.Printf("  ✅ Server BLS PubKey: %s\n", serverBlsPubKey)
+
+// 	// Tạo thư mục lưu wallets
+// 	os.MkdirAll("wallets", 0755)
+
+// 	// Lấy nonce admin hiện tại
+// 	adminNonce, _ := tcpClient.RpcGetPendingNonce(adminAddr)
+
+// 	// Danh sách chứa tất cả config
+// 	allConfigs := make([]map[string]interface{}, 0, count)
+
+// 	for i := 1; i <= count; i++ {
+// 		// a. Tạo ETH key mới
+// 		newPrivKey, _ := crypto.GenerateKey()
+// 		newAddr := crypto.PubkeyToAddress(newPrivKey.PublicKey)
+// 		newPrivKeyHex := hex.EncodeToString(crypto.FromECDSA(newPrivKey))
+
+// 		// b. setBlsPublicKey (nonce = 0 vì ví mới)
+// 		inputData, _ := accountABI.Pack("setBlsPublicKey", blsPubKey)
+// 		tx := e_types.NewTransaction(0, accountContract, big.NewInt(0), 2000000, big.NewInt(1000000), inputData)
+// 		signedTx, _ := e_types.SignTx(tx, signer, newPrivKey)
+// 		rawTxBytes, _ := signedTx.MarshalBinary()
+// 		_, err := tcpClient.RpcSendRawTransaction("0x" + hex.EncodeToString(rawTxBytes))
+// 		if err != nil {
+// 			fmt.Printf("  [%d/%d] ❌ setBlsPublicKey %s: %v\n", i, count, newAddr.Hex(), err)
+// 			continue
+// 		}
+
+// 		// c. confirmAccountWithoutSign từ Admin
+// 		confirmData, _ := accountABI.Pack("confirmAccountWithoutSign", newAddr)
+// 		adminTx := e_types.NewTransaction(adminNonce, accountContract, big.NewInt(0), 2000000, big.NewInt(1000000), confirmData)
+// 		signedAdminTx, _ := e_types.SignTx(adminTx, signer, adminPrivKey)
+// 		adminRawTxBytes, _ := signedAdminTx.MarshalBinary()
+// 		_, err = tcpClient.RpcSendRawTransaction("0x" + hex.EncodeToString(adminRawTxBytes))
+// 		if err != nil {
+// 			fmt.Printf("  [%d/%d] ❌ AdminConfirm %s: %v\n", i, count, newAddr.Hex(), err)
+// 			continue
+// 		}
+// 		adminNonce++
+
+// 		// d. Gom config vào mảng
+// 		walletCfg := map[string]interface{}{
+// 			"private_key":               baseCfg.PrivateKey_, // Cùng BLS key với server
+// 			"version":                   baseCfg.Version_,
+// 			"parent_connection_address": baseCfg.ParentConnectionAddress,
+// 			"chain_id":                  baseCfg.ChainId,
+// 			"nation_id":                 baseCfg.NationId,
+// 			"parent_connection_type":    baseCfg.ParentConnectionType,
+// 			"parent_address":            newAddr.Hex(), // Mỗi ví dùng địa chỉ riêng của mình làm ParentAddress (Identity)
+// 			"eth_private_key":           newPrivKeyHex,
+// 			"demo_abi_path":             baseCfg.DemoAbiPath_,
+// 			"demo_contract_address":     baseCfg.DemoContractAddress,
+// 			"contact_private":           "0x00000000000000000000000000000000D844bb55",
+// 		}
+// 		allConfigs = append(allConfigs, walletCfg)
+
+// 		if i%10 == 0 || i == count {
+// 			fmt.Printf("  ✅ [%d/%d] Registered: %s\n", i, count, newAddr.Hex())
+// 		}
+// 	}
+
+// 	// Viết tất cả vào 1 file duy nhất
+// 	finalCtx, _ := json.MarshalIndent(allConfigs, "", "  ")
+// 	os.WriteFile("wallets.json", finalCtx, 0644)
+
+// 	fmt.Printf("\n✨ Done! %d configs saved in wallets.json\n", len(allConfigs))
+// }
+
 // // ===================== MAIN =====================
 
 // func main() {
@@ -333,9 +425,14 @@ package main
 // 	})
 
 // 	configPath := flag.String("config", "config-test.json", "Path to TCP client config")
-// 	testSuite := flag.String("test", "bls", "Test suite: demo, bls, tps, all")
-// 	tpsCount := flag.Int("n", 1000, "Number of requests for TPS test")
+// 	testSuite := flag.String("test", "bls", "Test suite: demo, bls, tps, tps-sendtx, tps-single, all, batch-bls")
+// 	tpsCount := flag.Int("n", 1000, "Number of requests for TPS test / wallets for batch-bls")
 // 	tpsConcurrency := flag.Int("c", 50, "Concurrency for TPS test")
+// 	tpsRounds := flag.Int("rounds", 3, "Number of TPS benchmark rounds")
+// 	tpsPause := flag.Int("pause", 5, "Seconds to pause between rounds (for chain to settle)")
+// 	tpsMode := flag.String("mode", "tcp", "Transport mode for tps-single: tcp or http")
+// 	tpsWallets := flag.Int("wallets", 200, "Number of wallets for tps-single")
+// 	tpsTxPerWallet := flag.Int("txpw", 5, "Transactions per wallet for tps-single")
 // 	flag.Parse()
 
 // 	fmt.Println("╔══════════════════════════════════════════════════════╗")
@@ -381,6 +478,13 @@ package main
 // 		testBlsRegistration(tcpClient, accountABI, accountContract, ethPrivKey, fromAddr, signer)
 // 	case "tps":
 // 		testChainIdTPS(tcpClient, *tpsCount, *tpsConcurrency)
+// 	case "batch-bls":
+// 		// Load account ABI
+// 		accountABI, _ := abi.JSON(strings.NewReader(accountAbiJSON))
+// 		accountContract := common.HexToAddress("0x00000000000000000000000000000000D844bb55")
+// 		testBatchBlsRegistration(tcpClient, accountABI, accountContract, ethPrivKey, fromAddr, signer, *tpsCount, cfg)
+// 	case "tps-single":
+// 		testSingleTPS(tcpClient, signer, cfg, *tpsMode, *tpsWallets, *tpsTxPerWallet, *tpsRounds, *tpsPause)
 // 	case "all":
 // 		// Demo test
 // 		demoAbiBytes, _ := os.ReadFile(cfg.DemoAbiPath_)
@@ -450,6 +554,385 @@ package main
 // 	wg.Wait()
 // 	elapsed := time.Since(start)
 // 	return ok, fail, elapsed
+// }
+
+// // ===================== TPS SendTx =====================
+
+// // walletEntry cấu trúc wallet từ wallets.json
+// type walletEntry struct {
+// 	EthPrivateKey string `json:"eth_private_key"`
+// 	ParentAddress string `json:"parent_address"`
+// 	ChainId       uint64 `json:"chain_id"`
+// }
+
+// // prebuiltTx chứa signed raw tx hex, sẵn sàng bắn
+// type prebuiltTx struct {
+// 	RawTxHex string
+// 	FromAddr common.Address
+// }
+
+// // roundResult lưu kết quả 1 round
+// type roundResult struct {
+// 	TcpTPS   float64
+// 	HttpTPS  float64
+// 	TcpDur   time.Duration
+// 	HttpDur  time.Duration
+// 	TcpOK    int64
+// 	HttpOK   int64
+// 	TcpFail  int64
+// 	HttpFail int64
+// }
+
+// // testSingleTPS test chỉ 1 transport (TCP hoặc HTTP) với multi-round
+// // Công bằng: chỉ test 1 loại, không bị ảnh hưởng bởi transport kia
+// func testSingleTPS(
+// 	tcpClient *client_tcp.Client,
+// 	signer e_types.Signer,
+// 	cfg *tcp_config.ClientConfig,
+// 	mode string,
+// 	numWallets int,
+// 	txPerWallet int,
+// 	rounds int,
+// 	pauseSec int,
+// ) {
+// 	useHTTP := strings.ToLower(mode) == "http"
+// 	label := "TCP-Direct"
+// 	if useHTTP {
+// 		label = "HTTP-Forward"
+// 	}
+// 	totalTxs := numWallets * txPerWallet
+
+// 	fmt.Println("\n╔══════════════════════════════════════════════════════════════╗")
+// 	fmt.Printf("║  TPS Benchmark: %s ONLY                          \n", strings.ToUpper(label))
+// 	fmt.Println("╠══════════════════════════════════════════════════════════════╣")
+// 	fmt.Printf("║  Wallets: %d | TX/wallet: %d | Total TX: %d\n", numWallets, txPerWallet, totalTxs)
+// 	fmt.Printf("║  Rounds: %d | Pause: %ds\n", rounds, pauseSec)
+// 	fmt.Println("╚══════════════════════════════════════════════════════════════╝")
+
+// 	// Load wallets
+// 	fmt.Println("\n─── Loading wallets ───")
+// 	walletData, err := os.ReadFile("wallets.json")
+// 	if err != nil {
+// 		fmt.Printf("  ❌ Cannot read wallets.json: %v\n", err)
+// 		fmt.Println("  ℹ️  Run with -test=batch-bls first to generate wallets")
+// 		return
+// 	}
+// 	var wallets []walletEntry
+// 	if err := json.Unmarshal(walletData, &wallets); err != nil {
+// 		fmt.Printf("  ❌ Cannot parse wallets.json: %v\n", err)
+// 		return
+// 	}
+
+// 	// Lấy đúng numWallets ví
+// 	if numWallets > len(wallets) {
+// 		numWallets = len(wallets)
+// 		totalTxs = numWallets * txPerWallet
+// 		fmt.Printf("  ⚠️ Only %d wallets available, adjusting\n", numWallets)
+// 	}
+
+// 	privKeys := make([]*ecdsa.PrivateKey, 0, numWallets)
+// 	addrs := make([]common.Address, 0, numWallets)
+// 	for _, w := range wallets[:numWallets] {
+// 		pk, err := crypto.HexToECDSA(w.EthPrivateKey)
+// 		if err != nil {
+// 			continue
+// 		}
+// 		addr := crypto.PubkeyToAddress(pk.PublicKey)
+// 		privKeys = append(privKeys, pk)
+// 		addrs = append(addrs, addr)
+// 	}
+// 	fmt.Printf("  ✅ Using %d wallets, %d tx/wallet = %d total txs\n", len(privKeys), txPerWallet, len(privKeys)*txPerWallet)
+
+// 	// Run rounds
+// 	type singleResult struct {
+// 		TPS      float64
+// 		Duration time.Duration
+// 		OK       int64
+// 		Fail     int64
+// 	}
+// 	results := make([]singleResult, 0, rounds)
+
+// 	for round := 1; round <= rounds; round++ {
+// 		fmt.Printf("\n╔═══════════════════════════════════════╗\n")
+// 		fmt.Printf("║     ROUND %d / %d (%s)            \n", round, rounds, label)
+// 		fmt.Printf("╚═══════════════════════════════════════╝\n")
+
+// 		// Fetch nonces
+// 		nonces := fetchNoncesForKeys(tcpClient, privKeys, addrs)
+
+// 		// Build txs grouped per wallet
+// 		txsPerWallet := buildTxsGroupedByWallet(privKeys, addrs, nonces, signer, txPerWallet)
+// 		totalTxCount := 0
+// 		for _, wTxs := range txsPerWallet {
+// 			totalTxCount += len(wTxs)
+// 		}
+// 		fmt.Printf("  📋 Built %d txs (%d wallets × %d tx/wallet)\n", totalTxCount, len(privKeys), txPerWallet)
+
+// 		// Fire! Mỗi wallet gửi tuần tự, nhưng 200 wallets song song
+// 		fmt.Printf("  🚀 Firing %s (per-wallet sequential)...\n", label)
+// 		ok, fail, dur := fireTxsPerWallet(tcpClient, txsPerWallet, useHTTP)
+// 		tps := float64(ok) / dur.Seconds()
+// 		avgLat := dur / time.Duration(totalTxCount)
+
+// 		fmt.Printf("  ✅ OK: %d, ❌ Fail: %d\n", ok, fail)
+// 		fmt.Printf("  ⏱️  Duration: %s\n", dur.Round(time.Millisecond))
+// 		fmt.Printf("  📊 TPS: %.2f tx/s\n", tps)
+// 		fmt.Printf("  📊 Avg latency: %s\n", avgLat.Round(time.Microsecond))
+
+// 		results = append(results, singleResult{
+// 			TPS:      tps,
+// 			Duration: dur,
+// 			OK:       ok,
+// 			Fail:     fail,
+// 		})
+
+// 		// Pause between rounds
+// 		if round < rounds && pauseSec > 0 {
+// 			fmt.Printf("\n  ⏳ Waiting %ds for chain to settle...\n", pauseSec)
+// 			time.Sleep(time.Duration(pauseSec) * time.Second)
+// 		}
+// 	}
+
+// 	// ==================== Aggregate ====================
+// 	var sum, min, max float64
+// 	min = 1e18
+// 	var totalOK, totalFail int64
+// 	for _, r := range results {
+// 		sum += r.TPS
+// 		if r.TPS < min {
+// 			min = r.TPS
+// 		}
+// 		if r.TPS > max {
+// 			max = r.TPS
+// 		}
+// 		totalOK += r.OK
+// 		totalFail += r.Fail
+// 	}
+// 	avg := sum / float64(len(results))
+
+// 	fmt.Println("\n╔══════════════════════════════════════════════════════════════╗")
+// 	fmt.Printf("║  AGGREGATE: %s (%d rounds)                         \n", strings.ToUpper(label), rounds)
+// 	fmt.Println("╠══════════════════════════════════════════════════════════════╣")
+// 	fmt.Printf("║  Config:  %d wallets × %d tx/wallet = %d total/round\n", len(privKeys), txPerWallet, len(privKeys)*txPerWallet)
+// 	fmt.Println("║  ─────────────────────────────────────────────────")
+// 	fmt.Printf("║  Avg TPS:     %8.0f tx/s\n", avg)
+// 	fmt.Printf("║  Min TPS:     %8.0f tx/s\n", min)
+// 	fmt.Printf("║  Max TPS:     %8.0f tx/s\n", max)
+// 	fmt.Printf("║  Total OK:    %8d / %d\n", totalOK, totalOK+totalFail)
+// 	fmt.Println("║  ─────────────────────────────────────────────────")
+// 	fmt.Println("║  Round │     TPS      │  Duration  │  OK/Total")
+// 	for i, r := range results {
+// 		fmt.Printf("║  %5d │ %8.0f tx/s │ %9s  │  %d/%d\n",
+// 			i+1, r.TPS, r.Duration.Round(time.Millisecond), r.OK, r.OK+r.Fail)
+// 	}
+// 	fmt.Println("╚══════════════════════════════════════════════════════════════╝")
+// }
+
+// // fetchNoncesForKeys lấy nonce cho tất cả wallets song song
+// func fetchNoncesForKeys(
+// 	tcpClient *client_tcp.Client,
+// 	privKeys []*ecdsa.PrivateKey,
+// 	addrs []common.Address,
+// ) []uint64 {
+// 	nonces := make([]uint64, len(addrs))
+// 	var wg sync.WaitGroup
+// 	sem := make(chan struct{}, 100) // max 100 concurrent nonce fetches
+
+// 	for i := range addrs {
+// 		wg.Add(1)
+// 		sem <- struct{}{}
+// 		go func(idx int) {
+// 			defer wg.Done()
+// 			defer func() { <-sem }()
+// 			nonce, err := tcpClient.RpcGetPendingNonce(addrs[idx])
+// 			if err != nil {
+// 				logger.Warn("GetNonce failed for wallet %d (%s): %v", idx, addrs[idx].Hex(), err)
+// 				return
+// 			}
+// 			nonces[idx] = nonce
+// 		}(i)
+// 	}
+// 	wg.Wait()
+// 	return nonces
+// }
+
+// // buildSignedTxsBatch tạo signed raw tx hex cho mỗi wallet (1 tx/wallet)
+// func buildSignedTxsBatch(
+// 	privKeys []*ecdsa.PrivateKey,
+// 	addrs []common.Address,
+// 	nonces []uint64,
+// 	signer e_types.Signer,
+// ) []prebuiltTx {
+// 	return buildSignedTxsMulti(privKeys, addrs, nonces, signer, 1)
+// }
+
+// // buildSignedTxsMulti tạo signed raw tx hex cho mỗi wallet với txPerWallet giao dịch
+// // Mỗi tx dùng nonce tăng dần: nonces[i], nonces[i]+1, ..., nonces[i]+txPerWallet-1
+// func buildSignedTxsMulti(
+// 	privKeys []*ecdsa.PrivateKey,
+// 	addrs []common.Address,
+// 	nonces []uint64,
+// 	signer e_types.Signer,
+// 	txPerWallet int,
+// ) []prebuiltTx {
+// 	txs := make([]prebuiltTx, 0, len(privKeys)*txPerWallet)
+// 	for i, pk := range privKeys {
+// 		for j := 0; j < txPerWallet; j++ {
+// 			nonce := nonces[i] + uint64(j)
+// 			tx := e_types.NewTransaction(nonce, common.HexToAddress("0x2C71210D239D472e963a7Be8362eCBdeD5337fE6"), big.NewInt(0), 21000, big.NewInt(1000000), nil)
+// 			signedTx, err := e_types.SignTx(tx, signer, pk)
+// 			if err != nil {
+// 				fmt.Printf("  ⚠️ SignTx failed for wallet %d tx %d: %v\n", i, j, err)
+// 				continue
+// 			}
+// 			rawTxBytes, _ := signedTx.MarshalBinary()
+// 			txs = append(txs, prebuiltTx{
+// 				RawTxHex: "0x" + hex.EncodeToString(rawTxBytes),
+// 				FromAddr: addrs[i],
+// 			})
+// 		}
+// 	}
+// 	return txs
+// }
+
+// // buildTxsGroupedByWallet tạo txs nhóm theo wallet (mỗi wallet = []prebuiltTx)
+// // Để có thể gửi tuần tự per-wallet, song song giữa các wallet
+// func buildTxsGroupedByWallet(
+// 	privKeys []*ecdsa.PrivateKey,
+// 	addrs []common.Address,
+// 	nonces []uint64,
+// 	signer e_types.Signer,
+// 	txPerWallet int,
+// ) [][]prebuiltTx {
+// 	result := make([][]prebuiltTx, len(privKeys))
+// 	for i, pk := range privKeys {
+// 		walletTxs := make([]prebuiltTx, 0, txPerWallet)
+// 		for j := 0; j < txPerWallet; j++ {
+// 			nonce := nonces[i] + uint64(j)
+// 			tx := e_types.NewTransaction(nonce, common.HexToAddress("0x2C71210D239D472e963a7Be8362eCBdeD5337fE6"), big.NewInt(0), 21000, big.NewInt(1000000), nil)
+// 			signedTx, err := e_types.SignTx(tx, signer, pk)
+// 			if err != nil {
+// 				continue
+// 			}
+// 			rawTxBytes, _ := signedTx.MarshalBinary()
+// 			walletTxs = append(walletTxs, prebuiltTx{
+// 				RawTxHex: "0x" + hex.EncodeToString(rawTxBytes),
+// 				FromAddr: addrs[i],
+// 			})
+// 		}
+// 		result[i] = walletTxs
+// 	}
+// 	return result
+// }
+
+// // fireTxsPerWallet gửi txs per-wallet: mỗi wallet gửi TUẦN TỰ (đảm bảo thứ tự nonce),
+// // nhưng 200 wallets chạy SONG SONG → tối đa throughput mà không lỗi nonce
+// func fireTxsPerWallet(
+// 	tcpClient *client_tcp.Client,
+// 	txsPerWallet [][]prebuiltTx,
+// 	useHTTP bool,
+// ) (okCount int64, failCount int64, duration time.Duration) {
+// 	var ok, fail int64
+// 	var wg sync.WaitGroup
+
+// 	const maxErrSamples = 10
+// 	var errMu sync.Mutex
+// 	errSamples := make([]string, 0, maxErrSamples)
+
+// 	start := time.Now()
+// 	for walletIdx := range txsPerWallet {
+// 		wg.Add(1)
+// 		go func(wIdx int) {
+// 			defer wg.Done()
+// 			// Gửi tuần tự cho wallet này
+// 			for txIdx, ptx := range txsPerWallet[wIdx] {
+// 				var err error
+// 				if useHTTP {
+// 					_, err = tcpClient.RpcHttpSendRawTransaction(ptx.RawTxHex)
+// 				} else {
+// 					_, err = tcpClient.RpcSendRawTransaction(ptx.RawTxHex)
+// 				}
+// 				if err != nil {
+// 					n := atomic.AddInt64(&fail, 1)
+// 					if n <= int64(maxErrSamples) {
+// 						errMu.Lock()
+// 						errSamples = append(errSamples, fmt.Sprintf("wallet[%d] tx[%d] %s: %v", wIdx, txIdx, ptx.FromAddr.Hex()[:10], err))
+// 						errMu.Unlock()
+// 					}
+// 					// Nếu 1 tx fail (nonce lỗi), skip các tx còn lại của wallet này
+// 					remaining := len(txsPerWallet[wIdx]) - txIdx - 1
+// 					atomic.AddInt64(&fail, int64(remaining))
+// 					break
+// 				}
+// 				atomic.AddInt64(&ok, 1)
+// 			}
+// 		}(walletIdx)
+// 	}
+// 	wg.Wait()
+// 	elapsed := time.Since(start)
+
+// 	finalFail := atomic.LoadInt64(&fail)
+// 	if finalFail > 0 {
+// 		fmt.Printf("\n  ⚠️  %d errors detected (showing first %d):\n", finalFail, len(errSamples))
+// 		for _, msg := range errSamples {
+// 			fmt.Printf("    ❌ %s\n", msg)
+// 		}
+// 	}
+
+// 	return atomic.LoadInt64(&ok), finalFail, elapsed
+// }
+
+// // fireTxsBatch gửi tất cả txs song song, đo thời gian
+// // useHTTP=true → http_sendRawTransaction, false → eth_sendRawTransaction
+// func fireTxsBatch(
+// 	tcpClient *client_tcp.Client,
+// 	txs []prebuiltTx,
+// 	useHTTP bool,
+// ) (okCount int64, failCount int64, duration time.Duration) {
+// 	var ok, fail int64
+// 	var wg sync.WaitGroup
+
+// 	// Collect first N error messages (thread-safe)
+// 	const maxErrSamples = 10
+// 	var errMu sync.Mutex
+// 	errSamples := make([]string, 0, maxErrSamples)
+
+// 	start := time.Now()
+// 	for i := range txs {
+// 		wg.Add(1)
+// 		go func(idx int) {
+// 			defer wg.Done()
+// 			var err error
+// 			if useHTTP {
+// 				_, err = tcpClient.RpcHttpSendRawTransaction(txs[idx].RawTxHex)
+// 			} else {
+// 				_, err = tcpClient.RpcSendRawTransaction(txs[idx].RawTxHex)
+// 			}
+// 			if err != nil {
+// 				n := atomic.AddInt64(&fail, 1)
+// 				if n <= int64(maxErrSamples) {
+// 					errMu.Lock()
+// 					errSamples = append(errSamples, fmt.Sprintf("[%d] %s: %v", idx, txs[idx].FromAddr.Hex()[:10], err))
+// 					errMu.Unlock()
+// 				}
+// 			} else {
+// 				atomic.AddInt64(&ok, 1)
+// 			}
+// 		}(i)
+// 	}
+// 	wg.Wait()
+// 	elapsed := time.Since(start)
+
+// 	// Print error summary
+// 	finalFail := atomic.LoadInt64(&fail)
+// 	if finalFail > 0 {
+// 		fmt.Printf("\n  ⚠️  %d errors detected (showing first %d):\n", finalFail, len(errSamples))
+// 		for _, msg := range errSamples {
+// 			fmt.Printf("    ❌ %s\n", msg)
+// 		}
+// 	}
+
+// 	return atomic.LoadInt64(&ok), finalFail, elapsed
 // }
 
 // // Account ABI (chỉ các function cần dùng)

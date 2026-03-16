@@ -19,29 +19,32 @@ import (
 	"github.com/meta-node-blockchain/meta-node/pkg/rpc_client"
 	"github.com/meta-node-blockchain/meta-node/pkg/transaction"
 	t_network "github.com/meta-node-blockchain/meta-node/types/network"
+	"google.golang.org/protobuf/proto"
 )
 
 // handleEthCall - gửi ReadTransaction qua TCP trực tiếp
+// Chỉ nhận proto TcpEthCallRequest (TCP-only handler)
 func (srv *RpcTcpServer) handleEthCall(request t_network.Request) error {
 	conn := request.Connection()
 	msgID := request.Message().ID()
+	body := request.Message().Body()
 
-	params := parseParamsRaw(request.Message().Body())
-	if len(params) == 0 {
+	// Parse proto TcpEthCallRequest
+	tcpReq := &pb.TcpEthCallRequest{}
+	if err := proto.Unmarshal(body, tcpReq); err != nil || len(tcpReq.To) == 0 {
 		return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{
 			Code:    -32602,
-			Message: "Invalid params: missing call object for eth_call",
+			Message: "Invalid params: failed to parse TcpEthCallRequest",
 		})
 	}
 
-	// Extract from address từ call object
-	var callObj map[string]interface{}
-	if err := json.Unmarshal(params[0], &callObj); err != nil {
-		return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{
-			Code:    -32602,
-			Message: "Invalid call object: " + err.Error(),
-		})
+	// Chuyển proto → JSON callParam cho handleEthCallTCP
+	callObj := map[string]string{
+		"to":   common.BytesToAddress(tcpReq.To).Hex(),
+		"data": "0x" + hex.EncodeToString(tcpReq.Data),
 	}
+	callParam, _ := json.Marshal(callObj)
+
 	fromHex := request.Message().ToAddress()
 	if fromHex == (common.Address{}) {
 		return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{
@@ -50,7 +53,7 @@ func (srv *RpcTcpServer) handleEthCall(request t_network.Request) error {
 		})
 	}
 
-	chainClient, err := srv.getOrCreateChainConn(fromHex.Hex())
+	chainClient, err := srv.AppCtx.ChainPool.Get()
 	if err != nil {
 		return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{
 			Code:    -32603,
@@ -58,7 +61,7 @@ func (srv *RpcTcpServer) handleEthCall(request t_network.Request) error {
 		})
 	}
 
-	return srv.handleEthCallTCP(conn, msgID, params[0], chainClient, fromHex)
+	return srv.handleEthCallTCP(conn, msgID, callParam, chainClient, fromHex)
 }
 
 // handleEthCallTCP gửi ReadTransaction qua chain TCP connection, nhận receipt về
@@ -99,9 +102,8 @@ func (srv *RpcTcpServer) handleEthCallTCP(conn t_network.Connection, msgID strin
 			}
 			if result != nil {
 				jsonBytes, _ := json.Marshal(result)
-				hexResult := "0x" + common.Bytes2Hex(jsonBytes)
-				resultBytes, _ := json.Marshal(hexResult)
-				return srv.sendRpcResponse(conn, msgID, resultBytes, nil)
+				// Trả raw bytes trực tiếp (client nhận []byte)
+				return srv.sendRpcResponse(conn, msgID, jsonBytes, nil)
 			}
 		}
 
@@ -116,9 +118,8 @@ func (srv *RpcTcpServer) handleEthCallTCP(conn t_network.Connection, msgID strin
 			}
 			if result != nil {
 				jsonBytes, _ := json.Marshal(result)
-				hexResult := "0x" + common.Bytes2Hex(jsonBytes)
-				resultBytes, _ := json.Marshal(hexResult)
-				return srv.sendRpcResponse(conn, msgID, resultBytes, nil)
+				// Trả raw bytes trực tiếp (client nhận []byte)
+				return srv.sendRpcResponse(conn, msgID, jsonBytes, nil)
 			}
 		}
 	}
@@ -197,12 +198,10 @@ func (srv *RpcTcpServer) handleEthCallTCP(conn t_network.Connection, msgID strin
 		return srv.sendRpcResponse(conn, msgID, nil, rpcErr)
 	}
 
+	// Trả raw bytes trực tiếp — client nhận []byte không cần hex decode
 	returnData := rcp.Return()
-	resultHex := "0x" + hex.EncodeToString(returnData)
-	resultBytes, _ := json.Marshal(resultHex)
-
-	logger.Info("✅ TCP eth_call (TCP-direct) result: %s", resultHex)
-	return srv.sendRpcResponse(conn, msgID, resultBytes, nil)
+	logger.Info("✅ TCP eth_call (TCP-direct) result: %d bytes", len(returnData))
+	return srv.sendRpcResponse(conn, msgID, returnData, nil)
 }
 
 // applyErrorDecoder applies the error decoder to a standard pb.RpcError

@@ -775,14 +775,17 @@ func (c *Connection) writeLoop(tcpConn net.Conn, sendChan chan network.Message, 
 			logger.Error("writeLoop %s: marshal error: %v", remoteAddr, err)
 			continue
 		}
-		logger.Info(
-			"writeLoop %s: sending command %s (%d bytes, remaining queue=%d/%d)",
-			remoteAddr,
-			message.Command(),
-			len(b),
-			len(sendChan),
-			c.config.SendChanSize,
-		)
+		cmd := message.Command()
+		if cmd != "Ping" && cmd != "Pong" && cmd != "KeepAlive" && cmd != "GetTransactionReceipt" && cmd != "TransactionReceipt" {
+			logger.Info(
+				"writeLoop %s: sending command %s (%d bytes, remaining queue=%d/%d)",
+				remoteAddr,
+				cmd,
+				len(b),
+				len(sendChan),
+				c.config.SendChanSize,
+			)
+		}
 		_ = tcpConn.SetWriteDeadline(time.Now().Add(c.config.WriteTimeout))
 		length := make([]byte, 8)
 		binary.LittleEndian.PutUint64(length, uint64(len(b)))
@@ -865,15 +868,15 @@ func (c *Connection) readLoop(tcpConn net.Conn, requestChan chan<- network.Reque
 			handleTerminalError(fmt.Errorf("unmarshal error: %w", err), "unmarshaling")
 			return
 		}
-		if msgProto.GetHeader().GetCommand() != "block_data_topic" {
+		rcmd := msgProto.GetHeader().GetCommand()
+		if rcmd != "block_data_topic" && rcmd != "Ping" && rcmd != "Pong" && rcmd != "KeepAlive" && rcmd != "GetTransactionReceipt" && rcmd != "TransactionReceipt" {
 			logger.Info(
 				"readLoop %s: received command %s (%d bytes body)",
 				remoteAddr,
-				msgProto.GetHeader().GetCommand(),
+				rcmd,
 				len(msgProto.GetBody()),
 			)
 		}
-
 		req := requestPool.Get().(network.Request)
 		req.Reset(c, NewMessage(msgProto))
 

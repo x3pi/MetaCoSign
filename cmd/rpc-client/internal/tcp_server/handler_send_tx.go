@@ -17,6 +17,7 @@ import (
 	robothandler "github.com/meta-node-blockchain/meta-node/pkg/robot_handler"
 	mt_types "github.com/meta-node-blockchain/meta-node/types"
 	t_network "github.com/meta-node-blockchain/meta-node/types/network"
+	"google.golang.org/protobuf/proto"
 )
 
 // handleHttpSendRawTransaction - Xử lý http_sendRawTransaction qua HTTP thay vì TCP
@@ -53,67 +54,22 @@ func (srv *RpcTcpServer) handleHttpSendRawTransaction(request t_network.Request)
 
 // handleSendRawTransaction - build BLS key, convert Ethereum tx → MetaTx
 // Gửi TX qua TCP trực tiếp và chờ receipt/error
+// Chỉ nhận proto TcpSendTxRequest (TCP-only handler)
 func (srv *RpcTcpServer) handleSendRawTransaction(request t_network.Request) error {
 	conn := request.Connection()
 	msgID := request.Message().ID()
-	var params []string
 	body := request.Message().Body()
-	if len(body) > 0 {
-		_ = json.Unmarshal(body, &params)
-	}
 
-	if len(params) == 0 || params[0] == "" {
+	// Parse proto TcpSendTxRequest
+	tcpReq := &pb.TcpSendTxRequest{}
+	if err := proto.Unmarshal(body, tcpReq); err != nil || len(tcpReq.RawTx) == 0 {
 		return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{
 			Code:    -32602,
-			Message: "Invalid params: missing raw transaction hex",
+			Message: "Invalid params: failed to parse TcpSendTxRequest",
 		})
 	}
-	rawTxHex := params[0]
-	// Decode raw tx để lấy fromAddress
-	rawTxBytes, err := hex.DecodeString(rawTxHex[2:]) // skip 0x
-	if err != nil {
-		return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{
-			Code:    -32602,
-			Message: "Invalid raw transaction hex: " + err.Error(),
-		})
-	}
-	ethTx := new(e_types.Transaction)
-	if err := ethTx.UnmarshalBinary(rawTxBytes); err != nil {
-		return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{
-			Code:    -32603,
-			Message: "Failed to unmarshal Ethereum transaction: " + err.Error(),
-		})
-	}
+	rawTxBytes := tcpReq.RawTx
 
-	signer := e_types.LatestSignerForChainID(srv.AppCtx.ClientRpc.ChainId)
-	fromAddr, err := e_types.Sender(signer, ethTx)
-	if err != nil {
-		return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{
-			Code:    -32603,
-			Message: "Failed to get sender: " + err.Error(),
-		})
-	}
-
-	chainClient, err := srv.getOrCreateChainConn(fromAddr.Hex())
-	if err != nil {
-		return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{
-			Code:    -32603,
-			Message: "Failed to get chain connection: " + err.Error(),
-		})
-	}
-
-	return srv.handleSendRawTransactionTCP(conn, msgID, rawTxHex, chainClient)
-}
-
-// handleSendRawTransactionTCP gửi TX qua chain TCP connection, chờ TransactionSuccess/Error.
-func (srv *RpcTcpServer) handleSendRawTransactionTCP(conn t_network.Connection, msgID string, rawTxHex string, chainClient *connection_client.ConnectionClient) error {
-	rawTxBytes, err := hex.DecodeString(rawTxHex[2:]) // skip 0x
-	if err != nil {
-		return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{
-			Code:    -32602,
-			Message: "Invalid raw transaction hex: " + err.Error(),
-		})
-	}
 	// Decode Ethereum TX
 	ethTx := new(e_types.Transaction)
 	if err := ethTx.UnmarshalBinary(rawTxBytes); err != nil {
@@ -122,6 +78,23 @@ func (srv *RpcTcpServer) handleSendRawTransactionTCP(conn t_network.Connection, 
 			Message: "Failed to unmarshal Ethereum transaction: " + err.Error(),
 		})
 	}
+
+	chainClient, err := srv.AppCtx.ChainPool.Get()
+	if err != nil {
+		return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{
+			Code:    -32603,
+			Message: "Failed to get chain connection: " + err.Error(),
+		})
+	}
+
+	return srv.handleSendRawTransactionTCP(conn, msgID, rawTxBytes, ethTx, chainClient)
+}
+
+// handleSendRawTransactionTCP gửi TX qua chain TCP connection, chờ TransactionSuccess/Error.
+// Nhận raw bytes trực tiếp (không cần hex decode lại)
+func (srv *RpcTcpServer) handleSendRawTransactionTCP(conn t_network.Connection, msgID string, rawTxBytes []byte, ethTx *e_types.Transaction, chainClient *connection_client.ConnectionClient) error {
+	// Tạo rawTxHex cho interceptor handlers (cần hex string)
+	rawTxHex := "0x" + hex.EncodeToString(rawTxBytes)
 	// Lưu original ETH tx hash trước khi build BLS transaction
 	ethTxHash := ethTx.Hash()
 	var (
@@ -185,13 +158,14 @@ func (srv *RpcTcpServer) handleSendRawTransactionTCP(conn t_network.Connection, 
 					logger.Error("Account handler transaction error: %v", err)
 					return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{Code: -32603, Message: "Account handler transaction error: " + err.Error()})
 				}
-				finalResult := tx.Hash().Hex()
+				finalHash := tx.Hash()
 				if result != nil {
 					if txHashStr, ok := result.(string); ok && txHashStr != "" {
-						finalResult = txHashStr
+						finalHash = ethCommon.HexToHash(txHashStr)
 					}
 				}
-				resultBytes, _ := json.Marshal(finalResult)
+				hashResp := &pb.TcpHashParam{Hash: finalHash.Bytes()}
+				resultBytes, _ := proto.Marshal(hashResp)
 				return srv.sendRpcResponse(conn, msgID, resultBytes, nil)
 			} else if !handled && err == nil {
 				return srv.sendNormalTCPTransaction(conn, msgID, bTx, ethTxHash, chainClient)
@@ -213,15 +187,16 @@ func (srv *RpcTcpServer) handleSendRawTransactionTCP(conn t_network.Connection, 
 					logger.Error("❌ [sendRawTransaction] Robot handler transaction error: %v", err)
 					return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{Code: -32603, Message: "Robot handler transaction error: " + err.Error()})
 				}
-				var finalResult string
+				var finalHash ethCommon.Hash
 				if result != nil {
 					if txHashStr, ok := result.(string); ok && txHashStr != "" {
-						finalResult = txHashStr
+						finalHash = ethCommon.HexToHash(txHashStr)
 					}
 				} else {
-					finalResult = tx.Hash().Hex()
+					finalHash = tx.Hash()
 				}
-				resultBytes, _ := json.Marshal(finalResult)
+				hashResp := &pb.TcpHashParam{Hash: finalHash.Bytes()}
+				resultBytes, _ := proto.Marshal(hashResp)
 				return srv.sendRpcResponse(conn, msgID, resultBytes, nil)
 			} else if !handled && err == nil {
 				return srv.sendNormalTCPTransaction(conn, msgID, bTx, ethTxHash, chainClient)
@@ -250,8 +225,8 @@ func (srv *RpcTcpServer) sendNormalTCPTransaction(conn t_network.Connection, msg
 	}
 	logger.Info("✅ TCP eth_sendRawTransaction:  txBLS=0x%x", hex.EncodeToString(txBLS))
 
-	// Trả về BLS tx hash (chain lưu receipt theo BLS hash)
-	txBLSHex := "0x" + hex.EncodeToString(txBLS)
-	resultBytes, _ := json.Marshal(txBLSHex)
+	// Trả proto TcpHashParam — client parse binary hash trực tiếp
+	hashResp := &pb.TcpHashParam{Hash: txBLS}
+	resultBytes, _ := proto.Marshal(hashResp)
 	return srv.sendRpcResponse(conn, msgID, resultBytes, nil)
 }

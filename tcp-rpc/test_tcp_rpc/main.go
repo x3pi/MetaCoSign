@@ -3,14 +3,12 @@ package main
 import (
 	"crypto/ecdsa"
 	"encoding/hex"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"math/big"
 	"os"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -93,6 +91,49 @@ func sendTxAndWait(
 	return txHash, receipt
 }
 
+// sendTxExpectError gửi transaction mà mong đợi lỗi (revert test)
+func sendTxExpectError(
+	tcpClient *client_tcp.Client,
+	privKey *ecdsa.PrivateKey,
+	fromAddr common.Address,
+	toAddr common.Address,
+	parsedABI abi.ABI,
+	signer e_types.Signer,
+	method string,
+	args ...interface{},
+) {
+	nonce, err := tcpClient.RpcGetPendingNonce(fromAddr)
+	if err != nil {
+		fmt.Printf("  ❌ GetNonce: %v\n", err)
+		return
+	}
+
+	inputData, err := parsedABI.Pack(method, args...)
+	if err != nil {
+		fmt.Printf("  ❌ Pack %s: %v\n", method, err)
+		return
+	}
+
+	tx := e_types.NewTransaction(nonce, toAddr, big.NewInt(0), 20000000, big.NewInt(10000000), inputData)
+	signedTx, _ := e_types.SignTx(tx, signer, privKey)
+	rawTxBytes, _ := signedTx.MarshalBinary()
+	rawTxHex := "0x" + hex.EncodeToString(rawTxBytes)
+
+	txHash, err := tcpClient.RpcSendRawTransaction(rawTxHex)
+	if err != nil {
+		fmt.Printf("  ✅ Transaction reverted as expected!\n")
+		fmt.Printf("     Error: %v\n", err)
+		return
+	}
+	fmt.Printf("  ⚠️ Transaction did NOT revert (txHash=%s), checking receipt...\n", txHash)
+	receipt := waitReceipt(tcpClient, txHash)
+	if receipt != nil && receipt.Status != "0x1" {
+		fmt.Printf("  ✅ Receipt shows revert: status=%s\n", receipt.Status)
+	} else if receipt != nil {
+		fmt.Printf("  ❌ Transaction succeeded unexpectedly: status=%s\n", receipt.Status)
+	}
+}
+
 // makeEventHandler tạo callback log event chung
 func makeEventHandler(eventName string, wg *sync.WaitGroup, once *sync.Once) func([]byte) {
 	return func(eventData []byte) {
@@ -120,9 +161,8 @@ func makeEventHandler(eventName string, wg *sync.WaitGroup, once *sync.Once) fun
 	}
 }
 
-// ===================== TEST SUITES =====================
+// ===================== TEST: Demo Contract =====================
 
-// testDemoContract test các function cơ bản: subscribe events, setValue, increaseValue, verify
 func testDemoContract(
 	tcpClient *client_tcp.Client,
 	demoABI abi.ABI,
@@ -132,83 +172,110 @@ func testDemoContract(
 	signer e_types.Signer,
 ) {
 	fmt.Println("\n╔══════════════════════════════════════════════════════╗")
-	fmt.Println("║  TEST: Demo Contract (setValue + increaseValue)      ║")
+	fmt.Println("║  TEST: Demo Contract                                 ║")
 	fmt.Println("╚══════════════════════════════════════════════════════╝")
 
 	// 1. Read current value
-	// fmt.Println("\n─── getValue (trước) ───")
-	// getValueData, _ := demoABI.Pack("getValue")
-	// resultBytes, err := tcpClient.RpcEthCall(contractAddr, getValueData)
-	// if err != nil {
-	// 	fmt.Printf("  ❌ %v\n", err)
-	// 	return
-	// }
-	// results, _ := demoABI.Unpack("getValue", resultBytes)
-	// oldValue := results[0].(*big.Int)
-	// fmt.Printf("  ✅ getValue() = %s\n", oldValue.String())
+	fmt.Println("\n─── 1. getValue (trước) ───")
+	getValueData, _ := demoABI.Pack("getValue")
+	resultBytes, err := tcpClient.RpcEthCall(contractAddr, getValueData)
+	if err != nil {
+		fmt.Printf("  ❌ %v\n", err)
+		return
+	}
+	results, _ := demoABI.Unpack("getValue", resultBytes)
+	oldValue := results[0].(*big.Int)
+	fmt.Printf("  ✅ getValue() = %s\n", oldValue.String())
 
-	// // 2. Subscribe 2 events
-	// fmt.Println("\n─── Subscribe ValueChanged + ValueIncreased ───")
-	// var wgChanged, wgIncreased sync.WaitGroup
-	// var onceChanged, onceIncreased sync.Once
-	// wgChanged.Add(1)
-	// wgIncreased.Add(1)
+	// 2. Subscribe 2 events
+	fmt.Println("\n─── 2. Subscribe ValueChanged + ValueIncreased ───")
+	var wgChanged, wgIncreased sync.WaitGroup
+	var onceChanged, onceIncreased sync.Once
+	wgChanged.Add(1)
+	wgIncreased.Add(1)
 
-	// sub1, _ := tcpClient.RpcSubscribe(
-	// 	[]string{contractAddr.Hex()},
-	// 	[]string{demoABI.Events["ValueChanged"].ID.Hex()},
-	// 	makeEventHandler("ValueChanged", &wgChanged, &onceChanged),
-	// )
-	// fmt.Printf("  ✅ ValueChanged subID=%s\n", sub1)
+	sub1, _ := tcpClient.RpcSubscribe(
+		[]string{contractAddr.Hex()},
+		[]string{demoABI.Events["ValueChanged"].ID.Hex()},
+		makeEventHandler("ValueChanged", &wgChanged, &onceChanged),
+	)
+	fmt.Printf("  ✅ ValueChanged subID=%s\n", sub1)
 
-	// sub2, _ := tcpClient.RpcSubscribe(
-	// 	[]string{contractAddr.Hex()},
-	// 	[]string{demoABI.Events["ValueIncreased"].ID.Hex()},
-	// 	makeEventHandler("ValueIncreased", &wgIncreased, &onceIncreased),
-	// )
-	// fmt.Printf("  ✅ ValueIncreased subID=%s\n", sub2)
+	sub2, _ := tcpClient.RpcSubscribe(
+		[]string{contractAddr.Hex()},
+		[]string{demoABI.Events["ValueIncreased"].ID.Hex()},
+		makeEventHandler("ValueIncreased", &wgIncreased, &onceIncreased),
+	)
+	fmt.Printf("  ✅ ValueIncreased subID=%s\n", sub2)
 
-	// 3. setValue(789) + wait receipt
-	fmt.Println("\n─── setValue(789) ───")
+	// 3. setValue(789)
+	fmt.Println("\n─── 3. setValue(789) ───")
 	sendTxAndWait(tcpClient, privKey, fromAddr, contractAddr, demoABI, signer, "setValue", big.NewInt(789))
 
-	// 4. increaseValue(100) + wait receipt
-	fmt.Println("\n─── increaseValue(100) ───")
+	// 4. increaseValue(100)
+	fmt.Println("\n─── 4. increaseValue(100) ───")
 	sendTxAndWait(tcpClient, privKey, fromAddr, contractAddr, demoABI, signer, "increaseValue", big.NewInt(100))
 
 	// 5. Wait events
-	fmt.Println("\n  ⏳ Waiting for both events (max 10s)...")
-	// allDone := make(chan struct{})
-	// go func() {
-	// 	wgChanged.Wait()
-	// 	wgIncreased.Wait()
-	// 	close(allDone)
-	// }()
-	// select {
-	// case <-allDone:
-	// 	fmt.Println("  ✅ Both events received!")
-	// case <-time.After(10 * time.Second):
-	// 	fmt.Println("  ⚠️ Timeout")
-	// }
+	fmt.Println("\n─── 5. Wait events (max 10s) ───")
+	allDone := make(chan struct{})
+	go func() {
+		wgChanged.Wait()
+		wgIncreased.Wait()
+		close(allDone)
+	}()
+	select {
+	case <-allDone:
+		fmt.Println("  ✅ Both events received!")
+	case <-time.After(10 * time.Second):
+		fmt.Println("  ⚠️ Timeout")
+	}
 
 	// 6. Unsubscribe
-	// tcpClient.RpcUnsubscribe(sub1)
-	// tcpClient.RpcUnsubscribe(sub2)
+	tcpClient.RpcUnsubscribe(sub1)
+	tcpClient.RpcUnsubscribe(sub2)
 
 	// 7. Verify value
-	// fmt.Println("\n─── getValue (sau) ───")
-	// resultBytes2, _ := tcpClient.RpcEthCall(contractAddr, getValueData)
-	// results2, _ := demoABI.Unpack("getValue", resultBytes2)
-	// newValue := results2[0].(*big.Int)
-	// fmt.Printf("  ✅ getValue() = %s", newValue.String())
-	// if newValue.Int64() == 889 {
-	// 	fmt.Println(" ✅ (789 + 100 = 889)")
-	// } else {
-	// 	fmt.Println()
-	// }
+	fmt.Println("\n─── 6. getValue (sau) ───")
+	resultBytes2, _ := tcpClient.RpcEthCall(contractAddr, getValueData)
+	results2, _ := demoABI.Unpack("getValue", resultBytes2)
+	newValue := results2[0].(*big.Int)
+	fmt.Printf("  ✅ getValue() = %s", newValue.String())
+	if newValue.Int64() == 889 {
+		fmt.Println(" ✅ (789 + 100 = 889)")
+	} else {
+		fmt.Println()
+	}
+
+	// 8. Test Revert: increaseValue với giá trị quá lớn (nếu contract có require)
+	fmt.Println("\n─── 7. Test REVERT: increaseValue(0) — expect revert ───")
+	fmt.Println("  ℹ️  Gửi increaseValue(0) — nếu contract yêu cầu amount > 0 sẽ revert")
+	sendTxExpectError(tcpClient, privKey, fromAddr, contractAddr, demoABI, signer, "increaseValue", big.NewInt(0))
+
+	// 9. Test Revert: eth_call với invalid function
+	fmt.Println("\n─── 8. Test REVERT: eth_call với data rỗng ───")
+	_, err = tcpClient.RpcEthCall(contractAddr, []byte{0x00, 0x00, 0x00, 0x00})
+	if err != nil {
+		fmt.Printf("  ✅ eth_call reverted as expected: %v\n", err)
+	} else {
+		fmt.Println("  ⚠️ eth_call did not revert")
+	}
+
+	// 10. Verify value unchanged after reverts
+	fmt.Println("\n─── 9. getValue (sau revert) — verify unchanged ───")
+	resultBytes3, _ := tcpClient.RpcEthCall(contractAddr, getValueData)
+	results3, _ := demoABI.Unpack("getValue", resultBytes3)
+	afterRevertValue := results3[0].(*big.Int)
+	fmt.Printf("  ✅ getValue() = %s", afterRevertValue.String())
+	if afterRevertValue.Cmp(newValue) == 0 {
+		fmt.Println(" ✅ (unchanged after revert)")
+	} else {
+		fmt.Println(" ❌ (value changed unexpectedly!)")
+	}
 }
 
-// testBlsRegistration test flow: tạo key → getPublickeyBls → setBlsPublicKey → confirmAccountWithoutSign
+// ===================== TEST: BLS Registration =====================
+
 func testBlsRegistration(
 	tcpClient *client_tcp.Client,
 	accountABI abi.ABI,
@@ -221,7 +288,7 @@ func testBlsRegistration(
 	fmt.Println("║  TEST: BLS Registration + Confirm                    ║")
 	fmt.Println("╚══════════════════════════════════════════════════════╝")
 
-	// === Step 1: Tạo private key mới ===
+	// Step 1: Tạo private key mới
 	fmt.Println("\n─── Step 1: Tạo ETH private key mới ───")
 	newPrivKey, err := crypto.GenerateKey()
 	if err != nil {
@@ -233,7 +300,7 @@ func testBlsRegistration(
 	fmt.Printf("  ✅ New address:     %s\n", newAddr.Hex())
 	fmt.Printf("  ✅ New private key: %s\n", newPrivKeyHex)
 
-	// === Step 2: getPublickeyBls (eth_call đến RPC server) ===
+	// Step 2: getPublickeyBls (eth_call)
 	fmt.Println("\n─── Step 2: getPublickeyBls (eth_call) ───")
 	getBlsData, err := accountABI.Pack("getPublickeyBls")
 	if err != nil {
@@ -245,18 +312,13 @@ func testBlsRegistration(
 		fmt.Printf("  ❌ eth_call getPublickeyBls: %v\n", err)
 		return
 	}
-	// Server trả JSON string (double-encoded): hex decode → "0x86d5..." (có quotes)
-	// Strip quotes để lấy raw BLS pubkey hex
 	serverBlsPubKey := strings.Trim(string(blsResult), "\"")
-	// Decode hex → bytes để dùng cho setBlsPublicKey
 	blsPubKeyHex := strings.TrimPrefix(serverBlsPubKey, "0x")
 	blsPubKey, _ := hex.DecodeString(blsPubKeyHex)
 	fmt.Printf("  ✅ Server BLS PublicKey: %s (%d bytes)\n", serverBlsPubKey, len(blsPubKey))
 
-	// === Step 3: Subscribe RegisterBls + setBlsPublicKey ===
+	// Step 3: Subscribe RegisterBls + setBlsPublicKey
 	fmt.Println("\n─── Step 3: Subscribe RegisterBls + setBlsPublicKey ───")
-
-	// Subscribe RegisterBls event trước khi gửi tx
 	registerBlsTopic := accountABI.Events["RegisterBls"].ID.Hex()
 	fmt.Printf("  RegisterBls topic: %s\n", registerBlsTopic)
 
@@ -275,7 +337,7 @@ func testBlsRegistration(
 		fmt.Printf("  ✅ Subscribe RegisterBls: subID=%s\n", subBls)
 	}
 
-	// Gửi setBlsPublicKey với BLS key từ server (interceptor xử lý — không có receipt)
+	// Gửi setBlsPublicKey
 	nonce, _ := tcpClient.RpcGetPendingNonce(newAddr)
 	inputData, _ := accountABI.Pack("setBlsPublicKey", blsPubKey)
 	tx := e_types.NewTransaction(nonce, accountContract, big.NewInt(0), 20000000, big.NewInt(10000000), inputData)
@@ -304,8 +366,8 @@ func testBlsRegistration(
 
 	tcpClient.RpcUnsubscribe(subBls)
 
-	// === Step 5: confirmAccountWithoutSign (admin confirm) ===
-	fmt.Println("\n─── Step 5: confirmAccountWithoutSign (admin confirm) ───")
+	// Step 4: confirmAccountWithoutSign (admin confirm)
+	fmt.Println("\n─── Step 4: confirmAccountWithoutSign (admin confirm) ───")
 	fmt.Printf("  ℹ️  Admin %s confirming %s...\n", adminAddr.Hex(), newAddr.Hex())
 
 	txHash2, receipt2 := sendTxAndWait(
@@ -325,97 +387,6 @@ func testBlsRegistration(
 	fmt.Printf("     BLS PubKey:      0x%s\n", blsPubKeyHex)
 }
 
-// testBatchBlsRegistration đăng ký hàng loạt 1000 ví và lưu config
-func testBatchBlsRegistration(
-	tcpClient *client_tcp.Client,
-	accountABI abi.ABI,
-	accountContract common.Address,
-	adminPrivKey *ecdsa.PrivateKey,
-	adminAddr common.Address,
-	signer e_types.Signer,
-	count int,
-	baseCfg *tcp_config.ClientConfig,
-) {
-	fmt.Printf("\n🚀 BATCH BLS REGISTRATION: %d wallets\n", count)
-
-	// 1. Lấy BLS PubKey từ server một lần duy nhất
-	getBlsData, _ := accountABI.Pack("getPublickeyBls")
-	blsResult, err := tcpClient.RpcEthCall(accountContract, getBlsData)
-	if err != nil {
-		fmt.Printf("  ❌ Không lấy được BLS PubKey: %v\n", err)
-		return
-	}
-	serverBlsPubKey := strings.Trim(string(blsResult), "\"")
-	blsPubKeyHex := strings.TrimPrefix(serverBlsPubKey, "0x")
-	blsPubKey, _ := hex.DecodeString(blsPubKeyHex)
-	fmt.Printf("  ✅ Server BLS PubKey: %s\n", serverBlsPubKey)
-
-	// Tạo thư mục lưu wallets
-	os.MkdirAll("wallets", 0755)
-
-	// Lấy nonce admin hiện tại
-	adminNonce, _ := tcpClient.RpcGetPendingNonce(adminAddr)
-
-	// Danh sách chứa tất cả config
-	allConfigs := make([]map[string]interface{}, 0, count)
-
-	for i := 1; i <= count; i++ {
-		// a. Tạo ETH key mới
-		newPrivKey, _ := crypto.GenerateKey()
-		newAddr := crypto.PubkeyToAddress(newPrivKey.PublicKey)
-		newPrivKeyHex := hex.EncodeToString(crypto.FromECDSA(newPrivKey))
-
-		// b. setBlsPublicKey (nonce = 0 vì ví mới)
-		inputData, _ := accountABI.Pack("setBlsPublicKey", blsPubKey)
-		tx := e_types.NewTransaction(0, accountContract, big.NewInt(0), 2000000, big.NewInt(1000000), inputData)
-		signedTx, _ := e_types.SignTx(tx, signer, newPrivKey)
-		rawTxBytes, _ := signedTx.MarshalBinary()
-		_, err := tcpClient.RpcSendRawTransaction("0x" + hex.EncodeToString(rawTxBytes))
-		if err != nil {
-			fmt.Printf("  [%d/%d] ❌ setBlsPublicKey %s: %v\n", i, count, newAddr.Hex(), err)
-			continue
-		}
-
-		// c. confirmAccountWithoutSign từ Admin
-		confirmData, _ := accountABI.Pack("confirmAccountWithoutSign", newAddr)
-		adminTx := e_types.NewTransaction(adminNonce, accountContract, big.NewInt(0), 2000000, big.NewInt(1000000), confirmData)
-		signedAdminTx, _ := e_types.SignTx(adminTx, signer, adminPrivKey)
-		adminRawTxBytes, _ := signedAdminTx.MarshalBinary()
-		_, err = tcpClient.RpcSendRawTransaction("0x" + hex.EncodeToString(adminRawTxBytes))
-		if err != nil {
-			fmt.Printf("  [%d/%d] ❌ AdminConfirm %s: %v\n", i, count, newAddr.Hex(), err)
-			continue
-		}
-		adminNonce++
-
-		// d. Gom config vào mảng
-		walletCfg := map[string]interface{}{
-			"private_key":               baseCfg.PrivateKey_, // Cùng BLS key với server
-			"version":                   baseCfg.Version_,
-			"parent_connection_address": baseCfg.ParentConnectionAddress,
-			"chain_id":                  baseCfg.ChainId,
-			"nation_id":                 baseCfg.NationId,
-			"parent_connection_type":    baseCfg.ParentConnectionType,
-			"parent_address":            newAddr.Hex(), // Mỗi ví dùng địa chỉ riêng của mình làm ParentAddress (Identity)
-			"eth_private_key":           newPrivKeyHex,
-			"demo_abi_path":             baseCfg.DemoAbiPath_,
-			"demo_contract_address":     baseCfg.DemoContractAddress,
-			"contact_private":           "0x00000000000000000000000000000000D844bb55",
-		}
-		allConfigs = append(allConfigs, walletCfg)
-
-		if i%10 == 0 || i == count {
-			fmt.Printf("  ✅ [%d/%d] Registered: %s\n", i, count, newAddr.Hex())
-		}
-	}
-
-	// Viết tất cả vào 1 file duy nhất
-	finalCtx, _ := json.MarshalIndent(allConfigs, "", "  ")
-	os.WriteFile("wallets.json", finalCtx, 0644)
-
-	fmt.Printf("\n✨ Done! %d configs saved in wallets.json\n", len(allConfigs))
-}
-
 // ===================== MAIN =====================
 
 func main() {
@@ -425,13 +396,11 @@ func main() {
 	})
 
 	configPath := flag.String("config", "config-test.json", "Path to TCP client config")
-	testSuite := flag.String("test", "bls", "Test suite: demo, bls, tps, all, batch-bls")
-	tpsCount := flag.Int("n", 1000, "Number of requests for TPS test / wallets for batch-bls")
-	tpsConcurrency := flag.Int("c", 50, "Concurrency for TPS test")
+	testSuite := flag.String("test", "all", "Test suite: demo, bls, all")
 	flag.Parse()
 
 	fmt.Println("╔══════════════════════════════════════════════════════╗")
-	fmt.Println("║       TCP-RPC Test Suite                             ║")
+	fmt.Println("║       TCP-RPC Test Suite (Proto)                     ║")
 	fmt.Println("╚══════════════════════════════════════════════════════╝")
 
 	cfgRaw, _ := tcp_config.LoadConfig(*configPath)
@@ -454,30 +423,17 @@ func main() {
 	fmt.Printf("\n  Admin address: %s\n", fromAddr.Hex())
 	fmt.Printf("  Chain ID: %d\n", cfg.ChainId)
 
-	// === Test 0: Basic RPC ===
-	fmt.Println("\n─── Basic: RpcGetChainId ───")
-	// chainId, _ := tcpClient.RpcGetChainId()
-	// fmt.Printf("  ✅ ChainId: %s\n", chainId)
-	// === Run test suites ===
 	switch *testSuite {
 	case "demo":
-		// Load demo ABI
 		demoAbiBytes, _ := os.ReadFile(cfg.DemoAbiPath_)
 		demoABI, _ := abi.JSON(strings.NewReader(string(demoAbiBytes)))
 		contractAddr := common.HexToAddress(cfg.DemoContractAddress)
 		testDemoContract(tcpClient, demoABI, contractAddr, ethPrivKey, fromAddr, signer)
+
 	case "bls":
-		// Load account ABI
 		accountABI, _ := abi.JSON(strings.NewReader(accountAbiJSON))
 		accountContract := common.HexToAddress("0x00000000000000000000000000000000D844bb55")
 		testBlsRegistration(tcpClient, accountABI, accountContract, ethPrivKey, fromAddr, signer)
-	case "tps":
-		testChainIdTPS(tcpClient, *tpsCount, *tpsConcurrency)
-	case "batch-bls":
-		// Load account ABI
-		accountABI, _ := abi.JSON(strings.NewReader(accountAbiJSON))
-		accountContract := common.HexToAddress("0x00000000000000000000000000000000D844bb55")
-		testBatchBlsRegistration(tcpClient, accountABI, accountContract, ethPrivKey, fromAddr, signer, *tpsCount, cfg)
 
 	case "all":
 		// Demo test
@@ -490,64 +446,14 @@ func main() {
 		accountABI, _ := abi.JSON(strings.NewReader(accountAbiJSON))
 		accountContract := common.HexToAddress("0x00000000000000000000000000000000D844bb55")
 		testBlsRegistration(tcpClient, accountABI, accountContract, ethPrivKey, fromAddr, signer)
+
+	default:
+		fmt.Printf("  ❌ Unknown test suite: %s (use: demo, bls, all)\n", *testSuite)
 	}
 
 	fmt.Println("\n╔══════════════════════════════════════════════════════╗")
 	fmt.Println("║       All tests completed!                           ║")
 	fmt.Println("╚══════════════════════════════════════════════════════╝")
-}
-
-// testChainIdTPS benchmark TPS cho RpcGetChainId qua TCP
-func testChainIdTPS(tcpClient *client_tcp.Client, totalRequests, concurrency int) {
-	fmt.Println("\n╔══════════════════════════════════════════════════════╗")
-	fmt.Println("║  TPS Benchmark: GetChainId via TCP                    ║")
-	fmt.Println("╚══════════════════════════════════════════════════════╝")
-	fmt.Printf("  📋 Total requests: %d, Concurrency: %d\n\n", totalRequests, concurrency)
-
-	// Warm up
-	fmt.Println("  🔥 Warming up (10 requests)...")
-	for i := 0; i < 10; i++ {
-		tcpClient.RpcGetChainId()
-	}
-	fmt.Println("  ✅ Warm-up done")
-
-	// Benchmark
-	fmt.Printf("\n─── eth_getChainId via TCP ───\n")
-	okCount, failCount, duration := runBenchmark(totalRequests, concurrency, func() error {
-		_, err := tcpClient.RpcGetChainId()
-		return err
-	})
-	tps := float64(okCount) / duration.Seconds()
-	avgLatency := duration / time.Duration(totalRequests)
-	fmt.Printf("  ✅ OK: %d, ❌ Fail: %d\n", okCount, failCount)
-	fmt.Printf("  ⏱️  Duration: %s\n", duration.Round(time.Millisecond))
-	fmt.Printf("  📊 TPS: %.2f req/s\n", tps)
-	fmt.Printf("  📊 Avg latency: %s\n", avgLatency.Round(time.Microsecond))
-}
-
-// runBenchmark chạy benchmark concurrent
-func runBenchmark(total, concurrency int, fn func() error) (okCount int64, failCount int64, duration time.Duration) {
-	var ok, fail int64
-	sem := make(chan struct{}, concurrency)
-	var wg sync.WaitGroup
-
-	start := time.Now()
-	for i := 0; i < total; i++ {
-		wg.Add(1)
-		sem <- struct{}{}
-		go func() {
-			defer wg.Done()
-			defer func() { <-sem }()
-			if err := fn(); err != nil {
-				atomic.AddInt64(&fail, 1)
-			} else {
-				atomic.AddInt64(&ok, 1)
-			}
-		}()
-	}
-	wg.Wait()
-	elapsed := time.Since(start)
-	return ok, fail, elapsed
 }
 
 // Account ABI (chỉ các function cần dùng)

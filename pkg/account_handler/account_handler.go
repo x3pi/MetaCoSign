@@ -30,6 +30,22 @@ type AccountHandlerNoReceipt struct {
 	abi     abi.ABI
 	storage *storage.BlsAccountStorage
 	appCtx  *app.Context
+	// Owner TX Queue — xử lý tuần tự các giao dịch từ ví owner (reward, transfer)
+	ownerTxQueue chan *OwnerTxRequest
+}
+
+// OwnerTxRequest là request gửi transaction từ ví owner
+type OwnerTxRequest struct {
+	FromAddress ethCommon.Address
+	ToAddress   ethCommon.Address
+	Amount      *big.Int
+	ResultCh    chan *OwnerTxResult // channel trả kết quả về caller
+}
+
+// OwnerTxResult là kết quả xử lý transaction owner
+type OwnerTxResult struct {
+	TxHash string
+	Err    error
 }
 
 var (
@@ -47,10 +63,13 @@ func GetAccountHandler(appCtx *app.Context) (*AccountHandlerNoReceipt, error) {
 		}
 
 		accountHandlerInstance = &AccountHandlerNoReceipt{
-			abi:     parsedABI,
-			storage: storage.NewBlsAccountStorage(appCtx.LdbBlsWallet),
-			appCtx:  appCtx,
+			abi:          parsedABI,
+			storage:      storage.NewBlsAccountStorage(appCtx.LdbBlsWallet),
+			appCtx:       appCtx,
+			ownerTxQueue: make(chan *OwnerTxRequest, 1000),
 		}
+		// Start owner TX queue worker
+		go accountHandlerInstance.processOwnerTxQueue()
 	})
 
 	return accountHandlerInstance, err
@@ -205,9 +224,7 @@ func (h *AccountHandlerNoReceipt) handleConfirmAccountWithoutSign(
 	if err != nil {
 		return "", fmt.Errorf("pending transaction not found: %w", err)
 	}
-	// ========== REBUILD TRANSACTION TỪ rawTransactionHex ==========
 	rawTransactionHex := pendingTx.RawTransactionHex
-	// Decode hex
 	decodedTxBytes, releaseDecoded, err := utils.DecodeHexPooled(rawTransactionHex)
 	if err != nil {
 		return "", fmt.Errorf("invalid raw transaction hex: %w", err)
@@ -222,12 +239,10 @@ func (h *AccountHandlerNoReceipt) handleConfirmAccountWithoutSign(
 			releaseDecoded()
 		}
 	}
-	// Unmarshal Ethereum transaction
 	ethTx := new(types.Transaction)
 	if err := ethTx.UnmarshalBinary(decodedTxBytes); err != nil {
 		return "", fmt.Errorf("failed to unmarshal ethereum transaction: %w", err)
 	}
-	// Verify sender
 	signer := types.LatestSignerForChainID(h.appCtx.ClientRpc.ChainId)
 	fromAddress, err := types.Sender(signer, ethTx)
 	if err != nil {
@@ -270,48 +285,20 @@ func (h *AccountHandlerNoReceipt) handleConfirmAccountWithoutSign(
 	if rs.Error != nil {
 		return "", fmt.Errorf("failed to send transaction: %v", rs.Error)
 	}
-
-	// 6. Chờ Receipt (đảm bảo transaction đã lên block trước khi xử lý tx tiếp theo)
 	newTxHash := rs.Result.(string)
-	_, err = h.appCtx.ClientRpc.WaitForReceipt(newTxHash, 30*time.Second)
-	if err != nil {
-		logger.Error("Wait for confirm account receipt error: %v", err)
+
+	// Gửi reward qua owner queue (tuần tự)
+	if h.appCtx.Cfg.RewardAmount != nil && h.appCtx.Cfg.RewardAmount.Cmp(big.NewInt(0)) > 0 {
+		h.sendOwnerTransfer(ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress), ethCommon.Address(pendingTx.Address), h.appCtx.Cfg.RewardAmount)
 	}
 
-	if h.appCtx.Cfg.RewardAmount != nil && h.appCtx.Cfg.RewardAmount.Cmp(big.NewInt(0)) > 0 {
-		metaTxData, _, releaseFunc, err := h.appCtx.ClientRpc.BuildTransferTransaction(ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress), ethCommon.Address(pendingTx.Address), h.appCtx.Cfg.RewardAmount)
-		if err != nil {
-			logger.Error("Failed to build reward transfer transaction: %v", err)
-		} else {
-			rst := h.appCtx.ClientRpc.SendRawTransactionBinary(
-				metaTxData,
-				releaseFunc,
-				nil,
-				nil,
-				nil,
-			)
-			if rst.Error != nil {
-				logger.Error("Failed to send reward transaction: %v", rst.Error)
-			} else {
-				logger.Info("✅ Reward transfer sent successfully, tx hash: %v", rst.Result)
-			}
-		}
-	}
-	// Cập nhật trạng thái confirmed
-	if err := h.storage.MarkAccountConfirmed(
-		accountAddress,
-		mtTx.Hash().Bytes(),
-		pendingTx.BlsPublicKey,
-	); err != nil {
+	if err := h.storage.MarkAccountConfirmed(accountAddress, mtTx.Hash().Bytes(), pendingTx.BlsPublicKey); err != nil {
 		logger.Error("Failed to mark account as confirmed: %v", err)
 	}
-	// Xóa pending transaction
 	if err := h.storage.DeletePendingTransaction(accountAddress); err != nil {
 		logger.Error("Failed to delete pending transaction: %v", err)
 	}
-	// ✅ TẠO NOTIFICATION VÀ BROADCAST EVENT
 	msgNoti := fmt.Sprintf("Your account %s has been successfully confirmed!", accountAddress.Hex())
-
 	notification := &pb.Notification{
 		AccountAddress: accountAddress.Bytes(),
 		Message:        msgNoti,
@@ -322,8 +309,8 @@ func (h *AccountHandlerNoReceipt) handleConfirmAccountWithoutSign(
 		return "", fmt.Errorf("Failed to save notification: %v", err)
 	}
 	h.broadcastEvent("AccountConfirmed", accountAddress, big.NewInt(currentTime), msgNoti)
-	logger.Info("✅ Đã confirm account %s, tx hash: %v", accountAddress.Hex(), rs.Result)
-	return rs.Result.(string), nil
+	logger.Info("✅ Đã confirm account %s, tx hash: %v", accountAddress.Hex(), newTxHash)
+	return newTxHash, nil
 }
 
 func (h *AccountHandlerNoReceipt) handleConfirmAccount(
@@ -418,48 +405,20 @@ func (h *AccountHandlerNoReceipt) handleConfirmAccount(
 	if rs.Error != nil {
 		return "", fmt.Errorf("failed to send transaction: %v", rs.Error)
 	}
-
-	// 6. Chờ Receipt
 	newTxHash := rs.Result.(string)
-	_, err = h.appCtx.ClientRpc.WaitForReceipt(newTxHash, 30*time.Second)
-	if err != nil {
-		logger.Error("Wait for confirm account receipt error: %v", err)
+
+	// Gửi reward qua owner queue (tuần tự)
+	if h.appCtx.Cfg.RewardAmount != nil && h.appCtx.Cfg.RewardAmount.Cmp(big.NewInt(0)) > 0 {
+		h.sendOwnerTransfer(ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress), ethCommon.Address(pendingTx.Address), h.appCtx.Cfg.RewardAmount)
 	}
 
-	if h.appCtx.Cfg.RewardAmount != nil && h.appCtx.Cfg.RewardAmount.Cmp(big.NewInt(0)) > 0 {
-		metaTxData, _, releaseFunc, err := h.appCtx.ClientRpc.BuildTransferTransaction(ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress), ethCommon.Address(pendingTx.Address), h.appCtx.Cfg.RewardAmount)
-		if err != nil {
-			logger.Error("Failed to build reward transfer transaction: %v", err)
-		} else {
-			rst := h.appCtx.ClientRpc.SendRawTransactionBinary(
-				metaTxData,
-				releaseFunc,
-				nil,
-				nil,
-				nil,
-			)
-			if rst.Error != nil {
-				logger.Error("Failed to send reward transaction: %v", rst.Error)
-			} else {
-				logger.Info("✅ Reward transfer sent successfully, tx hash: %v", rst.Result)
-			}
-		}
-	}
-	// Cập nhật trạng thái confirmed
-	if err := h.storage.MarkAccountConfirmed(
-		accountAddress,
-		mtTx.Hash().Bytes(),
-		pendingTx.BlsPublicKey,
-	); err != nil {
+	if err := h.storage.MarkAccountConfirmed(accountAddress, mtTx.Hash().Bytes(), pendingTx.BlsPublicKey); err != nil {
 		logger.Error("Failed to mark account as confirmed: %v", err)
 	}
-	// Xóa pending transaction
 	if err := h.storage.DeletePendingTransaction(accountAddress); err != nil {
 		logger.Error("Failed to delete pending transaction: %v", err)
 	}
-	// ✅ TẠO NOTIFICATION VÀ BROADCAST EVENT
 	msgNoti := fmt.Sprintf("Your account %s has been successfully confirmed!", accountAddress.Hex())
-
 	notification := &pb.Notification{
 		AccountAddress: accountAddress.Bytes(),
 		Message:        msgNoti,
@@ -470,8 +429,8 @@ func (h *AccountHandlerNoReceipt) handleConfirmAccount(
 		return "", fmt.Errorf("Failed to save notification: %v", err)
 	}
 	h.broadcastEvent("AccountConfirmed", accountAddress, big.NewInt(currentTime), msgNoti)
-	logger.Info("✅ Đã confirm account %s, tx hash: %v", accountAddress.Hex(), rs.Result)
-	return rs.Result.(string), nil
+	logger.Info("✅ Đã confirm account %s, tx hash: %v", accountAddress.Hex(), newTxHash)
+	return newTxHash, nil
 }
 
 func (h *AccountHandlerNoReceipt) handleTransferFrom(
@@ -491,60 +450,31 @@ func (h *AccountHandlerNoReceipt) handleTransferFrom(
 	fromAddress := tx.FromAddress()
 	currentTime := time.Now().Unix()
 
-	// Verify timestamp
 	if err := h.verifyTimestamp(timestamp); err != nil {
 		return "", err
 	}
-
-	// Verify that amount is positive
 	if transferAmount.Cmp(big.NewInt(0)) <= 0 {
 		return "", fmt.Errorf("transfer amount must be greater than 0")
 	}
-
-	// Build message: [toAddress (20 bytes)] + [amount (32 bytes)] + [timestamp (32 bytes)]
 	amountBytes := make([]byte, 32)
 	transferAmount.FillBytes(amountBytes)
-
 	timestampBytes := make([]byte, 32)
 	timestamp.FillBytes(timestampBytes)
-
 	message := make([]byte, 0, 84)
 	message = append(message, toAddress.Bytes()...)
 	message = append(message, amountBytes...)
 	message = append(message, timestampBytes...)
-
-	// Verify signature is from fromAddress (not owner)
 	signerAddress, err := h.recoverSignerAddress(message, signatureBytes)
 	if err != nil {
 		return "", err
 	}
-
 	if signerAddress != fromAddress {
 		return "", fmt.Errorf("invalid signature: signer %s does not match sender %s", signerAddress.Hex(), fromAddress.Hex())
 	}
 
-	// Build and send transfer transaction
-	metaTxData, _, releaseFunc, err := h.appCtx.ClientRpc.BuildTransferTransaction(
-		fromAddress,
-		toAddress,
-		transferAmount,
-	)
-	if err != nil {
-		return "", fmt.Errorf("failed to build transfer transaction: %w", err)
-	}
+	// Gửi transfer qua owner queue (tuần tự, tránh nonce conflict)
+	result := h.sendOwnerTransfer(fromAddress, toAddress, transferAmount)
 
-	rst := h.appCtx.ClientRpc.SendRawTransactionBinary(
-		metaTxData,
-		releaseFunc,
-		nil,
-		nil,
-		nil,
-	)
-	if rst.Error != nil {
-		return "", fmt.Errorf("failed to send transaction: %v", rst.Error)
-	}
-
-	// Create notification for sender
 	msgNotiSender := fmt.Sprintf("You transferred %s to %s", transferAmount.String(), toAddress.Hex())
 	notificationSender := &pb.Notification{
 		AccountAddress: fromAddress.Bytes(),
@@ -554,8 +484,6 @@ func (h *AccountHandlerNoReceipt) handleTransferFrom(
 	if err := h.appCtx.LdbNotification.SaveNotification(notificationSender); err != nil {
 		logger.Error("Failed to save sender notification: %v", err)
 	}
-
-	// Create notification for receiver
 	msgNotiReceiver := fmt.Sprintf("You received %s from %s", transferAmount.String(), fromAddress.Hex())
 	notificationReceiver := &pb.Notification{
 		AccountAddress: toAddress.Bytes(),
@@ -565,15 +493,16 @@ func (h *AccountHandlerNoReceipt) handleTransferFrom(
 	if err := h.appCtx.LdbNotification.SaveNotification(notificationReceiver); err != nil {
 		logger.Error("Failed to save receiver notification: %v", err)
 	}
-
-	// Broadcast TransferFrom event (chỉ 1 event với from, to, amount, time, message)
 	msgEvent := fmt.Sprintf("Transfer %s from %s to %s", transferAmount.String(), fromAddress.Hex(), toAddress.Hex())
 	h.broadcastEvent("TransferFrom", fromAddress, toAddress, transferAmount, big.NewInt(currentTime), msgEvent)
 
 	logger.Info("✅ Transfer completed from %s to %s, amount: %s, tx hash: %v",
-		fromAddress.Hex(), toAddress.Hex(), transferAmount.String(), rst.Result)
+		fromAddress.Hex(), toAddress.Hex(), transferAmount.String(), result.TxHash)
 
-	return rst.Result.(string), nil
+	if result.Err != nil {
+		return "", result.Err
+	}
+	return result.TxHash, nil
 }
 
 func (h *AccountHandlerNoReceipt) broadcastEvent(

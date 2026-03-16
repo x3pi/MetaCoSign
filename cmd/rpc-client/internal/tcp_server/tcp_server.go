@@ -3,20 +3,20 @@ package tcp_server
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/gorilla/websocket"
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/app"
 	"github.com/meta-node-blockchain/meta-node/pkg/bls"
-	"github.com/meta-node-blockchain/meta-node/pkg/connection_manager"
-	"github.com/meta-node-blockchain/meta-node/pkg/connection_manager/connection_client"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	"github.com/meta-node-blockchain/meta-node/pkg/network"
+	pb "github.com/meta-node-blockchain/meta-node/pkg/proto"
 	t_network "github.com/meta-node-blockchain/meta-node/types/network"
+	"google.golang.org/protobuf/proto"
 )
 
 // RpcTcpServer sử dụng module pkg/network (SocketServer) để lắng nghe TCP
@@ -34,12 +34,7 @@ type RpcTcpServer struct {
 	wsRelayCtx         context.Context         // context riêng cho WS relay
 	wsRelayCancel      context.CancelFunc      // cancel WS relay
 
-	// Per-address chain connections with TTL (2 min)
-	chainConnManager *connection_manager.ConnectionManager
 }
-
-// chainConnTTL is the TTL for per-address chain connections
-const chainConnTTL = 2 * time.Minute
 
 // RpcHandler implements network.Handler interface
 type RpcHandler struct {
@@ -91,7 +86,6 @@ func New(appCtx *app.Context) (*RpcTcpServer, error) {
 	socketServer.AddOnDisconnectedCallBack(func(conn t_network.Connection) {
 		srv.OnConnectionClosed(conn)
 	})
-	srv.chainConnManager = connection_manager.NewConnectionManager(socketServer, srv.messageSender)
 	logger.Info("🔌 TCP RPC Server initialized (with subscription support)")
 	return srv, nil
 }
@@ -100,24 +94,6 @@ func New(appCtx *app.Context) (*RpcTcpServer, error) {
 // WS relay chỉ start khi có subscription cho non-intercepted contracts (lazy)
 func (srv *RpcTcpServer) ListenAndServe(address string) error {
 	return srv.socketServer.Listen(address)
-}
-
-// getOrCreateChainConn returns or creates a ConnectionClient for a specific fromAddress.
-// The connection is cached with a 2-minute TTL that resets on each access.
-func (srv *RpcTcpServer) getOrCreateChainConn(fromAddr string) (*connection_client.ConnectionClient, error) {
-	if srv.chainConnManager == nil {
-		return nil, fmt.Errorf("chainConnManager not initialized")
-	}
-	if srv.AppCtx.ClientTcp == nil {
-		return nil, fmt.Errorf("ClientTcp not configured")
-	}
-
-	cfg := srv.AppCtx.ClientTcp.GetClientContext().Config
-	chainAddr := cfg.ParentConnectionAddress
-	if chainAddr == "" {
-		return nil, fmt.Errorf("chain TCP address not configured")
-	}
-	return srv.chainConnManager.GetOrCreateConnectionClientWithTTL(fromAddr, chainAddr, chainConnTTL)
 }
 
 // Stop dừng TCP server
@@ -295,49 +271,29 @@ func (srv *RpcTcpServer) GetSubManager() *TcpSubscriptionManager {
 }
 
 // handleEthSubscribe xử lý TCP eth_subscribe request
+// Nhận proto TcpSubscribeRequest (binary addresses + topics)
 func (srv *RpcTcpServer) handleEthSubscribe(request t_network.Request) error {
 	conn := request.Connection()
 	msgID := request.Message().ID()
-
-	var params []interface{}
 	body := request.Message().Body()
-	if len(body) > 0 {
-		_ = json.Unmarshal(body, &params)
+
+	// Parse proto TcpSubscribeRequest
+	tcpReq := &pb.TcpSubscribeRequest{}
+	if err := proto.Unmarshal(body, tcpReq); err != nil {
+		return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{
+			Code:    -32602,
+			Message: "Invalid params: failed to parse TcpSubscribeRequest",
+		})
 	}
 
-	if len(params) < 2 {
-		return srv.sendRpcResponse(conn, msgID, nil, nil)
-	}
-
-	// Parse filter object
-	filterJSON, _ := json.Marshal(params[1])
-	var filter map[string]interface{}
-	_ = json.Unmarshal(filterJSON, &filter)
-
-	// Extract contract addresses
+	// Convert bytes → hex strings
 	var contractAddrs []string
-	if addr, ok := filter["address"].(string); ok {
-		contractAddrs = []string{addr}
-	} else if addrs, ok := filter["address"].([]interface{}); ok {
-		for _, a := range addrs {
-			if addrStr, ok := a.(string); ok {
-				contractAddrs = append(contractAddrs, addrStr)
-			}
-		}
+	for _, addrBytes := range tcpReq.Addresses {
+		contractAddrs = append(contractAddrs, common.BytesToAddress(addrBytes).Hex())
 	}
-
-	// Extract topics
 	var topics []string
-	if topicsRaw, ok := filter["topics"].([]interface{}); ok {
-		for _, t := range topicsRaw {
-			if ts, ok := t.(string); ok {
-				topics = append(topics, ts)
-			} else if topicArr, ok := t.([]interface{}); ok && len(topicArr) > 0 {
-				if ts, ok := topicArr[0].(string); ok {
-					topics = append(topics, ts)
-				}
-			}
-		}
+	for _, topicBytes := range tcpReq.Topics {
+		topics = append(topics, common.BytesToHash(topicBytes).Hex())
 	}
 
 	if len(contractAddrs) == 0 {
@@ -361,20 +317,16 @@ func (srv *RpcTcpServer) handleEthSubscribe(request t_network.Request) error {
 	subID := srv.TcpSubManager.CreateSubscription(conn, contractAddrs, topics)
 
 	if isIntercepted {
-		// Contract intercepted → events từ broadcastEvent() internal (qua SubInterceptor → TcpBroadcaster)
-		// KHÔNG cần WS relay
 		logger.Info("✅ TCP eth_subscribe (intercepted): subID=%s, contracts=%v from %s",
 			subID, contractAddrs, conn.RemoteAddrSafe())
 	} else {
-		// Contract KHÔNG intercepted → cần WS relay để nhận events từ chain
 		srv.ensureWsRelay()
 		logger.Info("✅ TCP eth_subscribe (chain relay): subID=%s, contracts=%v from %s",
 			subID, contractAddrs, conn.RemoteAddrSafe())
 	}
 
-	// Respond with subscription ID
-	resultBytes, _ := json.Marshal(subID)
-	return srv.sendRpcResponse(conn, msgID, resultBytes, nil)
+	// Respond with subscription ID as raw bytes
+	return srv.sendRpcResponse(conn, msgID, []byte(subID), nil)
 }
 
 // ensureWsRelay đảm bảo WS relay đang chạy (lazy start)
@@ -407,22 +359,20 @@ func (srv *RpcTcpServer) stopWsRelayIfEmpty() {
 }
 
 // handleEthUnsubscribe xử lý TCP eth_unsubscribe request
+// Nhận proto TcpUnsubscribeRequest
 func (srv *RpcTcpServer) handleEthUnsubscribe(request t_network.Request) error {
 	conn := request.Connection()
 	msgID := request.Message().ID()
-
-	var params []string
 	body := request.Message().Body()
-	if len(body) > 0 {
-		_ = json.Unmarshal(body, &params)
+
+	// Parse proto TcpUnsubscribeRequest
+	tcpReq := &pb.TcpUnsubscribeRequest{}
+	if err := proto.Unmarshal(body, tcpReq); err != nil || tcpReq.SubscriptionId == "" {
+		// Trả false nếu parse fail
+		return srv.sendRpcResponse(conn, msgID, []byte{0}, nil)
 	}
 
-	if len(params) == 0 {
-		resultBytes, _ := json.Marshal(false)
-		return srv.sendRpcResponse(conn, msgID, resultBytes, nil)
-	}
-
-	subID := params[0]
+	subID := tcpReq.SubscriptionId
 	removed := srv.TcpSubManager.RemoveSubscription(subID)
 	logger.Info("TCP eth_unsubscribe: subID=%s, removed=%v from %s",
 		subID, removed, conn.RemoteAddrSafe())
@@ -430,8 +380,12 @@ func (srv *RpcTcpServer) handleEthUnsubscribe(request t_network.Request) error {
 	// Nếu không còn subscription nào → stop WS relay
 	srv.stopWsRelayIfEmpty()
 
-	resultBytes, _ := json.Marshal(removed)
-	return srv.sendRpcResponse(conn, msgID, resultBytes, nil)
+	// Trả 1 byte: 1=true, 0=false
+	result := byte(0)
+	if removed {
+		result = 1
+	}
+	return srv.sendRpcResponse(conn, msgID, []byte{result}, nil)
 }
 
 // OnConnectionClosed cleanup subscriptions khi client ngắt kết nối

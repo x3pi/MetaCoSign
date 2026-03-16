@@ -20,7 +20,7 @@ func (srv *RpcTcpServer) HandleRequest(request t_network.Request) error {
 
 	switch cmd {
 	// === Bỏ qua ===
-	case "InitConnection":
+	case "InitConnection", "Ping":
 		return nil
 	// === Method cần xử lý đặc biệt ===
 	case "eth_sendRawTransaction":

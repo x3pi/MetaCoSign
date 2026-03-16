@@ -1,7 +1,6 @@
 package tcp_server
 
 import (
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -15,26 +14,23 @@ import (
 )
 
 // handleGetTransactionReceipt - lấy receipt qua TCP trực tiếp từ chain
+// Nhận proto TcpHashParam (binary hash bytes)
 func (srv *RpcTcpServer) handleGetTransactionReceipt(request t_network.Request) error {
 	conn := request.Connection()
 	msgID := request.Message().ID()
-
-	var params []string
 	body := request.Message().Body()
-	if len(body) > 0 {
-		_ = json.Unmarshal(body, &params)
-	}
 
-	if len(params) == 0 || params[0] == "" {
+	// Parse proto TcpHashParam
+	tcpReq := &pb.TcpHashParam{}
+	if err := proto.Unmarshal(body, tcpReq); err != nil || len(tcpReq.Hash) == 0 {
 		return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{
 			Code:    -32602,
-			Message: "Invalid params: missing transaction hash",
+			Message: "Invalid params: failed to parse TcpHashParam",
 		})
 	}
 
-	txHash := params[0]
-	connKey := request.Message().ToAddress().Hex()
-	chainClient, err := srv.getOrCreateChainConn(connKey)
+	txHashBytes := common.BytesToHash(tcpReq.Hash)
+	chainClient, err := srv.AppCtx.ChainPool.Get()
 	if err != nil {
 		return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{
 			Code:    -32603,
@@ -42,7 +38,6 @@ func (srv *RpcTcpServer) handleGetTransactionReceipt(request t_network.Request) 
 		})
 	}
 
-	txHashBytes := common.HexToHash(txHash)
 	reqProto := &pb.GetTransactionReceiptRequest{
 		TransactionHash: txHashBytes.Bytes(),
 	}
@@ -90,7 +85,7 @@ func (srv *RpcTcpServer) handleGetTransactionReceipt(request t_network.Request) 
 		})
 	}
 
-	logger.Info("✅ TCP eth_getTransactionReceipt (TCP-direct): %s (%d bytes proto)", txHash, len(receiptProtoBytes))
+	logger.Info("✅ TCP eth_getTransactionReceipt (TCP-direct): %s (%d bytes proto)", txHashBytes.Hex(), len(receiptProtoBytes))
 
 	resp := &pb.RpcResponse{
 		Jsonrpc: "2.0",
@@ -101,36 +96,25 @@ func (srv *RpcTcpServer) handleGetTransactionReceipt(request t_network.Request) 
 }
 
 // handleGetTransactionCount — lấy nonce (pending) từ chain qua TCP
+// Nhận proto TcpGetNonceRequest, trả proto TcpGetNonceResponse
 func (srv *RpcTcpServer) handleGetTransactionCount(request t_network.Request) error {
 	conn := request.Connection()
 	msgID := request.Message().ID()
-
-	var params []interface{}
 	body := request.Message().Body()
-	if len(body) > 0 {
-		_ = json.Unmarshal(body, &params)
-	}
 
-	if len(params) == 0 {
+	// Parse proto TcpGetNonceRequest
+	tcpReq := &pb.TcpAddressParam{}
+	if err := proto.Unmarshal(body, tcpReq); err != nil || len(tcpReq.Address) == 0 {
 		return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{
 			Code:    -32602,
-			Message: "Invalid params: missing address",
+			Message: "Invalid params: failed to parse TcpAddressParam",
 		})
 	}
 
-	addrStr, ok := params[0].(string)
-	if !ok || addrStr == "" {
-		return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{
-			Code:    -32602,
-			Message: "Invalid params: address must be a string",
-		})
-	}
-
-	address := common.HexToAddress(addrStr)
+	address := common.BytesToAddress(tcpReq.Address)
 	logger.Info("🔄 TCP eth_getTransactionCount from %s (addr=%s)", conn.RemoteAddrSafe(), address.Hex())
 
-	connKey := request.Message().ToAddress().Hex()
-	chainClient, err := srv.getOrCreateChainConn(connKey)
+	chainClient, err := srv.AppCtx.ChainPool.Get()
 	if err != nil {
 		return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{
 			Code:    -32603,
@@ -146,10 +130,11 @@ func (srv *RpcTcpServer) handleGetTransactionCount(request t_network.Request) er
 		})
 	}
 
-	nonceHex := fmt.Sprintf("0x%x", nonce)
-	resultBytes, _ := json.Marshal(nonceHex)
+	// Trả proto TcpGetNonceResponse — client parse trực tiếp uint64
+	nonceResp := &pb.TcpGetNonceResponse{Nonce: nonce}
+	resultBytes, _ := proto.Marshal(nonceResp)
 
-	logger.Info("✅ TCP eth_getTransactionCount: %s nonce=%s", address.Hex(), nonceHex)
+	logger.Info("✅ TCP eth_getTransactionCount: %s nonce=%d", address.Hex(), nonce)
 	return srv.sendRpcResponse(conn, msgID, resultBytes, nil)
 }
 

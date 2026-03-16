@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/meta-node-blockchain/meta-node/pkg/network"
 	pb "github.com/meta-node-blockchain/meta-node/pkg/proto"
+	"google.golang.org/protobuf/proto"
 )
 
 // Command constants (inline để tránh import cmd/simple_chain/command — cross-workspace)
@@ -128,8 +129,13 @@ func (c *ConnectionClient) SendTransactionWithDeviceKey(txWithDKBytes []byte, ti
 				// TransactionSuccess — body chứa txHash bytes từ chain
 				return v.Body, nil
 			case *TransactionErrorResponse:
-				// TransactionError from chain
-				return nil, fmt.Errorf("transaction error from chain: %s", string(v.Body))
+				// TransactionError from chain — body is protobuf TransactionHashWithError
+				txErr := &pb.TransactionHashWithError{}
+				if unmarshalErr := proto.Unmarshal(v.Body, txErr); unmarshalErr == nil {
+					return nil, fmt.Errorf("transaction error from chain (code=%d): %s", txErr.Code, txErr.Description)
+				}
+				// Fallback: hex encode raw body to avoid non-UTF-8 in error string
+				return nil, fmt.Errorf("transaction error from chain: 0x%x", v.Body)
 			default:
 				return nil, fmt.Errorf("invalid response type for SendTransactionWithDeviceKeyAndWait: %T", res)
 			}

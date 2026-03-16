@@ -2,6 +2,7 @@ package robothandler
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -439,7 +440,7 @@ func (h *RobotHandler) cleanupQueue(fromAddress ethCommon.Address) {
 	}
 }
 
-// executeSingleTransaction thực hiện một chu kỳ: Giải mã -> Build -> Gửi -> Chờ Receipt
+// executeSingleTransaction thực hiện một chu kỳ: Giải mã -> Build -> Gửi TCP -> Chờ Receipt
 func (h *RobotHandler) executeSingleTransaction(
 	queuedTx *QueuedTransaction,
 ) error {
@@ -455,6 +456,14 @@ func (h *RobotHandler) executeSingleTransaction(
 	if err := ethTx.UnmarshalBinary(decodedTxBytes); err != nil {
 		return fmt.Errorf("unmarshal binary error: %w", err)
 	}
+
+	// 3. Lấy connection từ pool
+	chainConn, err := h.appCtx.ChainPool.Get()
+	if err != nil {
+		return fmt.Errorf("get chain connection error: %w", err)
+	}
+
+	// 4. Build transaction
 	var (
 		bTx       []byte
 		releaseTx func()
@@ -462,14 +471,14 @@ func (h *RobotHandler) executeSingleTransaction(
 	)
 	hasKey, _ := h.appCtx.PKS.HasPrivateKey(fromAddress)
 	if !hasKey {
-		bTx, _, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTx(
-			ethTx, h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas, true,
+		bTx, _, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTxTCP(
+			ethTx, h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas, true, chainConn,
 		)
 	} else {
 		senderPkString, _ := h.appCtx.PKS.GetPrivateKey(fromAddress)
 		keyPair := bls.NewKeyPair(ethCommon.FromHex(senderPkString))
-		bTx, _, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(
-			ethTx, h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas, keyPair.PrivateKey(),
+		bTx, _, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKeyTCP(
+			ethTx, h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas, keyPair.PrivateKey(), chainConn,
 		)
 	}
 	if buildErr != nil {
@@ -478,18 +487,20 @@ func (h *RobotHandler) executeSingleTransaction(
 		}
 		return fmt.Errorf("build transaction error: %w", buildErr)
 	}
-	// 5. Gửi lên Chain
-	rs := h.appCtx.ClientRpc.SendRawTransactionBinary(bTx, releaseTx, nil, nil, nil)
-	if rs.Error != nil {
-		return fmt.Errorf("RPC send error: %v", rs.Error)
+
+	// 5. Gửi lên Chain qua TCP
+	txBLS, err := chainConn.SendTransactionWithDeviceKey(bTx, 30*time.Second)
+	if releaseTx != nil {
+		releaseTx()
 	}
-	newTxHash, ok := rs.Result.(string)
-	if !ok {
-		return fmt.Errorf("invalid result type from RPC")
+	if err != nil {
+		return fmt.Errorf("TCP send error: %w", err)
 	}
 
-	// 6. Chờ Receipt (đảm bảo transaction đã lên block trước khi xử lý tx tiếp theo)
-	_, err = h.appCtx.ClientRpc.WaitForReceipt(newTxHash, 30*time.Second)
+	newTxHash := "0x" + hex.EncodeToString(txBLS)
+
+	// 6. Chờ Receipt qua TCP
+	_, err = utilsPkg.WaitForReceiptTCP(chainConn, newTxHash, 30*time.Second)
 	if err != nil {
 		return fmt.Errorf("wait for receipt timeout/error: %w", err)
 	}

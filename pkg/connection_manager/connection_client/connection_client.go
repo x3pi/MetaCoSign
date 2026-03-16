@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/google/uuid"
 	pkg_com "github.com/meta-node-blockchain/meta-node/pkg/common"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
@@ -53,14 +54,20 @@ func NewConnectionClient(ctx context.Context, key string, connectionAddress stri
 		cancel:            cancel,
 		errorNotifyChan:   make(chan error, 1),
 	}
-
 }
+
+// Connection trả về underlying TCP connection (dùng cho keep-alive ping)
+func (c *ConnectionClient) Connection() t_network.Connection {
+	return c.connection
+}
+
 func (c *ConnectionClient) Connect() error {
 	if atomic.LoadInt32(&c.connected) == 1 {
 		return nil
 	}
-	// Create new connection
-	conn := network.NewConnection(common.Address{}, "m_client", nil)
+	// Create new connection — dùng address unique từ key để server không replace
+	clientAddr := crypto.Keccak256Hash([]byte(c.key))
+	conn := network.NewConnection(common.BytesToAddress(clientAddr.Bytes()), "m_client", nil)
 	conn.SetRealConnAddr(c.connectionAddress)
 	// Connect
 	if err := conn.Connect(); err != nil {
@@ -73,9 +80,9 @@ func (c *ConnectionClient) Connect() error {
 	// Server's HandleConnection có initReady gate chặn TẤT CẢ commands khác
 	// cho đến khi nhận được InitConnection. Nếu không gửi, gate chỉ mở sau 30s timeout.
 	initMsg := &pb.InitConnection{
-		Address: common.Address{}.Bytes(), // Client address (empty for observer client)
+		Address: clientAddr.Bytes()[:20], // Unique address per connection
 		Type:    "m_client",
-		Replace: true,
+		Replace: true, // Không replace connection cùng type
 	}
 	if err := c.messageSender.SendMessage(conn, pkg_com.InitConnection, initMsg); err != nil {
 		logger.Warn("Connect: Failed to send InitConnection to %s: %v (server gate will timeout after 30s)", c.connectionAddress, err)
@@ -86,9 +93,34 @@ func (c *ConnectionClient) Connect() error {
 	// Start monitoring errorChan in a separate goroutine
 	c.initWorkerPool()
 	go c.readLoop()
+	go c.startKeepAlive()
 
 	logger.Info("Connected to cluster %s at %s", c.key, c.connectionAddress)
 	return nil
+}
+
+// startKeepAlive gửi Ping mỗi 30s để giữ connection sống.
+// Không cần nhận Pong vì TCP tự ACK.
+func (c *ConnectionClient) startKeepAlive() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case <-ticker.C:
+			if atomic.LoadInt32(&c.connected) == 0 {
+				return
+			}
+			conn := c.connection
+			if conn == nil {
+				return
+			}
+			if err := c.messageSender.SendBytes(conn, "Ping", nil); err != nil {
+				logger.Warn("KeepAlive: ping failed for %s: %v", c.key, err)
+			}
+		}
+	}
 }
 func (c *ConnectionClient) readLoop() {
 	conn := c.connection

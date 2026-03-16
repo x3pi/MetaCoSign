@@ -13,9 +13,11 @@ import (
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/store"
 	"github.com/meta-node-blockchain/meta-node/pkg/bls"
 	"github.com/meta-node-blockchain/meta-node/pkg/common"
+	"github.com/meta-node-blockchain/meta-node/pkg/connection_manager"
 	"github.com/meta-node-blockchain/meta-node/pkg/debug"
 	"github.com/meta-node-blockchain/meta-node/pkg/ldb_storage"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
+	"github.com/meta-node-blockchain/meta-node/pkg/network"
 	"github.com/meta-node-blockchain/meta-node/pkg/rpc_client"
 	"github.com/meta-node-blockchain/meta-node/pkg/storage"
 )
@@ -54,6 +56,9 @@ type Context struct {
 	SubInterceptor *ws_interceptor.SubscriptionInterceptor
 
 	ErrorDecoder *debug.ErrorDecoder
+
+	// Chain TCP Connection Pool (shared pool cho internal operations)
+	ChainPool *connection_manager.ChainConnectionPool
 }
 
 // New tạo Application Context với tất cả dependencies
@@ -151,6 +156,23 @@ func New(cfg *config.Config, tcpCfg *tcp_config.ClientConfig) (*Context, error) 
 		SubInterceptor:      subInterceptor,
 		ErrorDecoder:        errorDecoder,
 	}
+
+	// 10. Initialize Chain Connection Pool (TCP)
+	if tcpCfg != nil && tcpCfg.ParentConnectionAddress != "" {
+		msgSender := network.NewMessageSender("1.0.0")
+		chainPool, err := connection_manager.NewChainConnectionPool(
+			tcpCfg.ParentConnectionAddress,
+			10, // 10 connections trong pool
+			msgSender,
+		)
+		if err != nil {
+			logger.Warn("⚠️ Failed to initialize ChainConnectionPool: %v (falling back to HTTP)", err)
+		} else {
+			ctx.ChainPool = chainPool
+			logger.Info("✅ ChainConnectionPool initialized: %d connections to %s", chainPool.ActiveCount(), tcpCfg.ParentConnectionAddress)
+		}
+	}
+
 	return ctx, nil
 }
 
@@ -159,6 +181,10 @@ func (ctx *Context) Close() error {
 	logger.Info("Closing application context...")
 
 	var errors []error
+
+	if ctx.ChainPool != nil {
+		ctx.ChainPool.Close()
+	}
 
 	if ctx.PKS != nil {
 		if err := ctx.PKS.Close(); err != nil {
