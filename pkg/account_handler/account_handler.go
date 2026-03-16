@@ -112,6 +112,18 @@ func (h *AccountHandlerNoReceipt) HandleAccountTransaction(
 	case "removeContractFreeGas":
 		result, err = h.handleRemoveContractFreeGas(tx, method, inputData[4:])
 		return true, result, err
+	case "addAuthorizedWallet":
+		result, err = h.handleAddAuthorizedWallet(tx, method, inputData[4:])
+		return true, result, err
+	case "removeAuthorizedWallet":
+		result, err = h.handleRemoveAuthorizedWallet(tx, method, inputData[4:])
+		return true, result, err
+	case "addAdmin":
+		result, err = h.handleAddAdmin(tx, method, inputData[4:])
+		return true, result, err
+	case "removeAdmin":
+		result, err = h.handleRemoveAdmin(tx, method, inputData[4:])
+		return true, result, err
 	case "setAccountType":
 		return false, nil, nil
 	default:
@@ -119,7 +131,7 @@ func (h *AccountHandlerNoReceipt) HandleAccountTransaction(
 		return false, nil, nil
 	}
 }
-func (h *AccountHandlerNoReceipt) HandleEthCall(ctx context.Context, data []byte) (interface{}, error) {
+func (h *AccountHandlerNoReceipt) HandleEthCall(ctx context.Context, data []byte, fromAddress ethCommon.Address) (interface{}, error) {
 	if len(data) < 4 {
 		return nil, fmt.Errorf("invalid call data: too short")
 	}
@@ -136,6 +148,12 @@ func (h *AccountHandlerNoReceipt) HandleEthCall(ctx context.Context, data []byte
 		return h.handleGetNotifications(method, data[4:])
 	case "getAllContractFreeGas":
 		return h.handleGetAllContractFreeGas(method, data[4:])
+	case "getMyContracts":
+		return h.handleGetMyContracts(method, data[4:], fromAddress)
+	case "getAllAuthorizedWallets":
+		return h.handleGetAllAuthorizedWallets(method, data[4:], fromAddress)
+	case "getAllAdmins":
+		return h.handleGetAllAdmins(method, data[4:], fromAddress)
 	case "getPublickeyBls":
 		return h.handleGetPublickeyBls(method, data[4:])
 
@@ -789,33 +807,40 @@ func (h *AccountHandlerNoReceipt) handleAddContractFreeGas(
 	if err != nil {
 		return "", fmt.Errorf("failed to unpack input: %w", err)
 	}
-
 	contractAddress, _ := args[0].(ethCommon.Address)
-	timestamp, _ := args[1].(*big.Int)
-	signatureBytes, _ := args[2].([]byte)
 
-	// Verify sender is owner
+	// Verify sender
 	fromAddress := tx.FromAddress()
 	ownerAddress := ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress)
-	if fromAddress != ownerAddress {
-		return "", fmt.Errorf("only owner can add contract free gas, sender: %s, owner: %s", fromAddress.Hex(), ownerAddress.Hex())
+
+	isOwner := fromAddress == ownerAddress
+	isAuthorized := false
+	if !isOwner {
+		var errAuth error
+		isAuthorized, errAuth = h.appCtx.LdbContractFreeGas.IsAuthorized(fromAddress)
+		if errAuth != nil {
+			return "", fmt.Errorf("failed to check authorization: %w", errAuth)
+		}
 	}
 
-	// Verify timestamp
-	if err := h.verifyTimestamp(timestamp); err != nil {
-		return "", err
+	if !isOwner && !isAuthorized {
+		// Check admin list
+		isAdminInList, errAdmin := h.appCtx.LdbContractFreeGas.IsAdmin(fromAddress)
+		if errAdmin == nil && isAdminInList {
+			isAuthorized = true
+		}
 	}
-	// Build and verify signature
-	message := buildMessageWithTimestamp(contractAddress.Bytes(), timestamp)
-	if err := h.verifyOwnerSignature(message, signatureBytes); err != nil {
-		return "", err
+
+	if !isOwner && !isAuthorized {
+		return "", fmt.Errorf("only owner or authorized wallet can add contract free gas")
 	}
+
 	// Add contract to storage
-	if err := h.appCtx.LdbContractFreeGas.AddContract(contractAddress); err != nil {
+	if err := h.appCtx.LdbContractFreeGas.AddContract(contractAddress, fromAddress); err != nil {
 		return "", fmt.Errorf("failed to add contract: %w", err)
 	}
 
-	logger.Info("✅ Added contract %s to free gas list", contractAddress.Hex())
+	logger.Info("✅ Added contract %s to free gas list by %s", contractAddress.Hex(), fromAddress.Hex())
 	return tx.Hash().Hex(), nil
 }
 
@@ -833,25 +858,18 @@ func (h *AccountHandlerNoReceipt) handleRemoveContractFreeGas(
 	}
 
 	contractAddress, _ := args[0].(ethCommon.Address)
-	timestamp, _ := args[1].(*big.Int)
-	signatureBytes, _ := args[2].([]byte)
 
-	// Verify sender is owner
+	// Verify sender
 	fromAddress := tx.FromAddress()
 	ownerAddress := ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress)
-	if fromAddress != ownerAddress {
-		return "", fmt.Errorf("only owner can remove contract free gas")
+
+	contractData, err := h.appCtx.LdbContractFreeGas.GetContract(contractAddress)
+	if err != nil {
+		return "", fmt.Errorf("failed to get contract data: %w", err)
 	}
 
-	// Verify timestamp
-	if err := h.verifyTimestamp(timestamp); err != nil {
-		return "", err
-	}
-
-	// Build and verify signature
-	message := buildMessageWithTimestamp(contractAddress.Bytes(), timestamp)
-	if err := h.verifyOwnerSignature(message, signatureBytes); err != nil {
-		return "", err
+	if fromAddress != ownerAddress && fromAddress != ethCommon.BytesToAddress(contractData.AddedBy) {
+		return "", fmt.Errorf("only owner or the original creator can remove this contract")
 	}
 
 	// Remove contract from storage
@@ -859,7 +877,7 @@ func (h *AccountHandlerNoReceipt) handleRemoveContractFreeGas(
 		return "", fmt.Errorf("failed to remove contract: %w", err)
 	}
 
-	logger.Info("✅ Removed contract %s from free gas list", contractAddress.Hex())
+	logger.Info("✅ Removed contract %s from free gas list by %s", contractAddress.Hex(), fromAddress.Hex())
 	return tx.Hash().Hex(), nil
 }
 
@@ -930,14 +948,300 @@ func (h *AccountHandlerNoReceipt) handleGetAllContractFreeGas(
 	contractList := make([]map[string]interface{}, 0, len(contracts))
 	for _, contract := range contracts {
 		contractList = append(contractList, map[string]interface{}{
-			"contract_address": contract.ContractAddress,
+			"contract_address": ethCommon.BytesToAddress(contract.ContractAddress).Hex(),
 			"added_at":         contract.AddedAt,
+			"added_by":         ethCommon.BytesToAddress(contract.AddedBy).Hex(),
 		})
 	}
 
 	// Trả về kết quả
 	return map[string]interface{}{
 		"contracts":   contractList,
+		"total":       total,
+		"page":        pageInt,
+		"page_size":   pageSizeInt,
+		"total_pages": totalPages,
+	}, nil
+}
+
+func (h *AccountHandlerNoReceipt) handleGetMyContracts(
+	method *abi.Method,
+	inputData []byte,
+	fromAddress ethCommon.Address,
+) (interface{}, error) {
+	logger.Info("Handling getMyContracts for %s", fromAddress.Hex())
+
+	args, err := method.Inputs.Unpack(inputData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unpack input: %w", err)
+	}
+
+	// args: [adder address, page uint256, pageSize uint256]
+	adder, _ := args[0].(ethCommon.Address)
+	page, _ := args[1].(*big.Int)
+	pageSize, _ := args[2].(*big.Int)
+
+	// Nếu adder == zero address, dùng fromAddress của caller
+	var targetAdder ethCommon.Address
+	if adder == (ethCommon.Address{}) {
+		targetAdder = fromAddress
+	} else {
+		// Có adder chỉ định: chỉ owner hoặc admin mới được query của người khác
+		ownerAddress := ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress)
+		if fromAddress != ownerAddress {
+			isAdmin, _ := h.appCtx.LdbContractFreeGas.IsAdmin(fromAddress)
+			if !isAdmin {
+				return nil, fmt.Errorf("only owner or admin can query another address's contracts")
+			}
+		}
+		targetAdder = adder
+	}
+
+	pageInt := int(page.Int64())
+	pageSizeInt := int(pageSize.Int64())
+
+	if pageInt < 0 {
+		return nil, fmt.Errorf("page must be >= 0")
+	}
+	if pageSizeInt <= 0 || pageSizeInt > 100 {
+		return nil, fmt.Errorf("pageSize must be between 1 and 100")
+	}
+
+	contracts, total, err := h.appCtx.LdbContractFreeGas.GetContractsByAdder(targetAdder, pageInt, pageSizeInt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get my contracts: %w", err)
+	}
+
+	totalPages := 0
+	if pageSizeInt > 0 {
+		totalPages = (total + pageSizeInt - 1) / pageSizeInt
+	}
+
+	contractList := make([]map[string]interface{}, 0, len(contracts))
+	for _, contract := range contracts {
+		contractList = append(contractList, map[string]interface{}{
+			"contract_address": ethCommon.BytesToAddress(contract.ContractAddress).Hex(),
+			"added_at":         contract.AddedAt,
+			"added_by":         ethCommon.BytesToAddress(contract.AddedBy).Hex(),
+		})
+	}
+
+	return map[string]interface{}{
+		"adder":       targetAdder.Hex(),
+		"contracts":   contractList,
+		"total":       total,
+		"page":        pageInt,
+		"page_size":   pageSizeInt,
+		"total_pages": totalPages,
+	}, nil
+}
+
+func (h *AccountHandlerNoReceipt) handleAddAuthorizedWallet(
+	tx mt_types.Transaction,
+	method *abi.Method,
+	inputData []byte,
+) (string, error) {
+	args, err := method.Inputs.Unpack(inputData)
+	if err != nil {
+		return "", fmt.Errorf("failed to unpack input: %w", err)
+	}
+	walletAddress, _ := args[0].(ethCommon.Address)
+
+	fromAddress := tx.FromAddress()
+	ownerAddress := ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress)
+	if fromAddress != ownerAddress {
+		// Admin list cũng được thêm authorized wallet
+		isAdminInList, _ := h.appCtx.LdbContractFreeGas.IsAdmin(fromAddress)
+		if !isAdminInList {
+			return "", fmt.Errorf("only root owner or admin can add authorized wallet, sender: %s", fromAddress.Hex())
+		}
+	}
+
+	if err := h.appCtx.LdbContractFreeGas.AddWallet(walletAddress, fromAddress); err != nil {
+		return "", fmt.Errorf("failed to add authorized wallet: %w", err)
+	}
+
+	logger.Info("✅ Added authorized wallet %s", walletAddress.Hex())
+	return tx.Hash().Hex(), nil
+}
+
+func (h *AccountHandlerNoReceipt) handleRemoveAuthorizedWallet(
+	tx mt_types.Transaction,
+	method *abi.Method,
+	inputData []byte,
+) (string, error) {
+	args, err := method.Inputs.Unpack(inputData)
+	if err != nil {
+		return "", fmt.Errorf("failed to unpack input: %w", err)
+	}
+	walletAddress, _ := args[0].(ethCommon.Address)
+
+	fromAddress := tx.FromAddress()
+	ownerAddress := ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress)
+	if fromAddress != ownerAddress {
+		isAdminInList, _ := h.appCtx.LdbContractFreeGas.IsAdmin(fromAddress)
+		if !isAdminInList {
+			return "", fmt.Errorf("only root owner or admin can remove authorized wallet, sender: %s", fromAddress.Hex())
+		}
+	}
+
+	if err := h.appCtx.LdbContractFreeGas.RemoveWallet(walletAddress); err != nil {
+		return "", fmt.Errorf("failed to remove authorized wallet: %w", err)
+	}
+
+	logger.Info("✅ Removed authorized wallet %s", walletAddress.Hex())
+	return tx.Hash().Hex(), nil
+}
+
+func (h *AccountHandlerNoReceipt) handleGetAllAuthorizedWallets(
+	method *abi.Method,
+	inputData []byte,
+	fromAddress ethCommon.Address,
+) (interface{}, error) {
+	args, err := method.Inputs.Unpack(inputData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unpack input: %w", err)
+	}
+
+	page, _ := args[0].(*big.Int)
+	pageSize, _ := args[1].(*big.Int)
+
+	ownerAddress := ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress)
+	if fromAddress != ownerAddress {
+		return nil, fmt.Errorf("only owner can get all authorized wallets, caller: %s", fromAddress.Hex())
+	}
+
+	pageInt := int(page.Int64())
+	pageSizeInt := int(pageSize.Int64())
+
+	if pageInt < 0 {
+		return nil, fmt.Errorf("page must be >= 0")
+	}
+	if pageSizeInt <= 0 || pageSizeInt > 100 {
+		return nil, fmt.Errorf("pageSize must be between 1 and 100")
+	}
+
+	wallets, total, err := h.appCtx.LdbContractFreeGas.GetWallets(pageInt, pageSizeInt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get wallets: %w", err)
+	}
+
+	totalPages := (total + pageSizeInt - 1) / pageSizeInt
+
+	walletList := make([]map[string]interface{}, 0, len(wallets))
+	for _, wallet := range wallets {
+		walletList = append(walletList, map[string]interface{}{
+			"wallet_address": ethCommon.BytesToAddress(wallet.WalletAddress).Hex(),
+			"added_at":       wallet.AddedAt,
+			"added_by":       ethCommon.BytesToAddress(wallet.AddedBy).Hex(),
+		})
+	}
+
+	return map[string]interface{}{
+		"wallets":     walletList,
+		"total":       total,
+		"page":        pageInt,
+		"page_size":   pageSizeInt,
+		"total_pages": totalPages,
+	}, nil
+}
+
+func (h *AccountHandlerNoReceipt) handleAddAdmin(
+	tx mt_types.Transaction,
+	method *abi.Method,
+	inputData []byte,
+) (string, error) {
+	args, err := method.Inputs.Unpack(inputData)
+	if err != nil {
+		return "", fmt.Errorf("failed to unpack input: %w", err)
+	}
+	adminAddress, _ := args[0].(ethCommon.Address)
+
+	fromAddress := tx.FromAddress()
+	ownerAddress := ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress)
+	if fromAddress != ownerAddress {
+		return "", fmt.Errorf("only root owner can add admin, sender: %s", fromAddress.Hex())
+	}
+
+	if err := h.appCtx.LdbContractFreeGas.AddAdmin(adminAddress, fromAddress); err != nil {
+		return "", fmt.Errorf("failed to add admin: %w", err)
+	}
+
+	logger.Info("✅ Added admin %s", adminAddress.Hex())
+	return tx.Hash().Hex(), nil
+}
+
+func (h *AccountHandlerNoReceipt) handleRemoveAdmin(
+	tx mt_types.Transaction,
+	method *abi.Method,
+	inputData []byte,
+) (string, error) {
+	args, err := method.Inputs.Unpack(inputData)
+	if err != nil {
+		return "", fmt.Errorf("failed to unpack input: %w", err)
+	}
+	adminAddress, _ := args[0].(ethCommon.Address)
+
+	fromAddress := tx.FromAddress()
+	ownerAddress := ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress)
+	if fromAddress != ownerAddress {
+		return "", fmt.Errorf("only root owner can remove admin, sender: %s", fromAddress.Hex())
+	}
+
+	if err := h.appCtx.LdbContractFreeGas.RemoveAdmin(adminAddress); err != nil {
+		return "", fmt.Errorf("failed to remove admin: %w", err)
+	}
+
+	logger.Info("✅ Removed admin %s", adminAddress.Hex())
+	return tx.Hash().Hex(), nil
+}
+
+func (h *AccountHandlerNoReceipt) handleGetAllAdmins(
+	method *abi.Method,
+	inputData []byte,
+	fromAddress ethCommon.Address,
+) (interface{}, error) {
+	args, err := method.Inputs.Unpack(inputData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unpack input: %w", err)
+	}
+
+	page, _ := args[0].(*big.Int)
+	pageSize, _ := args[1].(*big.Int)
+
+	ownerAddress := ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress)
+	if fromAddress != ownerAddress {
+		return nil, fmt.Errorf("only root owner can get all admins, caller: %s", fromAddress.Hex())
+	}
+
+	pageInt := int(page.Int64())
+	pageSizeInt := int(pageSize.Int64())
+
+	if pageInt < 0 {
+		return nil, fmt.Errorf("page must be >= 0")
+	}
+	if pageSizeInt <= 0 || pageSizeInt > 100 {
+		return nil, fmt.Errorf("pageSize must be between 1 and 100")
+	}
+
+	admins, total, err := h.appCtx.LdbContractFreeGas.GetAdmins(pageInt, pageSizeInt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get admins: %w", err)
+	}
+
+	totalPages := (total + pageSizeInt - 1) / pageSizeInt
+
+	adminList := make([]map[string]interface{}, 0, len(admins))
+	for _, admin := range admins {
+		adminList = append(adminList, map[string]interface{}{
+			"admin_address": ethCommon.BytesToAddress(admin.AdminAddress).Hex(),
+			"added_at":      admin.AddedAt,
+			"added_by":      ethCommon.BytesToAddress(admin.AddedBy).Hex(),
+		})
+	}
+
+	return map[string]interface{}{
+		"admins":      adminList,
 		"total":       total,
 		"page":        pageInt,
 		"page_size":   pageSizeInt,

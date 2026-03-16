@@ -96,7 +96,7 @@ func (srv *RpcTcpServer) handleEthCallTCP(conn t_network.Connection, msgID strin
 			if err != nil {
 				return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{Code: -32603, Message: "Failed to get account handler: " + err.Error()})
 			}
-			result, err := accountHandler.HandleEthCall(context.Background(), rawInput)
+			result, err := accountHandler.HandleEthCall(context.Background(), rawInput, fromAddr)
 			if err != nil {
 				return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{Code: -32603, Message: "Account handler error: " + err.Error()})
 			}

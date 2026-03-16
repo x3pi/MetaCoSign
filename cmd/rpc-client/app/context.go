@@ -106,7 +106,7 @@ func New(cfg *config.Config, tcpCfg *tcp_config.ClientConfig) (*Context, error) 
 		return nil, fmt.Errorf("failed to initialize Contract Free Gas LevelDB: %w", err)
 	}
 	contractFreeGasStorage := storage.NewContractFreeGasStorage(ldbContractFreeGas)
-	contractFreeGasStorage.AddContract(ethCommon.HexToAddress(cfg.ContractsInterceptor[0]))
+	contractFreeGasStorage.AddContract(ethCommon.HexToAddress(cfg.ContractsInterceptor[0]), ethCommon.HexToAddress(cfg.OwnerRpcAddress))
 
 	// 7. Initialize LevelDB for Transaction Storage
 	var transactionStorage *storage.RobotTransaction

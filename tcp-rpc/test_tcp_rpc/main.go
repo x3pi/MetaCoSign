@@ -134,6 +134,76 @@ func sendTxExpectError(
 	}
 }
 
+// sendTxFreeGas gửi transaction bị intercepted bởi RPC (không có receipt).
+// Các hàm free gas (addAuthorizedWallet, addContractFreeGas, …) trả về txHash trực tiếp.
+// Trả về (txHash, true) nếu thành công, ("" false) nếu lỗi.
+func sendTxFreeGas(
+	tcpClient *client_tcp.Client,
+	privKey *ecdsa.PrivateKey,
+	fromAddr common.Address,
+	toAddr common.Address,
+	parsedABI abi.ABI,
+	signer e_types.Signer,
+	method string,
+	args ...interface{},
+) (string, bool) {
+	nonce, err := tcpClient.RpcGetPendingNonce(fromAddr)
+	if err != nil {
+		fmt.Printf("  ❌ GetNonce: %v\n", err)
+		return "", false
+	}
+
+	inputData, err := parsedABI.Pack(method, args...)
+	if err != nil {
+		fmt.Printf("  ❌ Pack %s: %v\n", method, err)
+		return "", false
+	}
+
+	tx := e_types.NewTransaction(nonce, toAddr, big.NewInt(0), 20000000, big.NewInt(10000000), inputData)
+	signedTx, _ := e_types.SignTx(tx, signer, privKey)
+	rawTxBytes, _ := signedTx.MarshalBinary()
+	rawTxHex := "0x" + hex.EncodeToString(rawTxBytes)
+
+	txHash, err := tcpClient.RpcSendRawTransaction(rawTxHex)
+	if err != nil {
+		fmt.Printf("  ❌ %s: %v\n", method, err)
+		return "", false
+	}
+	fmt.Printf("  ✅ %s → txHash: %s\n", method, txHash)
+	return txHash, true
+}
+
+// sendTxFreeGasExpectError gửi tx free gas và mộng đợi lỗi.
+func sendTxFreeGasExpectError(
+	tcpClient *client_tcp.Client,
+	privKey *ecdsa.PrivateKey,
+	fromAddr common.Address,
+	toAddr common.Address,
+	parsedABI abi.ABI,
+	signer e_types.Signer,
+	method string,
+	args ...interface{},
+) {
+	nonce, err := tcpClient.RpcGetPendingNonce(fromAddr)
+	if err != nil {
+		fmt.Printf("  ❌ GetNonce: %v\n", err)
+		return
+	}
+
+	inputData, _ := parsedABI.Pack(method, args...)
+	tx := e_types.NewTransaction(nonce, toAddr, big.NewInt(0), 20000000, big.NewInt(10000000), inputData)
+	signedTx, _ := e_types.SignTx(tx, signer, privKey)
+	rawTxBytes, _ := signedTx.MarshalBinary()
+	rawTxHex := "0x" + hex.EncodeToString(rawTxBytes)
+
+	_, err = tcpClient.RpcSendRawTransaction(rawTxHex)
+	if err != nil {
+		fmt.Printf("  ✅ REVERT (expected): %v\n", err)
+	} else {
+		fmt.Printf("  ❌ Expected revert but %s succeeded!\n", method)
+	}
+}
+
 // makeEventHandler tạo callback log event chung
 func makeEventHandler(eventName string, wg *sync.WaitGroup, once *sync.Once) func([]byte) {
 	return func(eventData []byte) {
@@ -387,6 +457,134 @@ func testBlsRegistration(
 	fmt.Printf("     BLS PubKey:      0x%s\n", blsPubKeyHex)
 }
 
+// ===================== TEST: Free Gas Admin Management =====================
+
+func testFreeGasAdmin(
+	tcpClient *client_tcp.Client,
+	accountABI abi.ABI,
+	accountContract common.Address,
+	// root owner
+	ownerPrivKey *ecdsa.PrivateKey,
+	ownerAddr common.Address,
+	// user được cấp quyền add contract
+	userPrivKey *ecdsa.PrivateKey,
+	userAddr common.Address,
+	signer e_types.Signer,
+) {
+	fmt.Println("\n╔══════════════════════════════════════════════════════╗")
+	fmt.Println("║  TEST: Free Gas Admin Management                     ║")
+	fmt.Println("╚══════════════════════════════════════════════════════╝")
+	fmt.Printf("  Root Owner : %s\n", ownerAddr.Hex())
+	fmt.Printf("  User        : %s\n", userAddr.Hex())
+
+	// ─── Dummy contract addresses dùng để test ───
+	contract1 := common.HexToAddress("0x1111111111111111111111111111111111111111")
+	contract2 := common.HexToAddress("0x2222222222222222222222222222222222222222")
+
+	// helper: gọi eth_call getAllAdmins / getAllAuthorizedWallets / getAllContractFreeGas / getMyContracts
+	ethCallList := func(label string, callerPrivKey *ecdsa.PrivateKey, callerAddr common.Address, method string, args ...interface{}) {
+		data, err := accountABI.Pack(method, args...)
+		if err != nil {
+			fmt.Printf("  ❌ Pack %s: %v\n", method, err)
+			return
+		}
+		// eth_call dùng fromAddress từ callerAddr — cần sign giả
+		// TCP eth_call lấy fromAddress từ caller context nên ta cần gửi qua sendTx eth_call-style
+		// Thực tế client dùng RpcEthCallFrom nếu có, hoặc ta tạo signed tx nhưng gọi eth_call.
+		// Dưới đây dùng RpcEthCall với callerAddr (client_tcp tự đính kèm from address)
+		_ = callerPrivKey // unused, client picks from identity
+		_ = callerAddr
+		result, err := tcpClient.RpcEthCall(accountContract, data)
+		if err != nil {
+			fmt.Printf("  ❌ eth_call %s (%s): %v\n", method, label, err)
+			return
+		}
+		fmt.Printf("  ✅ %s → %s\n", label, string(result))
+	}
+
+	// ═══════════════════════════════════════════════════════════
+	// PHASE 1: Root Owner thêm user vào Authorized Wallets
+	// ═══════════════════════════════════════════════════════════
+	fmt.Println("\n─── Phase 1: Root Owner cấp quyền cho User ───")
+
+	fmt.Printf("  ► addAuthorizedWallet(%s)\n", userAddr.Hex())
+	if _, ok := sendTxFreeGas(tcpClient, ownerPrivKey, ownerAddr, accountContract, accountABI, signer,
+		"addAuthorizedWallet", userAddr); !ok {
+		fmt.Println("  ⚠️  addAuthorizedWallet thất bại (có thể đã tồn tại)")
+	}
+
+	// ─── getAllAuthorizedWallets (root owner call) ───
+	fmt.Println("\n─── getAllAuthorizedWallets (page=0, size=10) ───")
+	ethCallList("authorized wallets", ownerPrivKey, ownerAddr,
+		"getAllAuthorizedWallets", big.NewInt(0), big.NewInt(10))
+
+	// ═══════════════════════════════════════════════════════════
+	// PHASE 2: User thêm contracts vào Free Gas
+	// ═══════════════════════════════════════════════════════════
+	fmt.Println("\n─── Phase 2: User thêm contracts ───")
+
+	fmt.Printf("  ► addContractFreeGas(%s)\n", contract1.Hex())
+	sendTxFreeGas(tcpClient, userPrivKey, userAddr, accountContract, accountABI, signer,
+		"addContractFreeGas", contract1)
+
+	fmt.Printf("  ► addContractFreeGas(%s)\n", contract2.Hex())
+	sendTxFreeGas(tcpClient, userPrivKey, userAddr, accountContract, accountABI, signer,
+		"addContractFreeGas", contract2)
+
+	// ─── getMyContracts — Owner query danh sách contract của user bằng cách trả adder=userAddr
+	// (eth_call từ client luôn dùng fromAddress của client = owner,
+	//  nhưng ta chỉ định adder=userAddr để lấy contract của user)
+	fmt.Println("\n─── getMyContracts (query contracts của user, page=0, size=10) ───")
+	ethCallList("my contracts", ownerPrivKey, ownerAddr,
+		"getMyContracts", userAddr, big.NewInt(0), big.NewInt(10))
+
+	// ═══════════════════════════════════════════════════════════
+	// PHASE 3: Thử nghiệm phân quyền — User khác không remove được
+	// ═══════════════════════════════════════════════════════════
+	fmt.Println("\n─── Phase 3: Root Owner (KHÔNG phải adder) remove contract của User ─── (expect: OK vì root owner có quyền tuyệt đối)")
+	fmt.Printf("  ► removeContractFreeGas(%s) bởi root owner\n", contract2.Hex())
+	sendTxFreeGas(tcpClient, ownerPrivKey, ownerAddr, accountContract, accountABI, signer,
+		"removeContractFreeGas", contract2)
+
+	// ─── getMyContracts sau khi xóa 1 ───
+	fmt.Println("\n─── getMyContracts (sau khi xóa contract2) ───")
+	ethCallList("my contracts after remove", userPrivKey, userAddr,
+		"getMyContracts", userAddr, big.NewInt(0), big.NewInt(10))
+
+	// ═══════════════════════════════════════════════════════════
+	// PHASE 4: User tự remove contract của mình
+	// ═══════════════════════════════════════════════════════════
+	fmt.Println("\n─── Phase 4: User tự remove contract của mình ───")
+	fmt.Printf("  ► removeContractFreeGas(%s) bởi user\n", contract1.Hex())
+	sendTxFreeGas(tcpClient, userPrivKey, userAddr, accountContract, accountABI, signer,
+		"removeContractFreeGas", contract1)
+
+	// ─── getMyContracts sau khi xóa hết ───
+	fmt.Println("\n─── getMyContracts (sau khi xóa hết) ───")
+	ethCallList("my contracts (empty)", ownerPrivKey, ownerAddr,
+		"getMyContracts", userAddr, big.NewInt(0), big.NewInt(10))
+
+	// ═══════════════════════════════════════════════════════════
+	// PHASE 5: Root Owner thu hồi quyền của User
+	// ═══════════════════════════════════════════════════════════
+	fmt.Println("\n─── Phase 5: Root Owner thu hồi quyền User ───")
+	fmt.Printf("  ► removeAuthorizedWallet(%s)\n", userAddr.Hex())
+	sendTxFreeGas(tcpClient, ownerPrivKey, ownerAddr, accountContract, accountABI, signer,
+		"removeAuthorizedWallet", userAddr)
+
+	// ─── User thử thêm contract sau khi bị thu hồi → expect error ───
+	fmt.Println("\n─── Phase 5b: User thêm contract sau khi bị thu hồi (expect REVERT) ───")
+	sendTxFreeGasExpectError(tcpClient, userPrivKey, userAddr, accountContract, accountABI, signer,
+		"addContractFreeGas", contract1)
+
+	// ─── getAllAuthorizedWallets cuối cùng ───
+	fmt.Println("\n─── getAllAuthorizedWallets (final) ───")
+	ethCallList("authorized wallets (final)", ownerPrivKey, ownerAddr,
+		"getAllAuthorizedWallets", big.NewInt(0), big.NewInt(10))
+
+	fmt.Println("\n  ✅ Free Gas Admin test completed!")
+}
+
 // ===================== TEST: Chain Direct =====================
 
 func testChainDirect(tcpClient *client_tcp.Client) {
@@ -480,6 +678,20 @@ func main() {
 	fmt.Printf("  Chain ID: %d\n", cfg.ChainId)
 
 	switch *testSuite {
+	case "freegas", "admin":
+		accountABI, _ := abi.JSON(strings.NewReader(accountAbiJSON))
+		accountContract := common.HexToAddress("0x00000000000000000000000000000000D844bb55")
+		// User được cấp quyền
+		userPrivKey, err := crypto.HexToECDSA("fb64857fe95b55dff91a11d2da0c8db2dddb29f617d3d1ddaa9a9880733d5407")
+		if err != nil {
+			fmt.Printf("  ❌ Invalid user private key: %v\n", err)
+			os.Exit(1)
+		}
+		userAddr := common.HexToAddress("0x5e582475A504998c5631E12A5a2585D2B1911812")
+		testFreeGasAdmin(tcpClient, accountABI, accountContract,
+			ethPrivKey, fromAddr,
+			userPrivKey, userAddr,
+			signer)
 	case "demo":
 		demoAbiBytes, _ := os.ReadFile(cfg.DemoAbiPath_)
 		demoABI, _ := abi.JSON(strings.NewReader(string(demoAbiBytes)))
@@ -513,7 +725,7 @@ func main() {
 		testBlsRegistration(tcpClient, accountABI, accountContract, ethPrivKey, fromAddr, signer)
 
 	default:
-		fmt.Printf("  ❌ Unknown test suite: %s (use: demo, bls, chain, all)\n", *testSuite)
+		fmt.Printf("  ❌ Unknown test suite: %s (use: demo, bls, chain, freegas, all)\n", *testSuite)
 	}
 
 	fmt.Println("\n╔══════════════════════════════════════════════════════╗")
@@ -544,25 +756,16 @@ const accountAbiJSON = `[
 		"name": "AccountConfirmed",
 		"type": "event"
 	},
-	{
-		"inputs": [{"internalType":"bytes","name":"_publicKey","type":"bytes"}],
-		"name": "setBlsPublicKey",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [{"internalType":"address","name":"_account","type":"address"}],
-		"name": "confirmAccountWithoutSign",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "getPublickeyBls",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	}
+	{"inputs":[{"internalType":"bytes","name":"_publicKey","type":"bytes"}],"name":"setBlsPublicKey","outputs":[],"stateMutability":"nonpayable","type":"function"},
+	{"inputs":[{"internalType":"address","name":"_account","type":"address"}],"name":"confirmAccountWithoutSign","outputs":[],"stateMutability":"nonpayable","type":"function"},
+	{"inputs":[],"name":"getPublickeyBls","outputs":[],"stateMutability":"nonpayable","type":"function"},
+	{"inputs":[{"internalType":"address","name":"walletAddress","type":"address"}],"name":"addAuthorizedWallet","outputs":[],"stateMutability":"nonpayable","type":"function"},
+	{"inputs":[{"internalType":"address","name":"walletAddress","type":"address"}],"name":"removeAuthorizedWallet","outputs":[],"stateMutability":"nonpayable","type":"function"},
+	{"inputs":[{"internalType":"uint256","name":"page","type":"uint256"},{"internalType":"uint256","name":"pageSize","type":"uint256"}],"name":"getAllAuthorizedWallets","outputs":[],"stateMutability":"nonpayable","type":"function"},
+	{"inputs":[{"internalType":"address","name":"adminAddress","type":"address"}],"name":"addAdmin","outputs":[],"stateMutability":"nonpayable","type":"function"},
+	{"inputs":[{"internalType":"address","name":"adminAddress","type":"address"}],"name":"removeAdmin","outputs":[],"stateMutability":"nonpayable","type":"function"},
+	{"inputs":[{"internalType":"uint256","name":"page","type":"uint256"},{"internalType":"uint256","name":"pageSize","type":"uint256"}],"name":"getAllAdmins","outputs":[],"stateMutability":"nonpayable","type":"function"},
+	{"inputs":[{"internalType":"address","name":"contractAddress","type":"address"}],"name":"addContractFreeGas","outputs":[],"stateMutability":"nonpayable","type":"function"},
+	{"inputs":[{"internalType":"address","name":"contractAddress","type":"address"}],"name":"removeContractFreeGas","outputs":[],"stateMutability":"nonpayable","type":"function"},
+	{"inputs":[{"internalType":"address","name":"adder","type":"address"},{"internalType":"uint256","name":"page","type":"uint256"},{"internalType":"uint256","name":"pageSize","type":"uint256"}],"name":"getMyContracts","outputs":[],"stateMutability":"nonpayable","type":"function"}
 ]`

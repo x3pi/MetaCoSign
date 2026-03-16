@@ -20,6 +20,10 @@
 
 ```go run main.go -test=all```
 
+# test free gas
+
+```go run main.go -test=freegas```
+
 ### File proto mới
 
 ```

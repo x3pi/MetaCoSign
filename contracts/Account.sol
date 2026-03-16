@@ -35,11 +35,26 @@ contract AccountManager {
         address  from;
         emit TransferFrom(from,to, amount, time, message );
     }
-    function addContractFreeGas(address contractAddress, uint time, bytes memory _sign) external {
+    function confirmAccountWithoutSign(address _account) external {
     }
-    function removeContractFreeGas(address contractAddress ,uint time,bytes memory _sign) external {
+    function addContractFreeGas(address contractAddress) external {
+    }
+    function removeContractFreeGas(address contractAddress) external {
     }
     function getAllContractFreeGas(uint256 page, uint256 pageSize, uint256 time, bytes memory _sign) external {
-
+    }
+    function addAuthorizedWallet(address walletAddress) external {
+    }
+    function removeAuthorizedWallet(address walletAddress) external {
+    }
+    function getAllAuthorizedWallets(uint256 page, uint256 pageSize) external {
+    }
+    function addAdmin(address adminAddress) external {
+    }
+    function removeAdmin(address adminAddress) external {
+    }
+    function getAllAdmins(uint256 page, uint256 pageSize) external {
+    }
+    function getMyContracts(address adder, uint256 page, uint256 pageSize) external {
     }
 }

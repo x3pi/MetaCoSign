@@ -5,8 +5,8 @@
   "chain_id": 991,
   "nation_id": 1,
   "parent_connection_type": "client",
-  "parent_address": "0x781E6EC6EBDCA11Be4B53865a34C0c7f10b6da6e",
-  "eth_private_key":"992d48ebc2dbeb5fa65b53f5727a1c3f7c9d4730bab45d0fc6166c5481671d0f",
+  "parent_address": "0x0B143e894a600114C4A3729874214e5fC5EA9cbc",
+  "eth_private_key":"48d0959736be4999d4fcfce48423e2e0f98610663ae3ee87f879eb69f74a0746",
   "demo_abi_path": "../pkg/abi/demo_abi.json",
   "demo_contract_address":"0x72e1a740B7763D80569dA34f2a4BB7198862b640",
   "contact_private":"0x00000000000000000000000000000000D844bb55"
