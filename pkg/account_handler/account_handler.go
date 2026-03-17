@@ -280,14 +280,14 @@ func (h *AccountHandlerNoReceipt) handleConfirmAccountWithoutSign(
 		return "", fmt.Errorf("error checking private key store: %w", err)
 	}
 	if !exists {
-		bTx, mtTx, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTx(ethTx, h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas, false)
+		bTx, mtTx, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTx(ethTx, h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas, false, nil)
 	} else {
 		senderPkString, _ := h.appCtx.PKS.GetPrivateKey(fromAddress)
 		keyPair := bls.NewKeyPair(ethCommon.FromHex(senderPkString))
 		bTx, mtTx, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(
 			ethTx,
 			h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas,
-			keyPair.PrivateKey(),
+			keyPair.PrivateKey(), nil,
 		)
 	}
 	if buildErr != nil {
@@ -307,7 +307,7 @@ func (h *AccountHandlerNoReceipt) handleConfirmAccountWithoutSign(
 
 	// Gửi reward qua owner queue (tuần tự)
 	if h.appCtx.Cfg.RewardAmount != nil && h.appCtx.Cfg.RewardAmount.Cmp(big.NewInt(0)) > 0 {
-		h.sendOwnerTransfer(ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress), ethCommon.Address(pendingTx.Address), h.appCtx.Cfg.RewardAmount)
+		h.SendOwnerTransfer(ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress), ethCommon.Address(pendingTx.Address), h.appCtx.Cfg.RewardAmount)
 	}
 
 	if err := h.storage.MarkAccountConfirmed(accountAddress, mtTx.Hash().Bytes(), pendingTx.BlsPublicKey); err != nil {
@@ -400,14 +400,14 @@ func (h *AccountHandlerNoReceipt) handleConfirmAccount(
 		return "", fmt.Errorf("error checking private key store: %w", err)
 	}
 	if !exists {
-		bTx, mtTx, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTx(ethTx, h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas, false)
+		bTx, mtTx, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTx(ethTx, h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas, false, nil)
 	} else {
 		senderPkString, _ := h.appCtx.PKS.GetPrivateKey(fromAddress)
 		keyPair := bls.NewKeyPair(ethCommon.FromHex(senderPkString))
 		bTx, mtTx, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(
 			ethTx,
 			h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas,
-			keyPair.PrivateKey(),
+			keyPair.PrivateKey(), nil,
 		)
 	}
 	if buildErr != nil {
@@ -427,7 +427,7 @@ func (h *AccountHandlerNoReceipt) handleConfirmAccount(
 
 	// Gửi reward qua owner queue (tuần tự)
 	if h.appCtx.Cfg.RewardAmount != nil && h.appCtx.Cfg.RewardAmount.Cmp(big.NewInt(0)) > 0 {
-		h.sendOwnerTransfer(ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress), ethCommon.Address(pendingTx.Address), h.appCtx.Cfg.RewardAmount)
+		h.SendOwnerTransfer(ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress), ethCommon.Address(pendingTx.Address), h.appCtx.Cfg.RewardAmount)
 	}
 
 	if err := h.storage.MarkAccountConfirmed(accountAddress, mtTx.Hash().Bytes(), pendingTx.BlsPublicKey); err != nil {
@@ -491,7 +491,7 @@ func (h *AccountHandlerNoReceipt) handleTransferFrom(
 	}
 
 	// Gửi transfer qua owner queue (tuần tự, tránh nonce conflict)
-	result := h.sendOwnerTransfer(fromAddress, toAddress, transferAmount)
+	result := h.SendOwnerTransfer(fromAddress, toAddress, transferAmount)
 
 	msgNotiSender := fmt.Sprintf("You transferred %s to %s", transferAmount.String(), toAddress.Hex())
 	notificationSender := &pb.Notification{

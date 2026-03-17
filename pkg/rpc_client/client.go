@@ -770,6 +770,7 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTx(
 	cfgCom *cfgCom.Config,
 	ldbContractFree *storage.ContractFreeGasStorage,
 	isSetNonce bool,
+	topUpFunc func(toAddress common.Address) error,
 ) ([]byte, mt_types.Transaction, func(), error) {
 	sg := types.NewCancunSigner(ethTx.ChainId())
 	fromAddress, err := sg.Sender(ethTx)
@@ -794,27 +795,17 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTx(
 	if cfg == nil {
 		return nil, nil, nil, fmt.Errorf("cfg is nil")
 	}
-	if !cfg.DisableFreeGas && ethTx.To() != nil {
+	// Chỉ check free gas khi tài khoản cần được top-up (balance thấp, đã có lịch sử giao dịch)
+	if !cfgCom.DisableFreeGas && ethTx.To() != nil && as.Balance().Cmp(cfgCom.GetFreeGasMinBalance()) < 0 && as.Nonce() != 0 {
 		exist, err := ldbContractFree.HasContract(*ethTx.To())
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("lỗi khi kiểm tra contract free gas: %v", err)
 		}
-		if exist {
-			if as.Balance().Cmp(big.NewInt(10000000000000000)) < 0 && as.Nonce() != 0 {
-				metaTxData, _, releaseFunc, err := c.BuildTransferTransaction(common.HexToAddress(cfgCom.OwnerRpcAddress), fromAddress, cfg.ExtraAmount)
-				rst := c.SendRawTransactionBinary(
-					metaTxData,
-					releaseFunc,
-					nil,
-					nil,
-					nil,
-				)
-				if rst.Error != nil {
-					return nil, nil, nil, fmt.Errorf("failed to send native coin: %v", err)
-				}
+		if exist && topUpFunc != nil {
+			// Đưa vào hàng chờ owner để tránh nonce conflict
+			if err := topUpFunc(fromAddress); err != nil {
+				return nil, nil, nil, fmt.Errorf("topUpFunc failed: %v", err)
 			}
-		} else {
-			return nil, nil, nil, fmt.Errorf("Contract is not allowed: %v", err)
 		}
 	}
 	deviceKey, err := c.GetDeviceKey(as.LastHash())
@@ -861,6 +852,7 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(
 	cfgCom *cfgCom.Config,
 	ldbContractFree *storage.ContractFreeGasStorage,
 	private mt_common.PrivateKey,
+	topUpFunc func(toAddress common.Address) error,
 ) ([]byte, mt_types.Transaction, func(), error) {
 
 	sg := types.NewCancunSigner(ethTx.ChainId())
@@ -873,27 +865,17 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey lỗi khi get acccount state: %v", err) // Cập nhật thông báo lỗi
 	}
-	if !cfg.DisableFreeGas && ethTx.To() != nil {
+	// Chỉ check free gas khi tài khoản cần được top-up (balance thấp, đã có lịch sử giao dịch)
+	if !cfgCom.DisableFreeGas && ethTx.To() != nil && as.Balance().Cmp(cfgCom.GetFreeGasMinBalance()) < 0 && as.Nonce() != 0 {
 		exist, err := ldbContractFree.HasContract(*ethTx.To())
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("lỗi khi kiểm tra contract free gas: %v", err)
 		}
-		if exist {
-			if as.Balance().Cmp(big.NewInt(10000000000000000)) < 0 && as.Nonce() != 0 {
-				metaTxData, _, releaseFunc, err := c.BuildTransferTransaction(common.HexToAddress(cfgCom.OwnerRpcAddress), fromAddress, cfg.ExtraAmount)
-				rst := c.SendRawTransactionBinary(
-					metaTxData,
-					releaseFunc,
-					nil,
-					nil,
-					nil,
-				)
-				if rst.Error != nil {
-					return nil, nil, nil, fmt.Errorf("failed to send native coin: %v", err)
-				}
+		if exist && topUpFunc != nil {
+			// Đưa vào hàng chờ owner để tránh nonce conflict
+			if err := topUpFunc(fromAddress); err != nil {
+				return nil, nil, nil, fmt.Errorf("topUpFunc failed: %v", err)
 			}
-		} else {
-			return nil, nil, nil, fmt.Errorf("Contract is not allowed: %v", err)
 		}
 	}
 	deviceKey, err := c.GetDeviceKey(as.LastHash())

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	ethCommon "github.com/ethereum/go-ethereum/common"
@@ -116,15 +117,26 @@ func (srv *RpcTcpServer) handleSendRawTransactionTCP(conn t_network.Connection, 
 		return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{Code: -32603, Message: "error checking private key store: " + err.Error()})
 	}
 
+	// topUpFunc: đưa giao dịch chuyển native coin vào hàng chờ owner (tuần tự) để tránh nonce conflict
+	ownerAddr := ethCommon.HexToAddress(srv.AppCtx.Cfg.OwnerRpcAddress)
+	topUpFunc := func(toAddress ethCommon.Address) error {
+		ah, err := account_handler.GetAccountHandler(srv.AppCtx)
+		if err != nil {
+			return fmt.Errorf("get account handler error: %w", err)
+		}
+		result := ah.SendOwnerTransfer(ownerAddr, toAddress, srv.AppCtx.Cfg.ExtraAmount)
+		return result.Err
+	}
+
 	if !exists {
 		bTx, tx, releaseTx, buildErr = srv.AppCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTxTCP(
-			ethTx, srv.AppCtx.TcpCfg, srv.AppCtx.Cfg, srv.AppCtx.LdbContractFreeGas, false, chainClient,
+			ethTx, srv.AppCtx.TcpCfg, srv.AppCtx.Cfg, srv.AppCtx.LdbContractFreeGas, false, chainClient, topUpFunc,
 		)
 	} else {
 		senderPkString, _ := srv.AppCtx.PKS.GetPrivateKey(fromAddr)
 		keyPair := bls.NewKeyPair(ethCommon.FromHex(senderPkString))
 		bTx, tx, releaseTx, buildErr = srv.AppCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKeyTCP(
-			ethTx, srv.AppCtx.TcpCfg, srv.AppCtx.Cfg, srv.AppCtx.LdbContractFreeGas, keyPair.PrivateKey(), chainClient,
+			ethTx, srv.AppCtx.TcpCfg, srv.AppCtx.Cfg, srv.AppCtx.LdbContractFreeGas, keyPair.PrivateKey(), chainClient, topUpFunc,
 		)
 	}
 	txReleased := false

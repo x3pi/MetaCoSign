@@ -32,6 +32,18 @@ type Config struct {
 	ContractsInterceptor    []string `json:"contracts_interceptor"` // Địa chỉ contract dùng để intercept
 	RewardAmount            *big.Int `json:"reward_amount"`         // Số lượng reward cho mỗi giao dịch được intercept
 	TcpServerPort           string   `json:"tcp_server_port"`       // Port cho TCP RPC server (ví dụ: ":9545")
+	ExtraAmount             *big.Int `json:"extra_account"`         // Số tiền top-up cho account khi balance thấp
+	FreeGasMinBalance       *big.Int `json:"free_gas_min_balance"`  // Ngưỡng balance (wei) dưới đây sẽ top-up. Mặc định: 10^16
+	DisableFreeGas          bool     `json:"disable_free_gas"`      // Tắt tính năng free gas top-up
+}
+
+// GetFreeGasMinBalance trả về ngưỡng balance cấu hình.
+// Nếu không set trong config, mặc định là 10^16 wei (0.01 ETH).
+func (c *Config) GetFreeGasMinBalance() *big.Int {
+	if c.FreeGasMinBalance != nil && c.FreeGasMinBalance.Sign() > 0 {
+		return c.FreeGasMinBalance
+	}
+	return big.NewInt(10_000_000_000_000_000) // 0.01 ETH default
 }
 
 func Load(path string, tcpCfgPath string) (*Config, *tcp_config.ClientConfig, error) {

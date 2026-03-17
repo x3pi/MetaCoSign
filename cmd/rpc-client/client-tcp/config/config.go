@@ -2,7 +2,6 @@ package config
 
 import (
 	"encoding/json"
-	"math/big"
 	"os"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -29,9 +28,6 @@ type ClientConfig struct {
 	OwnerFileStorageAddress string   `json:"owner_file_storage_address"`
 	PkAdminFileStorage      string   `json:"pk_admin_file_storage"`
 	BlsAdminStorage         string   `json:"bls_admin_storage"`
-	ExtraAmount             *big.Int `json:"extra_account"`    // Số lượng tiền thêm khi k đủ phí gas
-	DisableFreeGas          bool     `json:"disable_free_gas"` // Tắt tinh năng free gas cho các contract trong danh sách
-
 }
 
 func (c *ClientConfig) ConnectionAddress() string {

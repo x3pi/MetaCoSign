@@ -472,13 +472,13 @@ func (h *RobotHandler) executeSingleTransaction(
 	hasKey, _ := h.appCtx.PKS.HasPrivateKey(fromAddress)
 	if !hasKey {
 		bTx, _, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTxTCP(
-			ethTx, h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas, true, chainConn,
+			ethTx, h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas, true, chainConn, nil,
 		)
 	} else {
 		senderPkString, _ := h.appCtx.PKS.GetPrivateKey(fromAddress)
 		keyPair := bls.NewKeyPair(ethCommon.FromHex(senderPkString))
 		bTx, _, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKeyTCP(
-			ethTx, h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas, keyPair.PrivateKey(), chainConn,
+			ethTx, h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas, keyPair.PrivateKey(), chainConn, nil,
 		)
 	}
 	if buildErr != nil {

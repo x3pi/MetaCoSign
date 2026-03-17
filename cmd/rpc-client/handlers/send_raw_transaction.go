@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 
 	ethCommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -70,12 +71,23 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 
 		tx mt_types.Transaction
 	)
+	// topUpFunc: đưa giao dịch chuyển native coin vào hàng chờ owner (tuần tự) để tránh nonce conflict
+	ownerAddr := ethCommon.HexToAddress(appCtx.Cfg.OwnerRpcAddress)
+	topUpFunc := func(toAddress ethCommon.Address) error {
+		ah, err := account_handler.GetAccountHandler(appCtx)
+		if err != nil {
+			return fmt.Errorf("get account handler error: %w", err)
+		}
+		result := ah.SendOwnerTransfer(ownerAddr, toAddress, appCtx.Cfg.ExtraAmount)
+		return result.Err
+	}
+
 	if !exists {
-		bTx, tx, releaseTx, buildErr = appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTx(ethTx, appCtx.TcpCfg, appCtx.Cfg, appCtx.LdbContractFreeGas, false)
+		bTx, tx, releaseTx, buildErr = appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTx(ethTx, appCtx.TcpCfg, appCtx.Cfg, appCtx.LdbContractFreeGas, false, topUpFunc)
 	} else {
 		senderPkString, _ := appCtx.PKS.GetPrivateKey(fromAddress)
 		keyPair := bls.NewKeyPair(ethCommon.FromHex(senderPkString))
-		bTx, tx, releaseTx, buildErr = appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(ethTx, appCtx.TcpCfg, appCtx.Cfg, appCtx.LdbContractFreeGas, keyPair.PrivateKey())
+		bTx, tx, releaseTx, buildErr = appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(ethTx, appCtx.TcpCfg, appCtx.Cfg, appCtx.LdbContractFreeGas, keyPair.PrivateKey(), topUpFunc)
 	}
 	if buildErr != nil {
 		releaseDecodedOnce()

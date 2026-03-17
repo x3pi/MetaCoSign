@@ -11,8 +11,9 @@ import (
 	utilsPkg "github.com/meta-node-blockchain/meta-node/pkg/utils"
 )
 
-// sendOwnerTransfer đẩy transfer request vào owner queue (tuần tự).
-func (h *AccountHandlerNoReceipt) sendOwnerTransfer(
+// SendOwnerTransfer đẩy transfer request vào owner queue (tuần tự).
+// Exported để các package ngoài (vd: tcp_server handler) có thể inject vào callback.
+func (h *AccountHandlerNoReceipt) SendOwnerTransfer(
 	fromAddress, toAddress ethCommon.Address,
 	amount *big.Int,
 ) *OwnerTxResult {
@@ -49,7 +50,7 @@ func (h *AccountHandlerNoReceipt) executeOwnerTransfer(req *OwnerTxRequest) *Own
 		return &OwnerTxResult{Err: fmt.Errorf("failed to build transfer transaction: %w", err)}
 	}
 
-	txBLS, err := chainConn.SendTransactionWithDeviceKey(metaTxData, 30*time.Second)
+	txBLS, err := chainConn.SendTransactionWithDeviceKey(metaTxData, 120*time.Second)
 	if releaseFunc != nil {
 		releaseFunc()
 	}
