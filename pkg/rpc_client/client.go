@@ -756,7 +756,7 @@ func (c *ClientRPC) BuildTransactionWithDeviceKey(
 		Transaction: transaction.Proto().(*mt_proto.Transaction),
 		DeviceKey:   rawNewDeviceKey,
 	}
-
+	logger.Info("BuildTransactionWithDeviceKeyFromEthTx transaction: %s, input data %x", transaction.Hash().Hex(), transaction.CallData().Input())
 	data, release, err := marshalProtoMessage(transactionWithDeviceKey)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to marshal TransactionWithDeviceKey: %w", err)
@@ -846,7 +846,7 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTx(
 		Transaction: transaction.Proto().(*mt_proto.Transaction),
 		DeviceKey:   rawNewDeviceKey,
 	}
-
+	logger.Info("BuildTransactionWithDeviceKeyFromEthTx transaction: %s, input data %x", transaction.Hash().Hex(), transaction.CallData().Input())
 	data, release, err := marshalProtoMessage(transactionWithDeviceKey)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to marshal TransactionWithDeviceKey: %w", err)

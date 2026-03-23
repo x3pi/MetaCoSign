@@ -1,6 +1,9 @@
 # RPC Reverse Proxy
   "rpc_server_url": "http://139.59.243.85:8646",
   "wss_server_url": "ws://139.59.243.85:8646/ws",
+  
+  "rpc_server_url": "http://localhost:10646",
+  "wss_server_url": "ws://localhost:10646/ws",
 
   "rpc_server_url": "http://localhost:8646",
   "wss_server_url": "ws://localhost:8646/ws",

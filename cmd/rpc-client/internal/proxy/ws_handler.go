@@ -278,14 +278,25 @@ func (p *RpcReverseProxy) proxyClientToUpstreamWithoutInterceptor(
 			}
 			return
 		}
-		// Forward tất cả requests trực tiếp lên chain, không có interceptor
-		if err := targetWriter.WriteJSON(req); err != nil {
-			logger.Error("Error writing to upstream for client %s: %v", clientConn.RemoteAddr(), err)
-			select {
-			case errChan <- fmt.Errorf("upstream write error: %w", err):
-			case <-quit:
+		rpcResp, handled := p.RouteWebSocketMessage(req)
+		if handled && rpcResp != nil {
+			if err := clientWriter.WriteJSON(rpcResp); err != nil {
+				logger.Error("Error writing RPC response to client %s: %v", clientConn.RemoteAddr(), err)
+				select {
+				case errChan <- fmt.Errorf("client write error: %w", err):
+				case <-quit:
+				}
+				return
 			}
-			return
+		} else {
+			if err := targetWriter.WriteJSON(req); err != nil {
+				logger.Error("Error writing to upstream for client %s: %v", clientConn.RemoteAddr(), err)
+				select {
+				case errChan <- fmt.Errorf("upstream write error: %w", err):
+				case <-quit:
+				}
+				return
+			}
 		}
 	}
 }
