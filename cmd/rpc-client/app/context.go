@@ -68,6 +68,9 @@ func New(cfg *config.Config, tcpCfg *tcp_config.ClientConfig) (*Context, error) 
 		return nil, fmt.Errorf("node's BLS private key is missing in config")
 	}
 	keyPair := bls.NewKeyPair(ethCommon.FromHex(cfg.PrivateKey))
+	if keyPair == nil {
+		return nil, fmt.Errorf("invalid BLS private key in config: key is invalid or out of bounds")
+	}
 	// 3. Create RPC client
 	clientRpc, err := rpc_client.NewClientRPC(cfg.RPCServerURL, cfg.WSSServerURL, cfg.PrivateKey, cfg.ChainId)
 	if err != nil {
