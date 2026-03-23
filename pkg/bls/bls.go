@@ -3,6 +3,7 @@ package bls
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"math/big"
 	"runtime"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -18,6 +19,12 @@ type blstAggregatePublicKey = blst.P1Aggregate
 type blstSecretKey = blst.SecretKey
 
 var dstMinPk = []byte("BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_")
+
+// blsCurveOrder is the order r of the BLS12-381 curve.
+// Valid private key must satisfy: 0 < key < r.
+var blsCurveOrder, _ = new(big.Int).SetString(
+	"73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001", 16,
+)
 
 // ===== PUBLIC API FUNCTIONS (NO LOCK VERSION) =====
 
@@ -84,8 +91,12 @@ func ValidateBlsPrivateKey(keyBytes []byte) bool {
 		return false
 	}
 
-	// Additional validation: check if key is valid for BLS curve
-	// This is a basic check - in production you might want more thorough validation
+	// Check key < curve order
+	keyInt := new(big.Int).SetBytes(keyBytes)
+	if keyInt.Cmp(blsCurveOrder) >= 0 {
+		return false
+	}
+
 	return true
 }
 
