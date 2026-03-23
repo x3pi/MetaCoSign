@@ -53,7 +53,7 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 	fromAddress, err := types.Sender(signer, ethTx)
 	if err != nil {
 		releaseDecodedOnce()
-		return utils.MakeInternalError(id, "Failed to derive sender from transaction")
+		return utils.MakeInternalError(id, "Failed to derive sender from transaction "+err.Error())
 	}
 	if appCtx.PKS == nil {
 		releaseDecodedOnce()

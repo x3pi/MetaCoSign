@@ -15,8 +15,19 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+
+// GetNonce lấy nonce cho address.
+// Nếu directClient được set → dùng ChainGetNonce (TCP direct, ID-matching, không tranh channel).
+// Fallback → dùng RpcGetPendingNonce (RPC proxy).
+func (c *Client) GetNonce(address common.Address) (uint64, error) {
+	if c.directClient != nil {
+		return c.directClient.ChainGetNonce(address)
+	}
+	return c.RpcGetPendingNonce(address)
+}
+
 // ===================== Chain-Direct Methods =====================
-// Gửi thẳng lên chain, dùng header ID matching, không qua RPC proxy
+// G\u1eedi th\u1eb3ng l\u00ean chain, d\u00f9ng header ID matching, kh\u00f4ng qua RPC proxy
 
 // sendChainRequest gửi command trực tiếp lên chain và đợi response theo header ID
 func (client *Client) sendChainRequest(cmd string, body []byte, timeout time.Duration) ([]byte, error) {
@@ -80,6 +91,22 @@ func (client *Client) ChainGetBlockNumber() (uint64, error) {
 	return bn, nil
 }
 
+// ChainGetNonce lấy nonce của address trực tiếp từ chain (không qua RPC, dùng ID-matching).
+// Khác RpcGetPendingNonce (RPC proxy): method này gửi thẳng đến chain node  → nhanh hơn,
+// không tranh chấp channel nonce shared.
+func (client *Client) ChainGetNonce(address common.Address) (uint64, error) {
+	resp, err := client.sendChainRequest(command.GetNonce, address.Bytes(), 10*time.Second)
+	if err != nil {
+		return 0, fmt.Errorf("ChainGetNonce: %w", err)
+	}
+	if len(resp) < 8 {
+		return 0, fmt.Errorf("ChainGetNonce: invalid response length %d", len(resp))
+	}
+	nonce := binary.BigEndian.Uint64(resp)
+	return nonce, nil
+}
+
+
 // ChainGetTransactionReceipt lấy receipt trực tiếp từ chain theo txHash
 // Trả về raw response bytes — caller tự unmarshal nếu cần
 func (client *Client) ChainGetTransactionReceipt(txHash common.Hash) ([]byte, error) {
@@ -87,7 +114,6 @@ func (client *Client) ChainGetTransactionReceipt(txHash common.Hash) ([]byte, er
 	if err != nil {
 		return nil, err
 	}
-	logger.Info("✅ ChainGetTransactionReceipt: %s (%d bytes)", txHash.Hex(), len(resp))
 	return resp, nil
 }
 

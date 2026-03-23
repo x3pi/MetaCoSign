@@ -12,7 +12,7 @@
 
 # test đăng ký bls
 
-```go run main.go -test=bls```
+```go run main.go -test=bls -count 5 -out bls_keys.json```
 
 # goi các hàm trên chain 4200
 

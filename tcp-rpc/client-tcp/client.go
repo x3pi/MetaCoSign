@@ -50,6 +50,19 @@ type Client struct {
 	keepAliveStop        chan struct{}
 	pendingRpcRequests   sync.Map // map[string]chan *pb.RpcResponse  — cho RPC proxy
 	pendingChainRequests sync.Map // map[string]chan []byte           — cho chain-direct (header ID matching)
+
+	// directClient là client kết nối TCP trực tiếp vào chain (không qua RPC layer).
+	// Nếu được set, GetNonce() sẽ dùng nó thay cho RpcGetPendingNonce.
+	directClient *Client
+}
+
+func (c *Client) SetDirectClient(direct *Client) {
+	c.directClient = direct
+}
+
+// GetDirectClient trả về directClient đã được set (có thể nil).
+func (c *Client) GetDirectClient() *Client {
+	return c.directClient
 }
 
 type receiptRequestType int
@@ -483,10 +496,10 @@ func (client *Client) runReceiptRouter() {
 	for {
 		select {
 		case receipt := <-client.receiptChan:
+			logger.Info("_______________________Receipt received: %s", receipt.TransactionHash().Hex())
 			if receipt == nil {
 				continue
 			}
-
 			txHash := receipt.TransactionHash()
 			receiptHash := receipt.RHash()
 			// Kiểm tra waiters dựa trên TransactionHash
@@ -694,20 +707,9 @@ func (client *Client) SendTransaction(
 	}
 
 	client.clientContext.MessageSender.SendBytes(parentConn, command.GetAccountState, fromAddress.Bytes())
-	client.clientContext.MessageSender.SendBytes(parentConn, command.GetNonce, fromAddress.Bytes())
 
 	lastDeviceKey := common.HexToHash("0000000000000000000000000000000000000000000000000000000000000000")
 	newDeviceKey := common.HexToHash("0000000000000000000000000000000000000000000000000000000000000000")
-
-	// Thay thế select bằng nhận trực tiếp và xử lý timeout bằng select bên ngoài
-	var nonce uint64
-	select {
-	case nonce = <-client.nonce:
-		logger.Info("Nonce : ", nonce)
-	case <-time.After(10 * time.Second):
-		logger.DebugP("Timeout waiting for nonce")
-		return nil, fmt.Errorf("timeout waiting for nonce")
-	}
 
 	var as types.AccountState
 	select {
