@@ -40,16 +40,7 @@ func (srv *RpcTcpServer) handleHttpSendRawTransaction(request t_network.Request)
 		})
 	}
 	rawTxHex := params[0]
-
-	// Forward to the standard HTTP flow, similar to HandleSendRawTransaction
-	// Since HTTP Handler relies on app.Context and JSONRPCRequestRaw, we construct the request format
-	// and invoke the existing package.
-
-	// Instead of calling HTTP directly here, we use the Application Context's HTTP handler
-	// for processing the send raw transaction.
 	httpResult := app_handlers.ProcessSendRawTransaction(srv.AppCtx, rawTxHex, msgID)
-
-	// Convert httpResult to TCP response
 	return srv.sendTcpResponse(conn, httpRespToTcpResp(httpResult, msgID))
 }
 

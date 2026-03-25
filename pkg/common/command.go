@@ -26,7 +26,7 @@ const (
 
 	GetDeviceKey = "GetDeviceKey"
 	DeviceKey    = "DeviceKey"
-	Response = "Response"
+	Response     = "Response"
 
 	// Monitor
 	MonitorData = "MonitorData"
@@ -43,4 +43,7 @@ const (
 
 	GetChainId = "GetChainId"
 	ChainId    = "ChainId"
+
+	GetNonce = "GetNonce"
+	Nonce    = "Nonce"
 )

@@ -20,10 +20,7 @@ import (
 // Nếu directClient được set → dùng ChainGetNonce (TCP direct, ID-matching, không tranh channel).
 // Fallback → dùng RpcGetPendingNonce (RPC proxy).
 func (c *Client) GetNonce(address common.Address) (uint64, error) {
-	if c.directClient != nil {
-		return c.directClient.ChainGetNonce(address)
-	}
-	return c.RpcGetPendingNonce(address)
+	return c.ChainGetNonce(address)
 }
 
 // ===================== Chain-Direct Methods =====================

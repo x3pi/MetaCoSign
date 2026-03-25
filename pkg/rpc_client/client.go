@@ -861,23 +861,22 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(
 		return nil, nil, nil, fmt.Errorf("lỗi khi get fromAddress : %w", err) // Cập nhật thông báo lỗi
 	}
 	as, err := c.GetAccountState(fromAddress, rpc.BlockNumberOrHashWithNumber(rpc.LatestBlockNumber))
-
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey lỗi khi get acccount state: %v", err) // Cập nhật thông báo lỗi
 	}
 	// Chỉ check free gas khi tài khoản cần được top-up (balance thấp, đã có lịch sử giao dịch)
-	if !cfgCom.DisableFreeGas && ethTx.To() != nil && as.Balance().Cmp(cfgCom.GetFreeGasMinBalance()) < 0 && as.Nonce() != 0 {
-		exist, err := ldbContractFree.HasContract(*ethTx.To())
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("lỗi khi kiểm tra contract free gas: %v", err)
-		}
-		if exist && topUpFunc != nil {
-			// Đưa vào hàng chờ owner để tránh nonce conflict
-			if err := topUpFunc(fromAddress); err != nil {
-				return nil, nil, nil, fmt.Errorf("topUpFunc failed: %v", err)
-			}
-		}
-	}
+	// if !cfgCom.DisableFreeGas && ethTx.To() != nil && as.Balance().Cmp(cfgCom.GetFreeGasMinBalance()) < 0 && as.Nonce() != 0 {
+	// 	exist, err := ldbContractFree.HasContract(*ethTx.To())
+	// 	if err != nil {
+	// 		return nil, nil, nil, fmt.Errorf("lỗi khi kiểm tra contract free gas: %v", err)
+	// 	}
+	// 	if exist && topUpFunc != nil {
+	// 		// Đưa vào hàng chờ owner để tránh nonce conflict
+	// 		if err := topUpFunc(fromAddress); err != nil {
+	// 			return nil, nil, nil, fmt.Errorf("topUpFunc failed: %v", err)
+	// 		}
+	// 	}
+	// }
 	deviceKey, err := c.GetDeviceKey(as.LastHash())
 	if err != nil {
 		logger.Info("lỗi khi get deviceKey", err)

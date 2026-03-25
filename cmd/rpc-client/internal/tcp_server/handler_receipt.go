@@ -1,11 +1,14 @@
 package tcp_server
 
 import (
+	"encoding/binary"
 	"fmt"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
+	pkgCommon "github.com/meta-node-blockchain/meta-node/pkg/common"
+	"github.com/meta-node-blockchain/meta-node/pkg/network"
 	pb "github.com/meta-node-blockchain/meta-node/pkg/proto"
 	"github.com/meta-node-blockchain/meta-node/pkg/receipt"
 	"github.com/meta-node-blockchain/meta-node/types"
@@ -95,47 +98,55 @@ func (srv *RpcTcpServer) handleGetTransactionReceipt(request t_network.Request) 
 	return srv.sendTcpResponse(conn, resp)
 }
 
-// handleGetTransactionCount — lấy nonce (pending) từ chain qua TCP
-// Nhận proto TcpGetNonceRequest, trả proto TcpGetNonceResponse
-func (srv *RpcTcpServer) handleGetTransactionCount(request t_network.Request) error {
+// handleGetNonce — lấy nonce (pending) từ chain qua TCP
+func (srv *RpcTcpServer) handleGetNonce(request t_network.Request) error {
 	conn := request.Connection()
-	msgID := request.Message().ID()
-	body := request.Message().Body()
+	msg := request.Message()
+	if msg == nil {
+		return nil
+	}
 
-	// Parse proto TcpGetNonceRequest
-	tcpReq := &pb.TcpAddressParam{}
-	if err := proto.Unmarshal(body, tcpReq); err != nil || len(tcpReq.Address) == 0 {
-		return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{
+	body := msg.Body()
+	if len(body) != common.AddressLength {
+		return srv.sendRpcResponse(conn, msg.ID(), nil, &pb.RpcError{
 			Code:    -32602,
-			Message: "Invalid params: failed to parse TcpAddressParam",
+			Message: "Invalid params: GetNonce body must be 20-byte address",
 		})
 	}
 
-	address := common.BytesToAddress(tcpReq.Address)
-	logger.Info("🔄 TCP eth_getTransactionCount from %s (addr=%s)", conn.RemoteAddrSafe(), address.Hex())
+	address := common.BytesToAddress(body)
+	logger.Info("🔄 TCP GetNonce from %s (addr=%s)", conn.RemoteAddrSafe(), address.Hex())
+
+	if srv.AppCtx == nil || srv.AppCtx.ChainPool == nil {
+		return nil
+	}
 
 	chainClient, err := srv.AppCtx.ChainPool.Get()
 	if err != nil {
-		return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{
-			Code:    -32603,
-			Message: "Failed to get chain connection: " + err.Error(),
-		})
+		return err
 	}
 
 	nonce, err := chainClient.GetNonce(address.Bytes(), 30*time.Second)
 	if err != nil {
-		return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{
-			Code:    -32603,
-			Message: "GetNonce TCP error: " + err.Error(),
-		})
+		return err
 	}
 
-	// Trả proto TcpGetNonceResponse — client parse trực tiếp uint64
-	nonceResp := &pb.TcpGetNonceResponse{Nonce: nonce}
-	resultBytes, _ := proto.Marshal(nonceResp)
+	// Trả về byte luôn k cần bọc sendRpcResponse
+	bodyResp := make([]byte, 8)
+	binary.BigEndian.PutUint64(bodyResp, nonce)
+	
+	respMsg := network.NewMessage(&pb.Message{
+		Header: &pb.Header{
+			Command:   pkgCommon.Nonce, // Or pkgCommon.Nonce if imported
+			Version:   msg.Version(),
+			ToAddress: conn.Address().Bytes(),
+			ID:        msg.ID(),
+		},
+		Body: bodyResp,
+	})
 
-	logger.Info("✅ TCP eth_getTransactionCount: %s nonce=%d", address.Hex(), nonce)
-	return srv.sendRpcResponse(conn, msgID, resultBytes, nil)
+	logger.Info("✅ TCP GetNonce: %s nonce=%d", address.Hex(), nonce)
+	return conn.SendMessage(respMsg)
 }
 
 // receiptToRpcReceipt converts internal receipt to pb.RpcReceipt

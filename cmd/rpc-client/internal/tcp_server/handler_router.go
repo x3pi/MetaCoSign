@@ -39,12 +39,14 @@ func (srv *RpcTcpServer) HandleRequest(request t_network.Request) error {
 	case "eth_unsubscribe":
 		return srv.handleEthUnsubscribe(request)
 	// === Chain-direct via TCP ===
-	case "eth_getChainId":
-		return srv.handleChainIdDirect(request)
 	case "eth_getTransactionReceipt":
 		return srv.handleGetTransactionReceipt(request)
-	case "eth_getTransactionCount":
-		return srv.handleGetTransactionCount(request)
+	case "GetNonce":
+		return srv.handleGetNonce(request)
+	case "GetChainId":
+		return srv.handleChainIdDirect(request)
+	case "GetAccountState":
+		return srv.handleGetAccountState(request)
 	// === Default ===
 	default:
 		return srv.sendRpcResponse(request.Connection(), request.Message().ID(), nil, &pb.RpcError{
