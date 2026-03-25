@@ -124,6 +124,47 @@ func (tc *TransactionController) ReadTransaction(
 	return transaction, err
 }
 
+func (tc *TransactionController) ReadTransactionWithoutNonce(
+	fromAddress common.Address,
+	toAddress common.Address,
+	pendingUse *big.Int,
+	amount *big.Int,
+	maxGas uint64,
+	maxGasFee uint64,
+	maxTimeUse uint64,
+	data []byte,
+	relatedAddress [][]byte,
+	lastDeviceKey common.Hash,
+	newDeviceKey common.Hash,
+	chainId uint64,
+) (types.Transaction, error) {
+	transaction := transaction.NewTransactionWithoutNonce(
+		fromAddress,
+		toAddress,
+		amount,
+		maxGas,
+		maxGasFee,
+		maxTimeUse,
+		data,
+		relatedAddress,
+		lastDeviceKey,
+		newDeviceKey,
+		chainId,
+	)
+	transaction.SetSign(tc.clientContext.KeyPair.PrivateKey())
+	bTransaction, err := transaction.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	parentConnection := tc.clientContext.ConnectionsManager.ParentConnection()
+	err = tc.clientContext.MessageSender.SendBytes(
+		parentConnection,
+		command.ReadTransaction,
+		bTransaction,
+	)
+	return transaction, err
+}
+
 func (tc *TransactionController) SendTransactions(
 	transactions []types.Transaction,
 ) error {

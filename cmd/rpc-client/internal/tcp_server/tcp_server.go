@@ -34,6 +34,9 @@ type RpcTcpServer struct {
 	wsRelayCtx         context.Context         // context riêng cho WS relay
 	wsRelayCancel      context.CancelFunc      // cancel WS relay
 
+	// clientConnections lưu wallet address → TCP connection.
+	// Dùng để gửi receipt cho người nhận khi TX là chuyển tiền.
+	clientConnections sync.Map // key: common.Address, value: t_network.Connection
 }
 
 // RpcHandler implements network.Handler interface
@@ -388,7 +391,7 @@ func (srv *RpcTcpServer) handleEthUnsubscribe(request t_network.Request) error {
 	return srv.sendRpcResponse(conn, msgID, []byte{result}, nil)
 }
 
-// OnConnectionClosed cleanup subscriptions khi client ngắt kết nối
+// OnConnectionClosed cleanup subscriptions + clientConnections khi client ngắt kết nối
 func (srv *RpcTcpServer) OnConnectionClosed(conn t_network.Connection) {
 	removed := srv.TcpSubManager.RemoveByConnection(conn)
 	if removed > 0 {
@@ -397,4 +400,48 @@ func (srv *RpcTcpServer) OnConnectionClosed(conn t_network.Connection) {
 		// Nếu không còn subscription nào → stop WS relay
 		srv.stopWsRelayIfEmpty()
 	}
+
+	// Xóa client connection mapping
+	srv.clientConnections.Range(func(key, value interface{}) bool {
+		if value.(t_network.Connection) == conn {
+			srv.clientConnections.Delete(key)
+			logger.Info("🔌 Removed client connection mapping: addr=%s", key.(common.Address).Hex())
+		}
+		return true
+	})
+}
+
+// handleInitConnection lưu address → connection mapping khi client kết nối.
+func (srv *RpcTcpServer) handleInitConnection(request t_network.Request) error {
+	conn := request.Connection()
+	if conn == nil {
+		return nil
+	}
+
+	initData := &pb.InitConnection{}
+	if err := proto.Unmarshal(request.Message().Body(), initData); err != nil {
+		logger.Warn("handleInitConnection: unmarshal error: %v", err)
+		return nil
+	}
+	address := common.BytesToAddress(initData.Address)
+	// Lưu address → connection
+	srv.clientConnections.Store(address, conn)
+	logger.Info("📌 [RPC] Client registered: addr=%s remote=%s",
+		address.Hex(), conn.RemoteAddrSafe())
+
+	return nil
+}
+
+// GetClientConnection tìm connection theo wallet address.
+// Dùng để gửi receipt cho người nhận (toAddress) khi TX là chuyển tiền.
+func (srv *RpcTcpServer) GetClientConnection(addr common.Address) t_network.Connection {
+	if val, ok := srv.clientConnections.Load(addr); ok {
+		conn := val.(t_network.Connection)
+		if conn.IsConnect() {
+			return conn
+		}
+		// Connection đã disconnect → xóa
+		srv.clientConnections.Delete(addr)
+	}
+	return nil
 }

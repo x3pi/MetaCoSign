@@ -410,9 +410,6 @@ func (client *Client) ReadTransaction(
 	newDeviceKey := common.HexToHash("0000000000000000000000000000000000000000000000000000000000000000")
 
 	// Nhận nonce trực tiếp thay vì dùng select
-	nonce := <-client.nonce
-	logger.Info("[Client] Nonce : %d", nonce)
-
 	as := <-client.accountStateChan
 	pendingBalance := as.PendingBalance()
 	logger.Info("[Client] PendingBalance : %s", pendingBalance.String())

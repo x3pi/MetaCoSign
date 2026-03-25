@@ -34,6 +34,7 @@ type Handler struct {
 	pendingRpcRequests   *sync.Map // map[string]chan *pb.RpcResponse
 	pendingChainRequests *sync.Map // map[string]chan []byte — chain-direct responses
 	eventCallbacks       sync.Map  // map[subscriptionID]func([]byte)
+	receiptCallback      func([]byte) // callback khi nhận receipt forwarded từ RPC server
 }
 
 func NewHandler(
@@ -204,8 +205,15 @@ handleAccountState will receive receipt from connection
 then print it out
 */
 func (h *Handler) handleReceipt(request network.Request) (err error) {
+	body := request.Message().Body()
+
+	// Gọi receiptCallback nếu có (để nhận receipt forwarded từ RPC server)
+	if h.receiptCallback != nil {
+		h.receiptCallback(body)
+	}
+
 	receipt := &receipt.Receipt{}
-	err = receipt.Unmarshal(request.Message().Body())
+	err = receipt.Unmarshal(body)
 	if err != nil {
 		return err
 	}
@@ -317,6 +325,11 @@ func (h *Handler) RegisterEventCallback(subID string, cb func([]byte)) {
 // RemoveEventCallback xoá callback khi unsubscribe
 func (h *Handler) RemoveEventCallback(subID string) {
 	h.eventCallbacks.Delete(subID)
+}
+
+// RegisterReceiptCallback đăng ký callback khi nhận receipt forwarded (command "Receipt")
+func (h *Handler) RegisterReceiptCallback(cb func([]byte)) {
+	h.receiptCallback = cb
 }
 
 // SetEventCallback backward compat — dùng key "_default"

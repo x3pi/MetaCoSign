@@ -22,36 +22,35 @@ import (
 	pb "github.com/meta-node-blockchain/meta-node/pkg/proto"
 	client_tcp "github.com/meta-node-blockchain/meta-node/tcp-rpc/client-tcp"
 	tcp_config "github.com/meta-node-blockchain/meta-node/tcp-rpc/client-tcp/config"
-	"github.com/meta-node-blockchain/meta-node/types"
 	"google.golang.org/protobuf/proto"
 )
 
 // ===================== HELPERS =====================
 
-// waitReceipt đợi receipt.
-// Nếu tcpClient có directClient → dùng TCP push (FindReceiptByHash) → không cần poll.
-// Fallback → poll qua RPC.
-func waitReceipt(tcpClient *client_tcp.Client, txHash string) *pb.RpcReceipt {
+// protoReceiptToRpcReceipt chuyển pb.Receipt (proto) → pb.RpcReceipt (để giữ interface thống nhất)
+func protoReceiptToRpcReceipt(rcpt *pb.Receipt) *pb.RpcReceipt {
+	if rcpt == nil {
+		return nil
+	}
+	status := "0x1"
+	if rcpt.Status == pb.RECEIPT_STATUS_THREW || rcpt.Status == pb.RECEIPT_STATUS_TRANSACTION_ERROR {
+		status = "0x0"
+	}
+	gasUsed := fmt.Sprintf("0x%x", rcpt.GasUsed)
+	txHash := common.BytesToHash(rcpt.TransactionHash).Hex()
+
+	return &pb.RpcReceipt{
+		TransactionHash: txHash,
+		Status:          status,
+		GasUsed:         gasUsed,
+	}
+}
+
+// waitReceiptPoll đợi receipt qua RPC poll (fallback khi không có receipt inline).
+func waitReceiptPoll(tcpClient *client_tcp.Client, txHash string) *pb.RpcReceipt {
 	if txHash == "" {
 		return nil
 	}
-
-	// ═══ Ưu tiên: dùng directClient (TCP push, không poll) ═══
-	if direct := tcpClient.GetDirectClient(); direct != nil {
-		logger.Info("Using directClient (TCP push) to find receipt %s", txHash)
-		hash := common.HexToHash(txHash)
-		receipt, err := direct.FindReceiptByHash(hash)
-		if err != nil {
-			fmt.Printf("  ❌ Receipt (TCP push) error: %v\n", err)
-			return nil
-		}
-		if receipt != nil {
-			fmt.Printf("  ✅ Receipt (TCP push): txHash=%s\n", receipt.TransactionHash().Hex())
-			return convertToRpcReceipt(receipt)
-		}
-		return nil
-	}
-	// ═══ Fallback: poll qua RPC ═══
 	timer := time.NewTimer(30 * time.Second)
 	defer timer.Stop()
 	for {
@@ -61,7 +60,7 @@ func waitReceipt(tcpClient *client_tcp.Client, txHash string) *pb.RpcReceipt {
 			return nil
 		}
 		if receipt != nil {
-			fmt.Printf("  ✅ Receipt: status=%s, gasUsed=%s, logs=%d\n",
+			fmt.Printf("  ✅ Receipt (poll): status=%s, gasUsed=%s, logs=%d\n",
 				receipt.Status, receipt.GasUsed, len(receipt.Logs))
 			return receipt
 		}
@@ -74,30 +73,8 @@ func waitReceipt(tcpClient *client_tcp.Client, txHash string) *pb.RpcReceipt {
 	}
 }
 
-// convertToRpcReceipt chuyển types.Receipt (TCP push) → pb.RpcReceipt (để giữ interface thống nhất)
-func convertToRpcReceipt(receipt types.Receipt) *pb.RpcReceipt {
-	if receipt == nil {
-		return nil
-	}
-	// Lấy status từ receipt thật
-	// RETURNED (0) = success with return, HALTED (1) = success without return
-	// THREW (2) = error, TRANSACTION_ERROR (-1) = error
-	status := "0x1"
-	if receipt.Status() == pb.RECEIPT_STATUS_THREW || receipt.Status() == pb.RECEIPT_STATUS_TRANSACTION_ERROR {
-		status = "0x0"
-	}
-	gasUsed := fmt.Sprintf("0x%x", receipt.GasUsed())
-
-	rpcReceipt := &pb.RpcReceipt{
-		TransactionHash: receipt.TransactionHash().Hex(),
-		Status:          status,
-		GasUsed:         gasUsed,
-	}
-	return rpcReceipt
-}
-
 // sendTxAndWait tạo, ký, gửi transaction + đợi receipt.
-// tcpClient.SetDirectClient(mainClient) phải được gọi trước để dùng TCP push cho receipt và nonce.
+// Server trả receipt trực tiếp trong RPC response (proto Receipt bytes).
 func sendTxAndWait(
 	tcpClient *client_tcp.Client,
 	privKey *ecdsa.PrivateKey,
@@ -125,20 +102,30 @@ func sendTxAndWait(
 	rawTxBytes, _ := signedTx.MarshalBinary()
 	rawTxHex := "0x" + hex.EncodeToString(rawTxBytes)
 
-	txHash, err := tcpClient.RpcSendRawTransaction(rawTxHex)
+	txHash, rcptBytes, err := tcpClient.RpcSendRawTransactionWithReceipt(rawTxHex)
 	if err != nil {
 		fmt.Printf("  ❌ SendTx %s: %v\n", method, err)
 		return "", nil
 	}
 	fmt.Printf("  ✅ txHash: %s\n", txHash)
 
-	receipt := waitReceipt(tcpClient, txHash)
+	// Nếu có receipt bytes → parse proto Receipt
+	if len(rcptBytes) > 0 {
+		protoReceipt := &pb.Receipt{}
+		if unmarshalErr := proto.Unmarshal(rcptBytes, protoReceipt); unmarshalErr == nil {
+			rpcReceipt := protoReceiptToRpcReceipt(protoReceipt)
+			fmt.Printf("  ✅ Receipt: status=%s, gasUsed=%s\n", rpcReceipt.Status, rpcReceipt.GasUsed)
+			return txHash, rpcReceipt
+		}
+	}
+
+	// Intercepted TX (chỉ có txHash) → poll RPC
+	receipt := waitReceiptPoll(tcpClient, txHash)
 	return txHash, receipt
 }
 
-// sendTxAndWaitRPC gửi TX và luôn poll RPC để nhận receipt — bỏ qua directClient.
+// sendTxAndWaitRPC gửi TX và poll RPC để nhận receipt.
 // Dùng cho các TX bị intercepted bởi RPC proxy (vd: confirmAccountWithoutSign)
-// mà receipt về qua kênh RPC chứ không push qua TCP direct (port 4200).
 func sendTxAndWaitRPC(
 	tcpClient *client_tcp.Client,
 	privKey *ecdsa.PrivateKey,
@@ -173,26 +160,8 @@ func sendTxAndWaitRPC(
 	}
 	fmt.Printf("  ✅ txHash: %s\n", txHash)
 
-	// Luôn poll RPC — không dùng directClient
-	timer := time.NewTimer(30 * time.Second)
-	defer timer.Stop()
-	for {
-		receipt, err := tcpClient.RpcGetTransactionReceipt(txHash)
-		if err != nil {
-			fmt.Printf("  ❌ Receipt (RPC poll) error: %v\n", err)
-			return txHash, nil
-		}
-		if receipt != nil {
-			fmt.Printf("  ✅ Receipt (RPC poll): status=%s, gasUsed=%s\n", receipt.Status, receipt.GasUsed)
-			return txHash, receipt
-		}
-		select {
-		case <-timer.C:
-			fmt.Println("  ⚠️ Timeout waiting for receipt (RPC poll)")
-			return txHash, nil
-		case <-time.After(10 * time.Millisecond):
-		}
-	}
+	receipt := waitReceiptPoll(tcpClient, txHash)
+	return txHash, receipt
 }
 
 // sendTxExpectError gửi transaction mà mong đợi lỗi (revert test)
@@ -230,7 +199,7 @@ func sendTxExpectError(
 		return
 	}
 	fmt.Printf("  ⚠️ Transaction did NOT revert (txHash=%s), checking receipt...\n", txHash)
-	receipt := waitReceipt(tcpClient, txHash)
+	receipt := waitReceiptPoll(tcpClient, txHash)
 	if receipt != nil && receipt.Status != "0x1" {
 		fmt.Printf("  ✅ Receipt shows revert: status=%s\n", receipt.Status)
 	} else if receipt != nil {
@@ -349,17 +318,17 @@ func testDemoContract(
 	fmt.Println("║  TEST: Demo Contract                                 ║")
 	fmt.Println("╚══════════════════════════════════════════════════════╝")
 
-	// // 1. Read current value
-	// fmt.Println("\n─── 1. getValue (trước) ───")
-	// getValueData, _ := demoABI.Pack("getValue")
-	// resultBytes, err := tcpClient.RpcEthCall(contractAddr, getValueData)
-	// if err != nil {
-	// 	fmt.Printf("  ❌ %v\n", err)
-	// 	return
-	// }
-	// results, _ := demoABI.Unpack("getValue", resultBytes)
-	// oldValue := results[0].(*big.Int)
-	// fmt.Printf("  ✅ getValue() = %s\n", oldValue.String())
+	// 1. Read current value
+	fmt.Println("\n─── 1. getValue (trước) ───")
+	getValueData, _ := demoABI.Pack("getValue")
+	resultBytes, err := tcpClient.RpcEthCall(contractAddr, getValueData)
+	if err != nil {
+		fmt.Printf("  ❌ %v\n", err)
+		return
+	}
+	results, _ := demoABI.Unpack("getValue", resultBytes)
+	oldValue := results[0].(*big.Int)
+	fmt.Printf("  ✅ getValue() = %s\n", oldValue.String())
 
 	// // 2. Subscribe 2 events
 	// fmt.Println("\n─── 2. Subscribe ValueChanged + ValueIncreased ───")
@@ -750,6 +719,84 @@ func testChainDirect(tcpClient *client_tcp.Client) {
 	}
 }
 
+// ===================== TEST: Transfer (Native coin) =====================
+
+func testTransfer(
+	senderClient *client_tcp.Client,
+	receiverClient *client_tcp.Client,
+	senderPrivKey *ecdsa.PrivateKey,
+	senderAddr common.Address,
+	receiverAddr common.Address,
+	signer e_types.Signer,
+) {
+	fmt.Println("\n╔══════════════════════════════════════════════════════╗")
+	fmt.Println("║  TEST: Native Transfer (receipt forwarding)          ║")
+	fmt.Println("╚══════════════════════════════════════════════════════╝")
+	fmt.Printf("  Sender:   %s\n", senderAddr.Hex())
+	fmt.Printf("  Receiver: %s\n", receiverAddr.Hex())
+
+	// Channel để receiver đợi receipt forwarded từ RPC server
+	receivedReceipt := make(chan []byte, 1)
+
+	// Đăng ký callback nhận "Receipt" command trên receiver client
+	// (receiver client sẽ nhận receipt qua command "Receipt" khi sender chuyển tiền)
+	receiverClient.GetClientContext().Handler.RegisterReceiptCallback(func(data []byte) {
+		fmt.Printf("\n  📨 [RECEIVER] Got forwarded receipt! (%d bytes)\n", len(data))
+		rcpt := &pb.Receipt{}
+		if err := proto.Unmarshal(data, rcpt); err == nil {
+			txHash := common.BytesToHash(rcpt.TransactionHash).Hex()
+			from := common.BytesToAddress(rcpt.FromAddress).Hex()
+			to := common.BytesToAddress(rcpt.ToAddress).Hex()
+			fmt.Printf("  ├─ TxHash: %s\n", txHash)
+			fmt.Printf("  ├─ From:   %s\n", from)
+			fmt.Printf("  ├─ To:     %s\n", to)
+			fmt.Printf("  ├─ Status: %d\n", rcpt.Status)
+			fmt.Printf("  └─ GasUsed: %d\n", rcpt.GasUsed)
+		}
+		receivedReceipt <- data
+	})
+
+	// Sender chuyển 1 wei cho receiver
+	amount := big.NewInt(1) // 1 wei
+	fmt.Printf("\n─── Sender chuyển %s wei cho Receiver ───\n", amount.String())
+
+	nonce, err := senderClient.GetNonce(senderAddr)
+	if err != nil {
+		fmt.Printf("  ❌ GetNonce: %v\n", err)
+		return
+	}
+
+	tx := e_types.NewTransaction(nonce, receiverAddr, amount, 21000, big.NewInt(10000000), nil)
+	signedTx, _ := e_types.SignTx(tx, signer, senderPrivKey)
+	rawTxBytes, _ := signedTx.MarshalBinary()
+	rawTxHex := "0x" + hex.EncodeToString(rawTxBytes)
+
+	txHash, rcptBytes, err := senderClient.RpcSendRawTransactionWithReceipt(rawTxHex)
+	if err != nil {
+		fmt.Printf("  ❌ SendTx: %v\n", err)
+		return
+	}
+	fmt.Printf("  ✅ Sender txHash: %s\n", txHash)
+
+	// Parse sender receipt
+	senderRcpt := &pb.Receipt{}
+	if err := proto.Unmarshal(rcptBytes, senderRcpt); err == nil {
+		rpcReceipt := protoReceiptToRpcReceipt(senderRcpt)
+		fmt.Printf("  ✅ Sender receipt: status=%s, gasUsed=%s\n", rpcReceipt.Status, rpcReceipt.GasUsed)
+	}
+
+	// Đợi receiver nhận receipt forwarded (max 10s)
+	fmt.Println("\n─── Đợi Receiver nhận receipt forwarded (max 10s) ───")
+	select {
+	case <-receivedReceipt:
+		fmt.Println("  ✅ Receiver đã nhận receipt forwarded thành công!")
+	case <-time.After(10 * time.Second):
+		fmt.Println("  ⚠️ Timeout: Receiver không nhận được receipt forwarded")
+	}
+
+	fmt.Println("\n  ✅ Transfer test completed!")
+}
+
 // ===================== MAIN =====================
 
 func main() {
@@ -759,8 +806,8 @@ func main() {
 	})
 
 	configPath := flag.String("config", "config-test.json", "Path to TCP RPC client config")
-	mainConfigPath := flag.String("main-config", "config-main.json", "Path to main TCP client config (direct chain connection, for receipt push)")
-	testSuite := flag.String("test", "all", "Test suite: demo, bls, chain, all")
+	receiverConfigPath := flag.String("receiver-config", "config-main.json", "Path to receiver TCP client config (for transfer test)")
+	testSuite := flag.String("test", "all", "Test suite: demo, bls, chain, transfer, all")
 	blsCount := flag.Int("count", 1, "Number of BLS keys to generate (for -test bls)")
 	outJson := flag.String("out", "bls_keys.json", "Output JSON file for generated BLS keys")
 	flag.Parse()
@@ -779,29 +826,6 @@ func main() {
 		os.Exit(1)
 	}
 	time.Sleep(1 * time.Second)
-
-	// ═══ Khởi tạo mainClient 1 LẦN DUY NHẤT từ config-main.json ═══
-	// mainClient = chainDirectClient: kết nối TCP trực tiếp vào chain
-	// → nhận receipt qua TCP push, lấy nonce qua ChainGetNonce (ID-matching, không tranh channel)
-	// CHỈ NEW 1 LẦN — new lần 2 sẽ ghi đè chain!
-	var mainClient *client_tcp.Client
-	mainCfgRaw, mainCfgErr := tcp_config.LoadConfig(*mainConfigPath)
-	if mainCfgErr != nil {
-		fmt.Printf("  ⚠️ Không load được main config (%s): %v — sẽ fallback về poll RPC\n", *mainConfigPath, mainCfgErr)
-	} else {
-		mainCfg := mainCfgRaw.(*tcp_config.ClientConfig)
-		mainClient, err = client_tcp.NewClient(mainCfg)
-		if err != nil {
-			fmt.Printf("  ⚠️ Không tạo được main client: %v — sẽ fallback về poll RPC\n", err)
-			mainClient = nil
-		} else {
-			// Set directClient vào tcpClient → GetNonce + waitReceipt tự dùng direct TCP
-			tcpClient.SetDirectClient(mainClient)
-			fmt.Printf("  ✅ DirectClient set on tcpClient (direct chain TCP: %s)\n", mainCfg.ParentConnectionAddress)
-			time.Sleep(1 * time.Second)
-		}
-	}
-	_ = mainClient // chỉ dùng để SetDirectClient, không truyền qua param nữa
 
 	// Common setup
 	ethPrivKey, _ := crypto.HexToECDSA(cfg.EthPrivateKey)
@@ -859,6 +883,23 @@ func main() {
 		accountContract := common.HexToAddress("0x00000000000000000000000000000000D844bb55")
 		testBlsRegistration(tcpClient, accountABI, accountContract, ethPrivKey, fromAddr, signer, *blsCount, *outJson)
 
+	case "transfer":
+		// Load receiver config
+		rcvrCfgRaw, rcvrErr := tcp_config.LoadConfig(*receiverConfigPath)
+		if rcvrErr != nil {
+			fmt.Printf("  ❌ Load receiver config (%s): %v\n", *receiverConfigPath, rcvrErr)
+			os.Exit(1)
+		}
+		rcvrCfg := rcvrCfgRaw.(*tcp_config.ClientConfig)
+		receiverClient, rcvrConnErr := client_tcp.NewClient(rcvrCfg)
+		if rcvrConnErr != nil {
+			fmt.Printf("  ❌ Create receiver client: %v\n", rcvrConnErr)
+			os.Exit(1)
+		}
+		time.Sleep(1 * time.Second)
+		receiverAddr := common.HexToAddress("0x5e582475A504998c5631E12A5a2585D2B1911812")
+		fmt.Printf("  Receiver address: %s\n", receiverAddr.Hex())
+		testTransfer(tcpClient, receiverClient, ethPrivKey, fromAddr, receiverAddr, signer)
 	default:
 		fmt.Printf("  ❌ Unknown test suite: %s (use: demo, bls, chain, freegas, all)\n", *testSuite)
 	}

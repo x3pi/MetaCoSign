@@ -93,10 +93,10 @@ func (c *ConnectionClient) SendTransaction(txBytes []byte) error {
 	return nil
 }
 
-// SendTransactionWithDeviceKeyAndWait gửi SendTransactionWithDeviceKey command lên chain
-// và đợi TransactionSuccess hoặc TransactionError response.
-// Trả về txHash bytes từ chain (BLS hash) nếu thành công, hoặc error nếu chain trả TransactionError.
-// Không đợi receipt vì connection không dùng địa chỉ ví nên chain không gửi receipt về.
+// SendTransactionWithDeviceKey gửi SendTransactionWithDeviceKey command lên chain
+// và chỉ đợi TransactionSuccess hoặc TransactionError response.
+// Trả về txHash bytes (32 bytes) ngay khi chain xác nhận nhận TX thành công.
+// Không đợi Receipt.
 func (c *ConnectionClient) SendTransactionWithDeviceKey(txWithDKBytes []byte, timeout time.Duration) ([]byte, error) {
 	if atomic.LoadInt32(&c.connected) != 1 || c.connection == nil {
 		return nil, fmt.Errorf("not connected to cluster %s", c.key)
@@ -104,7 +104,7 @@ func (c *ConnectionClient) SendTransactionWithDeviceKey(txWithDKBytes []byte, ti
 
 	id := uuid.New().String()
 
-	responseChan := make(chan interface{}, 1)
+	responseChan := make(chan interface{}, 2)
 	c.pendingRequests.Store(id, responseChan)
 	defer c.pendingRequests.Delete(id)
 
@@ -121,28 +121,92 @@ func (c *ConnectionClient) SendTransactionWithDeviceKey(txWithDKBytes []byte, ti
 		return nil, fmt.Errorf("failed to send SendTransactionWithDeviceKey: %w", err)
 	}
 
+	// Đợi TransactionSuccess hoặc TransactionError
+	deadline := time.After(timeout)
 	for {
 		select {
 		case res := <-responseChan:
 			switch v := res.(type) {
 			case *TransactionSuccessResponse:
-				// TransactionSuccess — body chứa txHash bytes từ chain
+				// Got txHash — return immediately
 				return v.Body, nil
 			case *TransactionErrorResponse:
-				// TransactionError from chain — body is protobuf TransactionHashWithError
+				// TransactionError from chain
 				txErr := &pb.TransactionHashWithError{}
 				if unmarshalErr := proto.Unmarshal(v.Body, txErr); unmarshalErr == nil {
 					return nil, fmt.Errorf("transaction error from chain (code=%d): %s", txErr.Code, txErr.Description)
 				}
-				// Fallback: hex encode raw body to avoid non-UTF-8 in error string
 				return nil, fmt.Errorf("transaction error from chain: 0x%x", v.Body)
+			case []byte:
+				// Receipt arrived before TransactionSuccess (unlikely but possible)
+				return v, nil
 			default:
-				return nil, fmt.Errorf("invalid response type for SendTransactionWithDeviceKeyAndWait: %T", res)
+				return nil, fmt.Errorf("invalid response type for SendTransactionWithDeviceKey: %T", res)
 			}
 		case err := <-c.errorNotifyChan:
 			return nil, fmt.Errorf("connection error: %w", err)
-		case <-time.After(timeout):
+		case <-deadline:
 			return nil, fmt.Errorf("timeout waiting for SendTransactionWithDeviceKey response (id=%s)", id)
+		case <-c.ctx.Done():
+			return nil, fmt.Errorf("context cancelled")
+		}
+	}
+}
+
+// SendTransactionWithDeviceKeyAndWaitReceipt gửi SendTransactionWithDeviceKey command lên chain
+// và đợi Receipt trực tiếp (proto Receipt bytes).
+// TransactionSuccess bị bỏ qua (không cần chờ). TransactionError → trả error.
+// Timeout → trả error.
+func (c *ConnectionClient) SendTransactionWithDeviceKeyAndWaitReceipt(txWithDKBytes []byte, timeout time.Duration) ([]byte, error) {
+	if atomic.LoadInt32(&c.connected) != 1 || c.connection == nil {
+		return nil, fmt.Errorf("not connected to cluster %s", c.key)
+	}
+
+	id := uuid.New().String()
+
+	responseChan := make(chan interface{}, 2) // Buffer 2: có thể nhận TransactionSuccess + Receipt
+	c.pendingRequests.Store(id, responseChan)
+	defer c.pendingRequests.Delete(id)
+
+	msg := network.NewMessage(&pb.Message{
+		Header: &pb.Header{
+			Command: cmdSendTransactionWithDeviceKey,
+			ID:      id,
+		},
+		Body: txWithDKBytes,
+	})
+
+	if err := c.connection.SendMessage(msg); err != nil {
+		return nil, fmt.Errorf("failed to send SendTransactionWithDeviceKey: %w", err)
+	}
+
+	// Đợi Receipt trực tiếp — không cần 2 phase
+	// Receipt có thể đến trước hoặc sau TransactionSuccess, đều handle được
+	deadline := time.After(timeout)
+	for {
+		select {
+		case res := <-responseChan:
+			switch v := res.(type) {
+			case []byte:
+				// Receipt bytes (proto Receipt) — trả về ngay
+				return v, nil
+			case *TransactionErrorResponse:
+				// TransactionError from chain
+				txErr := &pb.TransactionHashWithError{}
+				if unmarshalErr := proto.Unmarshal(v.Body, txErr); unmarshalErr == nil {
+					return nil, fmt.Errorf("transaction error from chain (code=%d): %s", txErr.Code, txErr.Description)
+				}
+				return nil, fmt.Errorf("transaction error from chain: 0x%x", v.Body)
+			case *TransactionSuccessResponse:
+				// Bỏ qua TransactionSuccess — tiếp tục đợi Receipt
+				continue
+			default:
+				return nil, fmt.Errorf("invalid response type: %T", res)
+			}
+		case err := <-c.errorNotifyChan:
+			return nil, fmt.Errorf("connection error: %w", err)
+		case <-deadline:
+			return nil, fmt.Errorf("timeout waiting for receipt (id=%s)", id)
 		case <-c.ctx.Done():
 			return nil, fmt.Errorf("context cancelled")
 		}

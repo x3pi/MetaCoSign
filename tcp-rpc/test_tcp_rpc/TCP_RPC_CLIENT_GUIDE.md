@@ -4,7 +4,9 @@
 
 ``` cd rpc-client -> go run main.go ```
 
-## Run test tcp-rpc
+## Run test transfer
+
+```go run main.go -test=transfer```
 
 # test crud
 
@@ -23,13 +25,6 @@
 # test free gas
 
 ```go run main.go -test=freegas```
-
-### File proto mới
-
-```
-pkg/proto/rpc_receipt.proto
-pkg/proto/rpc_request.proto
-```
 
 ### Trong đăng ký bls hàm confirmAdmin chỉ mới có receipt còn lại k có receipt
 

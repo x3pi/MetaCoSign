@@ -1,6 +1,7 @@
 package client
 
 import (
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -299,6 +300,47 @@ func (client *Client) RpcSendRawTransaction(rawTxHex string) (string, error) {
 	txHash := common.BytesToHash(hashResp.Hash).Hex()
 	logger.Info("✅ RpcSendRawTransaction result: %s", txHash)
 	return txHash, nil
+}
+
+// RpcSendRawTransactionWithReceipt gửi raw transaction hex qua TCP.
+// Server chờ receipt từ chain rồi trả về trực tiếp trong RPC response (proto Receipt).
+// Returns: (txHash, receiptBytes, error)
+func (client *Client) RpcSendRawTransactionWithReceipt(rawTxHex string) (string, []byte, error) {
+	hexStr := strings.TrimPrefix(rawTxHex, "0x")
+	rawBytes, err := hex.DecodeString(hexStr)
+	if err != nil {
+		return "", nil, fmt.Errorf("invalid raw tx hex: %w", err)
+	}
+	tcpReq := &pb.TcpSendTxRequest{RawTx: rawBytes}
+	body, err := proto.Marshal(tcpReq)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to marshal TcpSendTxRequest: %w", err)
+	}
+	resp, err := client.sendRpcRequest("eth_sendRawTransaction", body, defaultRpcTimeout)
+	if err != nil {
+		return "", nil, err
+	}
+	if resp.Error != nil {
+		return "", nil, fmt.Errorf("RPC error: code=%d, message=%s, data=%s",
+			resp.Error.Code, resp.Error.Message, resp.Error.Data)
+	}
+	// Phân biệt 2 kiểu response:
+	// - proto Receipt (normal TX): luôn > 32 bytes
+	// - TcpHashParam (intercepted TX): wraps 32-byte hash
+	rcpt := &pb.Receipt{}
+	if err := proto.Unmarshal(resp.Result, rcpt); err == nil && len(rcpt.TransactionHash) > 0 {
+		txHash := common.BytesToHash(rcpt.TransactionHash).Hex()
+		logger.Info("✅ RpcSendRawTransactionWithReceipt: txHash=%s (receipt)", txHash)
+		return txHash, resp.Result, nil
+	}
+	// Fallback: TcpHashParam (intercepted TX, chỉ có txHash)
+	hashResp := &pb.TcpHashParam{}
+	if err := proto.Unmarshal(resp.Result, hashResp); err != nil {
+		return "", nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	txHash := common.BytesToHash(hashResp.Hash).Hex()
+	logger.Info("✅ RpcSendRawTransactionWithReceipt: txHash=%s (no receipt)", txHash)
+	return txHash, nil, nil
 }
 
 // RpcHttpSendRawTransaction gửi raw transaction qua HTTP forward (http_sendRawTransaction command)
@@ -784,8 +826,6 @@ func (client *Client) ReadTransaction(
 	newDeviceKey := common.HexToHash("0000000000000000000000000000000000000000000000000000000000000000")
 
 	// Nhận nonce trực tiếp thay vì dùng select
-	nonce := <-client.nonce
-	logger.Info("[Client] Nonce : %d", nonce)
 
 	as := <-client.accountStateChan
 	pendingBalance := as.PendingBalance()
@@ -794,6 +834,15 @@ func (client *Client) ReadTransaction(
 	for i, v := range relatedAddress {
 		bRelatedAddresses[i] = v.Bytes()
 	}
+	nonceResp, err := client.sendChainRequest(command.GetNonce, fromAddress.Bytes(), 10*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("get nonce failed: %w", err)
+	}
+	var nonce uint64
+	if len(nonceResp) >= 8 {
+		nonce = binary.BigEndian.Uint64(nonceResp)
+	}
+	logger.Info("Nonce : %d", nonce)
 	logger.Info("[Client] bRelatedAddresses length : %d", len(bRelatedAddresses))
 	tx, err := client.transactionController.ReadTransaction(
 		fromAddress,
@@ -815,7 +864,68 @@ func (client *Client) ReadTransaction(
 	}
 	logger.Info("[Client] Tx Hash : %v", tx.Hash().Hex())
 	// cần sửa ở version cũ
-	receipt, err := client.FindReceiptByHash(tx.Hash())
+	receipt, err := client.FindReceiptByHashWithType(tx.Hash(), matchByReceiptHash)
+	if err != nil {
+		return nil, err
+	}
+	logger.Info("[Client] Receipt found with Tx Hash : %s", receipt.TransactionHash().Hex())
+	return receipt, nil
+}
+
+func (client *Client) ReadTransactionWithoutNonce(
+	fromAddress common.Address,
+	toAddress common.Address,
+	amount *big.Int,
+	data []byte,
+	relatedAddress []common.Address,
+	maxGas uint64,
+	maxGasPrice uint64,
+	maxTimeUse uint64,
+) (types.Receipt, error) {
+
+	if client.clientContext == nil || client.clientContext.ConnectionsManager == nil {
+		return nil, fmt.Errorf("client not ready: clientContext or ConnectionsManager is nil")
+	}
+
+	parentConn := client.clientContext.ConnectionsManager.ParentConnection()
+	if parentConn == nil || !parentConn.IsConnect() {
+		logger.Error("Parent connection is not connected, reconnecting...")
+		if err := client.ReconnectToParent(); err != nil {
+			return nil, err
+		}
+	}
+	// Gửi yêu cầu lấy account state
+	client.clientContext.MessageSender.SendBytes(parentConn, command.GetAccountState, fromAddress.Bytes())
+	lastDeviceKey := common.HexToHash("0000000000000000000000000000000000000000000000000000000000000000")
+	newDeviceKey := common.HexToHash("0000000000000000000000000000000000000000000000000000000000000000")
+	as := <-client.accountStateChan
+	pendingBalance := as.PendingBalance()
+	logger.Info("[Client] PendingBalance : %s", pendingBalance.String())
+	bRelatedAddresses := make([][]byte, len(relatedAddress))
+	for i, v := range relatedAddress {
+		bRelatedAddresses[i] = v.Bytes()
+	}
+	logger.Info("[Client] bRelatedAddresses length : %d", len(bRelatedAddresses))
+	tx, err := client.transactionController.ReadTransactionWithoutNonce(
+		fromAddress,
+		toAddress,
+		pendingBalance,
+		amount,
+		maxGas,
+		maxGasPrice,
+		maxTimeUse,
+		data,
+		bRelatedAddresses,
+		lastDeviceKey,
+		newDeviceKey,
+		client.clientContext.Config.ChainId,
+	)
+	if err != nil {
+		return nil, err
+	}
+	logger.Info("[Client] Tx Hash : %v", tx.Hash().Hex())
+	// cần sửa ở version cũ
+	receipt, err := client.FindReceiptByHashWithType(tx.Hash(), matchByReceiptHash)
 	if err != nil {
 		return nil, err
 	}

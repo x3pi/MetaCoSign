@@ -256,6 +256,39 @@ func NewTransaction(
 	return tx // Return the *Transaction directly
 }
 
+func NewTransactionWithoutNonce(
+	fromAddress common.Address,
+	toAddress common.Address,
+	amount *big.Int,
+	maxGas uint64,
+	maxGasPrice uint64,
+	maxTimeUse uint64,
+	data []byte,
+	relatedAddresses [][]byte,
+	lastDeviceKey common.Hash,
+	newDeviceKey common.Hash,
+	chainId uint64,
+) types.Transaction {
+
+	proto := &pb.Transaction{
+		FromAddress:      fromAddress.Bytes(),
+		ToAddress:        toAddress.Bytes(),
+		Amount:           amount.Bytes(),
+		MaxGas:           maxGas,
+		MaxGasPrice:      maxGasPrice,
+		MaxTimeUse:       maxTimeUse,
+		Data:             data,
+		RelatedAddresses: relatedAddresses,
+		LastDeviceKey:    lastDeviceKey.Bytes(),
+		NewDeviceKey:     newDeviceKey.Bytes(),
+		ChainID:          chainId,
+	}
+	tx := &Transaction{
+		proto: proto,
+	}
+	return tx // Return the *Transaction directly
+}
+
 func NewTransactionOffChain(
 	lastHash common.Hash,
 	fromAddress common.Address,

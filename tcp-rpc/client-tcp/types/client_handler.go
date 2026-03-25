@@ -12,4 +12,5 @@ type ClientHandler interface {
 	SetPendingChainRequests(pending *sync.Map)
 	RegisterEventCallback(subID string, cb func([]byte))
 	RemoveEventCallback(subID string)
+	RegisterReceiptCallback(cb func([]byte))
 }

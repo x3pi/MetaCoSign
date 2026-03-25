@@ -41,6 +41,21 @@ type TransactionController interface {
 		chainId uint64,
 	) (types.Transaction, error)
 
+	ReadTransactionWithoutNonce(
+		fromAddress common.Address,
+		toAddress common.Address,
+		pendingUse *big.Int,
+		amount *big.Int,
+		maxGas uint64,
+		maxGasFee uint64,
+		maxTimeUse uint64,
+		data []byte,
+		relatedAddress [][]byte,
+		lastDeviceKey common.Hash,
+		newDeviceKey common.Hash,
+		chainId uint64,
+	) (types.Transaction, error)
+
 	SendTransactionWithDeviceKey(
 		fromAddress common.Address,
 		toAddress common.Address,

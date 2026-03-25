@@ -48,7 +48,7 @@ func (srv *RpcTcpServer) handleHttpSendRawTransaction(request t_network.Request)
 	// Instead of calling HTTP directly here, we use the Application Context's HTTP handler
 	// for processing the send raw transaction.
 	httpResult := app_handlers.ProcessSendRawTransaction(srv.AppCtx, rawTxHex, msgID)
-	
+
 	// Convert httpResult to TCP response
 	return srv.sendTcpResponse(conn, httpRespToTcpResp(httpResult, msgID))
 }
@@ -227,18 +227,61 @@ func (srv *RpcTcpServer) handleSendRawTransactionTCP(conn t_network.Connection, 
 }
 
 // Helper: gửi bình thường nếu không bị intercept
+// SendTransactionWithDeviceKeyAndWaitReceipt chờ receipt từ chain (proto Receipt).
+// Nếu receipt timeout → fallback trả txHash.
+// Nếu TX là chuyển tiền (Amount > 0) → forward receipt cho toAddress.
 func (srv *RpcTcpServer) sendNormalTCPTransaction(conn t_network.Connection, msgID string, bTx []byte, ethTxHash ethCommon.Hash, chainClient *connection_client.ConnectionClient) error {
-	txBLS, err := chainClient.SendTransactionWithDeviceKey(bTx, 30*time.Second)
+	responseBytes, err := chainClient.SendTransactionWithDeviceKeyAndWaitReceipt(bTx, 60*time.Second)
 	if err != nil {
 		return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{
 			Code:    -32603,
-			Message: "SendTransactionWithDeviceKey error: " + err.Error(),
+			Message: "SendTransactionWithDeviceKeyAndWaitReceipt error: " + err.Error(),
 		})
 	}
-	logger.Info("✅ TCP eth_sendRawTransaction:  txBLS=0x%x", hex.EncodeToString(txBLS))
+	// Detect if response is a receipt (proto-encoded, >32 bytes) or txHash (32 bytes)
+	// Receipt bytes (proto Receipt) — return directly to sender
+	logger.Info("✅ TCP eth_sendRawTransaction: got RECEIPT (%d bytes)", len(responseBytes))
+	// Forward receipt cho toAddress nếu TX là chuyển tiền
+	go srv.forwardReceiptToRecipient(responseBytes)
+	return srv.sendRpcResponse(conn, msgID, responseBytes, nil)
+}
 
-	// Trả proto TcpHashParam — client parse binary hash trực tiếp
-	hashResp := &pb.TcpHashParam{Hash: txBLS}
-	resultBytes, _ := proto.Marshal(hashResp)
-	return srv.sendRpcResponse(conn, msgID, resultBytes, nil)
+// forwardReceiptToRecipient parse receipt, nếu TX là chuyển tiền (Amount > 0)
+// thì tìm toAddress trong clientConnections và gửi receipt.
+func (srv *RpcTcpServer) forwardReceiptToRecipient(receiptBytes []byte) {
+	rcpt := &pb.Receipt{}
+	if err := proto.Unmarshal(receiptBytes, rcpt); err != nil {
+		return
+	}
+
+	// Check: có Amount và > 0 → là chuyển tiền
+	if len(rcpt.Amount) == 0 {
+		return
+	}
+	// Amount là big.Int bytes, check nếu tất cả = 0 thì bỏ qua
+	allZero := true
+	for _, b := range rcpt.Amount {
+		if b != 0 {
+			allZero = false
+			break
+		}
+	}
+	if allZero {
+		return
+	}
+	// Lấy toAddress
+	toAddr := ethCommon.BytesToAddress(rcpt.ToAddress)
+	if toAddr == (ethCommon.Address{}) {
+		return
+	}
+	// Tìm connection của người nhận
+	recipientConn := srv.GetClientConnection(toAddr)
+	if recipientConn == nil {
+		logger.Warn("⚠️ Failed to forward receipt to %s: connection not found", toAddr.Hex())
+		return
+	}
+	// Gửi receipt cho người nhận qua command "Receipt"
+	if err := srv.messageSender.SendBytes(recipientConn, "Receipt", receiptBytes); err != nil {
+		logger.Warn("⚠️ Failed to forward receipt to %s: %v", toAddr.Hex(), err)
+	}
 }

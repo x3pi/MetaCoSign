@@ -1,12 +1,11 @@
 {
   "private_key": "2b3aa0f620d2d73c046cd93eb64f2eb687a95b22e278500aa251c8c9dda1203b",
   "version": "0.0.1.0",
-  "parent_connection_address": "0.0.0.0:9545",
+  "parent_connection_address": "0.0.0.0:6200",
   "chain_id": 991,
   "nation_id": 1,
   "parent_connection_type": "client",
-  "parent_address": "0x5e582475A504998c5631E12A5a2585D2B1911812",
-  "eth_private_key":"fb64857fe95b55dff91a11d2da0c8db2dddb29f617d3d1ddaa9a9880733d5407",
+  "parent_address": "0x781E6EC6EBDCA11Be4B53865a34C0c7f10b6da6e",
   "demo_abi_path": "../pkg/abi/demo_abi.json",
   "demo_contract_address":"0xe18c204168d5C75E78D0b149d5E5C4c8Fb84Def2",
   "contact_private":"0x00000000000000000000000000000000D844bb55"
