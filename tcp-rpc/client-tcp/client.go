@@ -864,7 +864,7 @@ func (client *Client) ReadTransaction(
 	}
 	logger.Info("[Client] Tx Hash : %v", tx.Hash().Hex())
 	// cần sửa ở version cũ
-	receipt, err := client.FindReceiptByHashWithType(tx.Hash(), matchByReceiptHash)
+	receipt, err := client.FindReceiptByHash(tx.Hash())
 	if err != nil {
 		return nil, err
 	}

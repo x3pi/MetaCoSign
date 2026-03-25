@@ -135,7 +135,7 @@ func callGetValue(
 		return nil
 	}
 
-	receipt, err := tx_helper.SendReadTransactionWithoutNonce(
+	receipt, err := tx_helper.SendReadTransaction(
 		"getValue",
 		cli,
 		cfg,

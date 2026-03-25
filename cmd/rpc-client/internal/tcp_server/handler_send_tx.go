@@ -253,7 +253,6 @@ func (srv *RpcTcpServer) forwardReceiptToRecipient(receiptBytes []byte) {
 	if err := proto.Unmarshal(receiptBytes, rcpt); err != nil {
 		return
 	}
-
 	// Check: có Amount và > 0 → là chuyển tiền
 	if len(rcpt.Amount) == 0 {
 		return

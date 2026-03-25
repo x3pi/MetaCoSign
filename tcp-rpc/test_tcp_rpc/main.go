@@ -750,6 +750,8 @@ func testTransfer(
 			fmt.Printf("  ├─ TxHash: %s\n", txHash)
 			fmt.Printf("  ├─ From:   %s\n", from)
 			fmt.Printf("  ├─ To:     %s\n", to)
+			amt := new(big.Int).SetBytes(rcpt.Amount)
+			fmt.Printf("  ├─ Amount: %s\n", amt.String())
 			fmt.Printf("  ├─ Status: %d\n", rcpt.Status)
 			fmt.Printf("  └─ GasUsed: %d\n", rcpt.GasUsed)
 		}

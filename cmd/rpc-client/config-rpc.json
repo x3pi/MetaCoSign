@@ -1,5 +1,5 @@
 {
-   "rpc_server_url": "http://139.59.243.85:8646",
+  "rpc_server_url": "http://139.59.243.85:8646",
   "wss_server_url": "ws://139.59.243.85:8646/ws",
   "private_key": "2b3aa0f620d2d73c046cd93eb64f2eb687a95b22e278500aa251c8c9dda1203b",
   "server_port": ":8545",
