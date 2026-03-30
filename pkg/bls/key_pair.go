@@ -17,6 +17,9 @@ type KeyPair struct {
 
 func NewKeyPair(privateKey []byte) *KeyPair {
 	sec := new(blstSecretKey).Deserialize(privateKey)
+	if sec == nil {
+		return nil
+	}
 	pub := new(blstPublicKey).From(sec).Compress()
 	hash := crypto.Keccak256([]byte(pub))
 	return &KeyPair{
