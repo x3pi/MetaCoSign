@@ -933,6 +933,66 @@ func (client *Client) ReadTransactionWithoutNonce(
 	return receipt, nil
 }
 
+func (client *Client) EstimateGas(
+	fromAddress common.Address,
+	toAddress common.Address,
+	amount *big.Int,
+	data []byte,
+	relatedAddress []common.Address,
+	maxGas uint64,
+	maxGasPrice uint64,
+	maxTimeUse uint64,
+) (types.Receipt, error) {
+
+	if client.clientContext == nil || client.clientContext.ConnectionsManager == nil {
+		return nil, fmt.Errorf("client not ready: clientContext or ConnectionsManager is nil")
+	}
+
+	parentConn := client.clientContext.ConnectionsManager.ParentConnection()
+	if parentConn == nil || !parentConn.IsConnect() {
+		logger.Error("Parent connection is not connected, reconnecting...")
+		if err := client.ReconnectToParent(); err != nil {
+			return nil, err
+		}
+	}
+
+	// EstimateGas không cần lấy account state / nonce / balance
+	// Server sẽ tự assign nonce qua GetIncrementingCounter()
+	lastDeviceKey := common.HexToHash("0000000000000000000000000000000000000000000000000000000000000000")
+	newDeviceKey := common.HexToHash("0000000000000000000000000000000000000000000000000000000000000000")
+	pendingBalance := big.NewInt(0)
+
+	bRelatedAddresses := make([][]byte, len(relatedAddress))
+	for i, v := range relatedAddress {
+		bRelatedAddresses[i] = v.Bytes()
+	}
+
+	tx, err := client.transactionController.EstimateGas(
+		fromAddress,
+		toAddress,
+		pendingBalance,
+		amount,
+		maxGas,
+		maxGasPrice,
+		maxTimeUse,
+		data,
+		bRelatedAddresses,
+		lastDeviceKey,
+		newDeviceKey,
+		client.clientContext.Config.ChainId,
+	)
+	if err != nil {
+		return nil, err
+	}
+	logger.Info("[Client] EstimateGas Tx Hash : %v", tx.Hash().Hex())
+	receipt, err := client.FindReceiptByHash(tx.Hash())
+	if err != nil {
+		return nil, err
+	}
+	logger.Info("[Client] EstimateGas Receipt found with Tx Hash : %s", receipt.TransactionHash().Hex())
+	return receipt, nil
+}
+
 func (client *Client) AddAccountForClient(privateKey string, chainId string) (types.Receipt, error) {
 	bigIntChainId, success := new(big.Int).SetString(chainId, 10)
 	if !success {

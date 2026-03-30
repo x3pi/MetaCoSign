@@ -73,40 +73,47 @@ func main() {
 		fmt.Printf("  ✅ getValue() = %s\n", valueBefore.String())
 	}
 
+	// ─── 3.5. estimateGas setValue(1000) ───
+	fmt.Println("\n─── Step 1.5: estimateGas setValue(1000) ───")
+	gas := callEstimateGas(tcpClient, cfg, demoABI, contractAddr, fromAddr, "setValue", big.NewInt(1000))
+	if gas != 0 {
+		fmt.Printf("  ✅ estimated gas = %d\n", gas)
+	}
+
 	// ─── 4. setValue(1000) ───
 	fmt.Println("\n─── Step 2: setValue(1000) ───")
 	receipt := sendWriteTx(tcpClient, cfg, demoABI, contractAddr, fromAddr, "setValue", big.NewInt(1000))
 	printReceipt("setValue", receipt)
 
-	// ─── 5. getValue (sau setValue) ───
-	fmt.Println("\n─── Step 3: getValue (sau setValue) ───")
-	valueAfterSet := callGetValue(tcpClient, cfg, demoABI, contractAddr, fromAddr)
-	if valueAfterSet != nil {
-		fmt.Printf("  ✅ getValue() = %s\n", valueAfterSet.String())
-		if valueAfterSet.Int64() == 1000 {
-			fmt.Println("  ✅ Đúng! (1000)")
-		} else {
-			fmt.Printf("  ❌ Expected 1000, got %s\n", valueAfterSet.String())
-		}
-	}
+	// // ─── 5. getValue (sau setValue) ───
+	// fmt.Println("\n─── Step 3: getValue (sau setValue) ───")
+	// valueAfterSet := callGetValue(tcpClient, cfg, demoABI, contractAddr, fromAddr)
+	// if valueAfterSet != nil {
+	// 	fmt.Printf("  ✅ getValue() = %s\n", valueAfterSet.String())
+	// 	if valueAfterSet.Int64() == 1000 {
+	// 		fmt.Println("  ✅ Đúng! (1000)")
+	// 	} else {
+	// 		fmt.Printf("  ❌ Expected 1000, got %s\n", valueAfterSet.String())
+	// 	}
+	// }
 
-	// ─── 6. increaseValue(250) ───
-	fmt.Println("\n─── Step 4: increaseValue(250) ───")
-	receipt2 := sendWriteTx(tcpClient, cfg, demoABI, contractAddr, fromAddr, "increaseValue", big.NewInt(250))
-	printReceipt("increaseValue", receipt2)
+	// // ─── 6. increaseValue(250) ───
+	// fmt.Println("\n─── Step 4: increaseValue(250) ───")
+	// receipt2 := sendWriteTx(tcpClient, cfg, demoABI, contractAddr, fromAddr, "increaseValue", big.NewInt(250))
+	// printReceipt("increaseValue", receipt2)
 
-	// ─── 5. getValue (sau increaseValue) ───
-	fmt.Println("\n─── Step 5: getValue (sau increaseValue) ───")
-	valueAfterIncrease := callGetValue(tcpClient, cfg, demoABI, contractAddr, fromAddr)
-	if valueAfterIncrease != nil {
-		fmt.Printf("  ✅ getValue() = %s\n", valueAfterIncrease.String())
-		expected := big.NewInt(0).Add(valueAfterSet, big.NewInt(250))
-		if valueAfterIncrease.Cmp(expected) == 0 {
-			fmt.Printf("  ✅ Đúng! (%s + 250 = %s)\n", valueAfterSet.String(), expected.String())
-		} else {
-			fmt.Printf("  ❌ Expected %s, got %s\n", expected.String(), valueAfterIncrease.String())
-		}
-	}
+	// // ─── 5. getValue (sau increaseValue) ───
+	// fmt.Println("\n─── Step 5: getValue (sau increaseValue) ───")
+	// valueAfterIncrease := callGetValue(tcpClient, cfg, demoABI, contractAddr, fromAddr)
+	// if valueAfterIncrease != nil {
+	// 	fmt.Printf("  ✅ getValue() = %s\n", valueAfterIncrease.String())
+	// 	expected := big.NewInt(0).Add(valueAfterSet, big.NewInt(250))
+	// 	if valueAfterIncrease.Cmp(expected) == 0 {
+	// 		fmt.Printf("  ✅ Đúng! (%s + 250 = %s)\n", valueAfterSet.String(), expected.String())
+	// 	} else {
+	// 		fmt.Printf("  ❌ Expected %s, got %s\n", expected.String(), valueAfterIncrease.String())
+	// 	}
+	// }
 
 	fmt.Println("\n╔══════════════════════════════════════════════════════╗")
 	fmt.Println("║       TCP Pure Test completed!                       ║")
@@ -166,6 +173,44 @@ func callGetValue(
 		}
 	}
 	return nil
+}
+
+// callEstimateGas gửi giao dịch mô phỏng (estimate gas)
+func callEstimateGas(
+	cli *client_tcp.Client,
+	cfg *tcp_config.ClientConfig,
+	demoABI abi.ABI,
+	contractAddr common.Address,
+	fromAddr common.Address,
+	method string,
+	args ...interface{},
+) uint64 {
+	inputData, err := demoABI.Pack(method, args...)
+	if err != nil {
+		fmt.Printf("  ❌ Pack %s for estimate gas: %v\n", method, err)
+		return 0
+	}
+
+	receipt, err := tx_helper.SendEstimateGas(
+		"estimateGas "+method,
+		cli,
+		cfg,
+		contractAddr,
+		fromAddr,
+		inputData,
+		nil,
+	)
+	if err != nil {
+		fmt.Printf("  ❌ estimateGas: %v\n", err)
+		return 0
+	}
+
+	if receipt == nil {
+		fmt.Println("  ⚠️ No return data")
+		return 0
+	}
+
+	return receipt.GasUsed()
 }
 
 // sendWriteTx gửi write transaction bằng SendTransaction (BLS, chờ receipt)

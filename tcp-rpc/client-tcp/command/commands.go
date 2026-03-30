@@ -11,6 +11,7 @@ const (
 
 	// Send messages
 	ReadTransaction              = "ReadTransaction"
+	EstimateGas                  = "EstimateGas"
 	SendTransaction              = "SendTransaction"
 	SendTransactionWithDeviceKey = "SendTransactionWithDeviceKey"
 	SendTransactions             = "SendTransactions"
