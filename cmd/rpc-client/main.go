@@ -41,10 +41,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("FATAL: Failed to load configuration: %v", err)
 	}
-	go func() {
-		logger.Info("Starting pprof server on localhost:6060")
-		logger.Error(http.ListenAndServe("localhost:6060", nil))
-	}()
+	// go func() {
+	// 	logger.Info("Starting pprof server on localhost:6060")
+	// 	logger.Error(http.ListenAndServe("localhost:6060", nil))
+	// }()
 	appCtx, err := app.New(cfg, tcpCfg)
 	if err != nil {
 		logger.Error("Failed to initialize application context: %v", err)

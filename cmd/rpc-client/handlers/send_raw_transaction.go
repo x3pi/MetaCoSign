@@ -292,6 +292,12 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 		}
 
 	} else {
-		return utils.MakeInternalError(id, "null transaction: "+err.Error())
+		errMsg := "null transaction"
+		if buildErr != nil {
+			errMsg += ": " + buildErr.Error()
+		} else if err != nil {
+			errMsg += ": " + err.Error()
+		}
+		return utils.MakeInternalError(id, errMsg)
 	}
 }

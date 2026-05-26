@@ -15,6 +15,7 @@ import (
 )
 
 func HandleEthCall(appCtx *app.Context, req models.JSONRPCRequestRaw) rpc_client.JSONRPCResponse {
+	logger.Info("HandleEthCall: %v", req)
 	var callParamsList []json.RawMessage
 	if err := json.Unmarshal(req.Params, &callParamsList); err != nil || len(callParamsList) == 0 {
 		return utils.MakeInvalidParamError(req.Id, "Cannot unmarshal params for eth_call")

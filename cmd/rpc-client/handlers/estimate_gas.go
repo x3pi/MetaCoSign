@@ -11,6 +11,7 @@ import (
 )
 
 func HandleEstimateGas(appCtx *app.Context, req models.JSONRPCRequestRaw) rpc_client.JSONRPCResponse {
+	logger.Info("HandleEstimateGas: %v", req)
 	var callParamsList []json.RawMessage
 	if err := json.Unmarshal(req.Params, &callParamsList); err != nil || len(callParamsList) == 0 {
 		return utils.MakeInvalidParamError(req.Id, "Cannot unmarshal params for eth_estimateGas")

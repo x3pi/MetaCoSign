@@ -6,6 +6,7 @@ import (
 
 	ethCommon "github.com/ethereum/go-ethereum/common"
 	"github.com/meta-node-blockchain/meta-node/pkg/connection_manager/connection_client"
+	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	pb "github.com/meta-node-blockchain/meta-node/pkg/proto"
 	"google.golang.org/protobuf/proto"
 )
@@ -30,7 +31,7 @@ func WaitForReceiptTCP(
 	}
 
 	for time.Now().Before(deadline) {
-		respBytes, err := chainConn.GetTransactionReceipt(reqBytes, 5*time.Second)
+		respBytes, err := chainConn.GetTransactionReceipt(reqBytes, 10*time.Second)
 		if err != nil {
 			time.Sleep(checkInterval)
 			continue
@@ -44,6 +45,7 @@ func WaitForReceiptTCP(
 			time.Sleep(checkInterval)
 			continue
 		}
+		logger.Info("✅ Receipt: status=%s, txHash=%s", respProto.Receipt.Status, respProto.Receipt.TransactionHash)
 		receiptBytes, _ := proto.Marshal(respProto.Receipt)
 		return receiptBytes, nil
 	}

@@ -47,4 +47,5 @@ pkg/proto/qmdb.pb.go
 cmd/test
 cmd/demoSocket
 hybrid-storage-demo/storage-rust/storage_server1
-hybrid-storage-demo/storage-rust/storage_server2
+hybrid-storage-demo/storage-rust/storage_server2logs/
+cmd/rpc-client/logs/

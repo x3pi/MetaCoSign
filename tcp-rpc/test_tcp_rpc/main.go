@@ -379,16 +379,16 @@ func testDemoContract(
 	// tcpClient.RpcUnsubscribe(sub2)
 
 	// 7. Verify value
-	// fmt.Println("\n─── 6. getValue (sau) ───")
-	// resultBytes2, _ := tcpClient.RpcEthCall(contractAddr, getValueData)
-	// results2, _ := demoABI.Unpack("getValue", resultBytes2)
-	// newValue := results2[0].(*big.Int)
-	// fmt.Printf("  ✅ getValue() = %s", newValue.String())
-	// if newValue.Int64() == 889 {
-	// 	fmt.Println(" ✅ (789 + 100 = 889)")
-	// } else {
-	// 	fmt.Println()
-	// }
+	fmt.Println("\n─── 6. getValue (sau) ───")
+	resultBytes2, _ := tcpClient.RpcEthCall(contractAddr, getValueData)
+	results2, _ := demoABI.Unpack("getValue", resultBytes2)
+	newValue := results2[0].(*big.Int)
+	fmt.Printf("  ✅ getValue() = %s", newValue.String())
+	if newValue.Int64() == 889 {
+		fmt.Println(" ✅ (789 + 100 = 889)")
+	} else {
+		fmt.Println()
+	}
 
 	// 8. Test Revert: increaseValue với giá trị quá lớn (nếu contract có require)
 	// fmt.Println("\n─── 7. Test REVERT: increaseValue(0) — expect revert ───")

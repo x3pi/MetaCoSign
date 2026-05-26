@@ -90,7 +90,7 @@ func SendReadTransactionWithoutNonce(
 	}
 	status := receipt.Status()
 	if status != pb.RECEIPT_STATUS_RETURNED && status != pb.RECEIPT_STATUS_HALTED {
-		return nil, fmt.Errorf("%s read transaction failed with status %s returned %s", action, status.String(), receipt.Return())
+		return nil, fmt.Errorf("%s read transaction failed with status %s returned %s \n receipt %v", action, status.String(), receipt.Return(), receipt)
 	}
 	logger.Info("✅ %s completed (status=%s)", action, status.String())
 	return receipt, nil
