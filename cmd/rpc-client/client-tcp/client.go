@@ -323,6 +323,7 @@ func (client *Client) SendTransaction(
 		if err := client.ReconnectToParent(); err != nil {
 			return nil, err
 		}
+		parentConn = client.clientContext.ConnectionsManager.ParentConnection()
 	}
 
 	client.clientContext.MessageSender.SendBytes(parentConn, command.GetAccountState, fromAddress.Bytes())
@@ -395,11 +396,12 @@ func (client *Client) ReadTransaction(
 ) (types.Receipt, error) {
 
 	parentConn := client.clientContext.ConnectionsManager.ParentConnection()
-	if !parentConn.IsConnect() {
+	if parentConn == nil || !parentConn.IsConnect() {
 		logger.Error("Parent connection is not connected, reconnecting...")
 		if err := client.ReconnectToParent(); err != nil {
 			return nil, err
 		}
+		parentConn = client.clientContext.ConnectionsManager.ParentConnection()
 	}
 
 	// Gửi yêu cầu lấy account state và nonce
