@@ -74,9 +74,14 @@ func CreateQuicConnection(serverAddr string) (quic.Connection, error) {
 	const retryDelay = 200 * time.Millisecond
 	const dialTimeout = 10 * time.Second // Tăng timeout lên 10s
 
+	quicConfig := &quic.Config{
+		MaxIdleTimeout:  7 * time.Second,  // Timeout nhạy hơn để phát hiện đứt mạng nhanh (7s)
+		KeepAlivePeriod: 2 * time.Second,  // Liên tục Ping thăm dò mỗi 2s
+	}
+
 	for i := 0; i < maxRetries; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), dialTimeout)
-		conn, err = quic.DialAddr(ctx, serverAddr, tlsConf, nil)
+		conn, err = quic.DialAddr(ctx, serverAddr, tlsConf, quicConfig)
 		cancel() // Hủy context
 
 		if err == nil {

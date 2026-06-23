@@ -24,5 +24,5 @@
   "tcp_server_port": ":9545",
   "extra_account": 1000000000000000000,
   "free_gas_min_balance": 10000000000000000,
-  "disable_free_gas": true
+  "disable_free_gas": false
 }

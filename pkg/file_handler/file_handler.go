@@ -396,9 +396,11 @@ func (h *FileHandlerNoReceipt) sendChunk(
 		if errors.Is(lastErr, context.DeadlineExceeded) || strings.Contains(lastErr.Error(), "deadline exceeded") {
 			logger.Warn("[file: %s, chunk: %d] Stream timeout, sẽ thử stream mới...", fileKey, chunkIndex)
 			continue // vòng lặp sẽ mở stream mới trên cùng connection
+		} else {
+			logger.Error("[file: %s, chunk: %d] Lỗi gửi chunk (lần thử %d/%d): %v. Đang lấy kết nối mới...", fileKey, chunkIndex, i+1, MAX_SEND_RETRIES, lastErr)
 		}
-		logger.Error("[file: %s, chunk: %d] Lỗi gửi chunk (lần thử %d/%d): %v. Đang lấy kết nối mới...", fileKey, chunkIndex, i+1, MAX_SEND_RETRIES, lastErr) // <<< LOG
-		newConn, reconErr := h.getAndRenewConn(isServer1, poolIndex, fileKey, chunkIndex)                                                                     // <<< PASS LOG IDs
+		
+		newConn, reconErr := h.getAndRenewConn(isServer1, poolIndex, fileKey, chunkIndex)
 		if reconErr != nil {
 			time.Sleep(100 * time.Millisecond)
 		} else {
