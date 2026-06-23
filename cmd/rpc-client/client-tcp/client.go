@@ -340,6 +340,7 @@ func (client *Client) SendTransaction(
 		if err := client.ReconnectToParent(); err != nil {
 			return nil, err
 		}
+		parentConn = client.clientContext.ConnectionsManager.ParentConnection()
 	}
 
 	nonce, err := client.ChainGetNonce(fromAddress)
@@ -404,11 +405,12 @@ func (client *Client) ReadTransaction(
 ) (types.Receipt, error) {
 
 	parentConn := client.clientContext.ConnectionsManager.ParentConnection()
-	if !parentConn.IsConnect() {
+	if parentConn == nil || !parentConn.IsConnect() {
 		logger.Error("Parent connection is not connected, reconnecting...")
 		if err := client.ReconnectToParent(); err != nil {
 			return nil, err
 		}
+		parentConn = client.clientContext.ConnectionsManager.ParentConnection()
 	}
 	as, err := client.GetAccountState(fromAddress, 10*time.Second)
 	if err != nil {
