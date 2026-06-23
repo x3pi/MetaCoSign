@@ -5,21 +5,28 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
-	clientpkg "github.com/meta-node-blockchain/meta-node/tcp-rpc/client-tcp"
-	com_pkg "github.com/meta-node-blockchain/meta-node/tcp-rpc/client-tcp/common"
-	c_config "github.com/meta-node-blockchain/meta-node/tcp-rpc/client-tcp/config"
-	"github.com/meta-node-blockchain/meta-node/tcp-rpc/pkg/models/tx_models"
+	clientpkg "github.com/meta-node-blockchain/meta-node/cmd/rpc-client/client-tcp"
+	com_pkg "github.com/meta-node-blockchain/meta-node/cmd/rpc-client/client-tcp/common"
+	c_config "github.com/meta-node-blockchain/meta-node/cmd/rpc-client/client-tcp/config"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	pb "github.com/meta-node-blockchain/meta-node/pkg/proto"
 	mt_transaction "github.com/meta-node-blockchain/meta-node/pkg/transaction"
 	"github.com/meta-node-blockchain/meta-node/types"
 )
 
-func NormalizeTxOptions(opts *tx_models.TxOptions) tx_models.TxOptions {
+type TxOptions struct {
+	Amount      *big.Int
+	MaxGas      uint64
+	MaxGasPrice uint64
+	MaxTimeUse  uint64
+	Related     []common.Address
+}
+
+func NormalizeTxOptions(opts *TxOptions) TxOptions {
 	if opts == nil {
-		return tx_models.TxOptions{}
+		return TxOptions{}
 	}
-	normalized := tx_models.TxOptions{
+	normalized := TxOptions{
 		Amount:      opts.Amount,
 		MaxGas:      opts.MaxGas,
 		MaxGasPrice: opts.MaxGasPrice,
@@ -38,7 +45,7 @@ func SendReadTransaction(
 	contract common.Address,
 	from common.Address,
 	input []byte,
-	opts *tx_models.TxOptions,
+	opts *TxOptions,
 ) (types.Receipt, error) {
 	if cli == nil || cfg == nil {
 		return nil, fmt.Errorf("client and config are required")
@@ -103,7 +110,7 @@ func SendTransaction(
 	contract common.Address,
 	from common.Address,
 	input []byte,
-	opts *tx_models.TxOptions,
+	opts *TxOptions,
 ) (types.Receipt, error) {
 	if cli == nil || cfg == nil {
 		return nil, fmt.Errorf("client and config are required")

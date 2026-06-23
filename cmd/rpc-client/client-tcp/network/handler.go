@@ -8,7 +8,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/meta-node-blockchain/meta-node/tcp-rpc/client-tcp/command"
+	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/client-tcp/command"
 	"github.com/meta-node-blockchain/meta-node/pkg/loggerfile"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	pb "github.com/meta-node-blockchain/meta-node/pkg/proto"
@@ -60,14 +60,26 @@ func (h *Handler) HandleRequest(request network.Request) (err error) {
 	case command.InitConnection:
 		return h.handleInitConnection(request)
 	case command.AccountState:
+		if request.Message().ID() != "" {
+			return h.handleChainResponse(request)
+		}
 		return h.handleAccountState(request)
 	case command.Nonce:
+		if request.Message().ID() != "" {
+			return h.handleChainResponse(request)
+		}
 		return h.handleNonce(request)
 	case command.TransactionError:
+		if request.Message().ID() != "" {
+			return h.handleChainResponse(request)
+		}
 		return h.handleTransactionError(request)
 	case command.Receipt:
 		return h.handleReceipt(request)
 	case command.DeviceKey:
+		if request.Message().ID() != "" {
+			return h.handleChainResponse(request)
+		}
 		return h.handleDeviceKey(request)
 	case command.EventLogs:
 		return h.handleEventLogs(request)
@@ -330,12 +342,11 @@ func (h *Handler) AddEventCallback(cb func([]byte)) {
 	h.eventCallbacks.Store("_default", cb)
 }
 
-// handleChainResponse xử lý response từ chain trực tiếp (ChainId, TransactionReceipt, BlockNumber)
-// Dispatch bằng header ID — gửi raw body bytes vào channel
+// handleChainResponse xử lý response từ chain trực tiếp (ChainId, TransactionReceipt, BlockNumber, AccountState, Nonce, DeviceKey, v.v...)
+// Dispatch bằng header ID — gửi raw message vào channel
 func (h *Handler) handleChainResponse(request network.Request) error {
 	msg := request.Message()
 	id := msg.ID()
-	body := msg.Body()
 
 	if h.pendingChainRequests == nil {
 		logger.Warn("handleChainResponse: pendingChainRequests not set, dropping")
@@ -344,8 +355,8 @@ func (h *Handler) handleChainResponse(request network.Request) error {
 
 	val, ok := h.pendingChainRequests.LoadAndDelete(id)
 	if ok {
-		ch := val.(chan []byte)
-		ch <- body
+		ch := val.(chan network.Message)
+		ch <- msg
 	} else {
 		logger.Warn("handleChainResponse: no pending request for id=%s cmd=%s", id, msg.Command())
 	}

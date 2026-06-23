@@ -12,9 +12,9 @@ import (
 	ethCom "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	client "github.com/meta-node-blockchain/meta-node/cmd/rpc-client/client-tcp"
-	"github.com/meta-node-blockchain/meta-node/tcp-rpc/client-tcp/command"
 	tcp_config "github.com/meta-node-blockchain/meta-node/cmd/rpc-client/client-tcp/config"
 	"github.com/meta-node-blockchain/meta-node/pkg/file_handler/abi_file"
+	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	"github.com/meta-node-blockchain/meta-node/pkg/models/file_model"
 	"github.com/meta-node-blockchain/meta-node/pkg/transaction"
 	"github.com/meta-node-blockchain/meta-node/pkg/utils/file_handler_helper"
@@ -107,80 +107,60 @@ func SendTransactionWithDeviceKey(
 		}
 		parentConn = clientContext.ConnectionsManager.ParentConnection()
 	}
-	// Gửi yêu cầu lấy trạng thái tài khoản
-	clientContext.MessageSender.SendBytes(
-		parentConn,
-		command.GetAccountState,
-		fromAddress.Bytes(),
-	)
-	// Lắng nghe tài khoản trong kênh accountStateChan bằng for range
-	for as := range client.GetAccountStateChan() {
-		// Nếu không phải tài khoản mong muốn, tiếp tục lắng nghe mà không bỏ dữ liệu
-		if as.Address() != fromAddress {
-			// Gửi lại dữ liệu cho luồng khác đọc (không bỏ dữ liệu)
-			client.GetAccountStateChan() <- as
-			time.Sleep(50 * time.Millisecond) // Delay trước khi tiếp tục lặp
-			continue
-		}
-
-		// Nếu tìm thấy tài khoản phù hợp, xử lý giao dịch
-		lastHash := as.LastHash()
-		pendingBalance := as.PendingBalance()
-
-		err := clientContext.MessageSender.SendBytes(
-			parentConn,
-			"GetDeviceKey",
-			lastHash.Bytes(),
-		)
-
-		if err != nil {
-			return nil, err
-		}
-
-		// Lắng nghe deviceKey từ server
-		receiveDeviceKey := <-client.GetDeviceKeyChan()
-		TransactionHash := receiveDeviceKey.TransactionHash
-		lastDeviceKey := common.HexToHash(
-			hex.EncodeToString(receiveDeviceKey.LastDeviceKeyFromServer),
-		)
-
-		// Tạo khóa thiết bị mới
-		rawNewDeviceKeyBytes := []byte(fmt.Sprintf("%s-%d", hex.EncodeToString(TransactionHash), time.Now().Unix()))
-		rawNewDeviceKey := crypto.Keccak256(rawNewDeviceKeyBytes)
-		newDeviceKey := crypto.Keccak256Hash(rawNewDeviceKey)
-		// Chuyển đổi danh sách địa chỉ liên quan sang mảng byte
-		bRelatedAddresses := make([][]byte, len(relatedAddress))
-		for i, v := range relatedAddress {
-			bRelatedAddresses[i] = v.Bytes()
-		}
-		// Gửi giao dịch với device key
-		tx, err := client.GetTransactionController().SendTransactionWithDeviceKey(
-			fromAddress,
-			toAddress,
-			pendingBalance,
-			amount,
-			maxGas,
-			maxGasPrice,
-			maxTimeUse,
-			data,
-			bRelatedAddresses,
-			lastDeviceKey,
-			newDeviceKey,
-			as.Nonce(),
-			rawNewDeviceKey,
-			clientContext.Config.ChainId,
-		)
-		if err != nil {
-			return nil, err
-		}
-		// Chờ biên lai giao dịch (receipt)
-		receipt, err := client.FindReceiptByHash(tx.Hash())
-		if err != nil {
-			return nil, err
-		}
-		return receipt, nil
+	as, err := client.GetAccountState(fromAddress, 10*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get account state: %w", err)
 	}
 
-	// Nếu kênh accountStateChan bị đóng, trả lỗi
-	return nil, fmt.Errorf("account state channel closed unexpectedly")
+	lastHash := as.LastHash()
+	pendingBalance := as.PendingBalance()
+
+	// Lấy deviceKey từ server
+	receiveDeviceKey, err := client.ChainGetDeviceKey(lastHash.Bytes())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get device key: %w", err)
+	}
+
+	TransactionHash := receiveDeviceKey.TransactionHash
+	lastDeviceKey := common.HexToHash(
+		hex.EncodeToString(receiveDeviceKey.LastDeviceKeyFromServer),
+	)
+
+	// Tạo khóa thiết bị mới
+	rawNewDeviceKeyBytes := []byte(fmt.Sprintf("%s-%d", hex.EncodeToString(TransactionHash), time.Now().Unix()))
+	rawNewDeviceKey := crypto.Keccak256(rawNewDeviceKeyBytes)
+	newDeviceKey := crypto.Keccak256Hash(rawNewDeviceKey)
+	// Chuyển đổi danh sách địa chỉ liên quan sang mảng byte
+	bRelatedAddresses := make([][]byte, len(relatedAddress))
+	for i, v := range relatedAddress {
+		bRelatedAddresses[i] = v.Bytes()
+	}
+	// Gửi giao dịch với device key
+	tx, err := client.GetTransactionController().SendTransactionWithDeviceKey(
+		fromAddress,
+		toAddress,
+		pendingBalance,
+		amount,
+		maxGas,
+		maxGasPrice,
+		maxTimeUse,
+		data,
+		bRelatedAddresses,
+		lastDeviceKey,
+		newDeviceKey,
+		as.Nonce(),
+		rawNewDeviceKey,
+		clientContext.Config.ChainId,
+	)
+	if err != nil {
+		return nil, err
+	}
+	logger.Info("_______________tx: %v", tx)
+	// Chờ biên lai giao dịch (receipt)
+	receipt, err := client.FindReceiptByHash(tx.Hash())
+	if err != nil {
+		logger.Error("FindReceiptByHash error cho txHash %v: %v", tx.Hash().Hex(), err)
+		return nil, err
+	}
+	return receipt, nil
 }

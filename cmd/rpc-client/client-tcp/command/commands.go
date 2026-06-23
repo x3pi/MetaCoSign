@@ -34,4 +34,20 @@ const (
 	DeviceKey         = "DeviceKey"
 
 	ServerBusy = "ServerBusy"
+
+	// Chain-direct responses
+	ChainId            = "ChainId"
+	TransactionReceipt = "TransactionReceipt"
+	BlockNumber        = "BlockNumber"
+	Logs               = "Logs"
+	TransactionByHash  = "TransactionByHash"
+	TransactionSuccess = "TransactionSuccess"
+
+	// RPC
+	RpcResponse = "RpcResponse"
+	RpcEvent    = "RpcEvent"
+	GetChainId = "GetChainId"
+	GetBlockNumber = "GetBlockNumber"
+	GetTransactionReceipt = "GetTransactionReceipt"
+	GetLogs = "GetLogs"
 )

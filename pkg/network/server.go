@@ -334,10 +334,6 @@ func (s *SocketServer) Stop() {
 }
 
 func (s *SocketServer) OnConnect(conn network.Connection) {
-	fmt.Printf("[ONCONNECT] ===== OnConnect được gọi =====\n")
-	fmt.Printf("[ONCONNECT] Remote address: %s\n", conn.RemoteAddrSafe())
-	fmt.Printf("[ONCONNECT] Node type: %s\n", s.nodeType)
-
 	var addressForInitMsgBytes []byte
 	parentConn := s.connectionsManager.ParentConnection()
 	if parentConn != nil {
@@ -350,6 +346,7 @@ func (s *SocketServer) OnConnect(conn network.Connection) {
 	initMsg := &pb.InitConnection{
 		Address: addressForInitMsgBytes,
 		Type:    s.nodeType,
+		Replace: true,
 	}
 	fmt.Printf("[ONCONNECT] Đang gửi InitConnection message (type: %s, address: %x)...\n", s.nodeType, addressForInitMsgBytes)
 	err := SendMessage(conn, p_common.InitConnection, initMsg, s.version)

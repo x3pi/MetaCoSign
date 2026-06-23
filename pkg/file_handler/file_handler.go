@@ -64,7 +64,7 @@ var (
 )
 
 const (
-	CONNECTION_POOL_SIZE = 50
+	CONNECTION_POOL_SIZE = 30
 	MAX_SEND_RETRIES     = 3
 )
 
@@ -126,7 +126,6 @@ func (h *FileHandlerNoReceipt) HandleFileTransactionNoReceipt(
 		err := fmt.Errorf("FileHandler: Dữ liệu input không hợp lệ")
 		return false, err
 	}
-	logger.Info("____HandleFileTransactionNoReceipt: %v", inputData)
 	method, err := h.abi.MethodById(inputData[:4])
 	if err != nil {
 		err := fmt.Errorf("FileHandler: Lỗi khi lấy method từ input data: %v", err)
@@ -443,6 +442,11 @@ func (h *FileHandlerNoReceipt) getAndRenewConn(isServer1 bool, poolIndex int, fi
 		return conn, nil
 	}
 
+	// Đóng connection cũ (nếu có) để giải phóng UDP socket, tránh lỗi "address already in use"
+	if conn != nil {
+		conn.CloseWithError(0, "renew connection")
+	}
+
 	newConn, err := quic_network.CreateQuicConnection(addr)
 	if err != nil {
 		logger.Error("[file: %s, chunk: %d] [ConnPool] Lỗi khi tái kết nối (%s, Index %d): %v", fileKeyStr, chunkIndexInt, serverName, poolIndex, err) // <<< LOG
@@ -517,6 +521,22 @@ func (h *FileHandlerNoReceipt) initializeServerCacheAndPools(tx types.Transactio
 
 	h.cachedRustServers[0] = servers[0]
 	h.cachedRustServers[1] = servers[1]
+
+	// Đóng các connection cũ nếu đã tồn tại để tránh rò rỉ UDP port
+	if h.connPool1 != nil {
+		for _, c := range h.connPool1 {
+			if c != nil {
+				c.CloseWithError(0, "re-init pool")
+			}
+		}
+	}
+	if h.connPool2 != nil {
+		for _, c := range h.connPool2 {
+			if c != nil {
+				c.CloseWithError(0, "re-init pool")
+			}
+		}
+	}
 
 	h.connPool1 = make([]quic.Connection, CONNECTION_POOL_SIZE)
 	h.connPool2 = make([]quic.Connection, CONNECTION_POOL_SIZE)

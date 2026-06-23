@@ -267,21 +267,38 @@ func (client *Client) waitReceipt(txHash common.Hash, timeout time.Duration) (ty
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 
-	select {
-	case receipt := <-responseCh:
-		return receipt, nil
-	case <-timer.C:
-		client.receiptRequests <- receiptRequest{
-			action:     receiptRequestCancel,
-			txHash:     txHash,
-			responseCh: responseCh,
-		}
+	for {
 		select {
 		case receipt := <-responseCh:
 			return receipt, nil
-		default:
+		case txErr := <-client.transactionErrorChan:
+			errHash := common.BytesToHash(txErr.Proto().Hash)
+			if errHash != txHash {
+				logger.Warn("⚠️ [TCP-CLIENT] Received TransactionError for a different tx: %s (expected: %s). Ignoring and continuing to wait.", errHash.Hex(), txHash.Hex())
+				continue
+			}
+			client.receiptRequests <- receiptRequest{
+				action:     receiptRequestCancel,
+				txHash:     txHash,
+				responseCh: responseCh,
+			}
+			logger.Error("transaction error:txHash %v \n desc %s \n output %s", errHash, txErr.Proto().Description, common.Bytes2Hex(txErr.Proto().Output))
+			return nil, fmt.Errorf("transaction error: output %s", common.BytesToHash(txErr.Proto().Output))
+		case <-timer.C:
+			client.receiptRequests <- receiptRequest{
+				action:     receiptRequestCancel,
+				txHash:     txHash,
+				responseCh: responseCh,
+			}
+			select {
+			case receipt := <-responseCh:
+				return receipt, nil
+			default:
+			}
+			err := fmt.Errorf("timeout (%s) waiting for receipt with txHash %s", timeout, txHash.Hex())
+			logger.Error("%v", err)
+			return nil, err
 		}
-		return nil, fmt.Errorf("timeout (%s) waiting for receipt with txHash %s", timeout, txHash.Hex())
 	}
 }
 
@@ -325,29 +342,21 @@ func (client *Client) SendTransaction(
 		}
 	}
 
-	client.clientContext.MessageSender.SendBytes(parentConn, command.GetAccountState, fromAddress.Bytes())
-	client.clientContext.MessageSender.SendBytes(parentConn, command.GetNonce, fromAddress.Bytes())
+	nonce, err := client.ChainGetNonce(fromAddress)
+	if err != nil {
+		logger.DebugP("Failed to get nonce: " + err.Error())
+		return nil, fmt.Errorf("failed to get nonce: %w", err)
+	}
+	logger.Info("Nonce : ", nonce)
+
+	as, err := client.GetAccountState(fromAddress, 10*time.Second)
+	if err != nil {
+		logger.DebugP("Failed to get account state: " + err.Error())
+		return nil, fmt.Errorf("failed to get account state: %w", err)
+	}
 
 	lastDeviceKey := common.HexToHash("0000000000000000000000000000000000000000000000000000000000000000")
 	newDeviceKey := common.HexToHash("0000000000000000000000000000000000000000000000000000000000000000")
-
-	// Thay thế select bằng nhận trực tiếp và xử lý timeout bằng select bên ngoài
-	var nonce uint64
-	select {
-	case nonce = <-client.nonce:
-		logger.Info("Nonce : ", nonce)
-	case <-time.After(10 * time.Second):
-		logger.DebugP("Timeout waiting for nonce")
-		return nil, fmt.Errorf("timeout waiting for nonce")
-	}
-
-	var as types.AccountState
-	select {
-	case as = <-client.accountStateChan:
-	case <-time.After(10 * time.Second):
-		logger.DebugP("Timeout waiting for account state")
-		return nil, fmt.Errorf("timeout waiting for account state")
-	}
 
 	pendingBalance := as.PendingBalance()
 
@@ -401,18 +410,17 @@ func (client *Client) ReadTransaction(
 			return nil, err
 		}
 	}
-
-	// Gửi yêu cầu lấy account state và nonce
-	client.clientContext.MessageSender.SendBytes(parentConn, command.GetAccountState, fromAddress.Bytes())
-	client.clientContext.MessageSender.SendBytes(parentConn, command.GetNonce, fromAddress.Bytes())
+	as, err := client.GetAccountState(fromAddress, 10*time.Second)
+	if err != nil {
+		logger.DebugP("Failed to get account state: " + err.Error())
+		return nil, fmt.Errorf("failed to get account state: %w", err)
+	}
 
 	lastDeviceKey := common.HexToHash("0000000000000000000000000000000000000000000000000000000000000000")
 	newDeviceKey := common.HexToHash("0000000000000000000000000000000000000000000000000000000000000000")
-
-	// Nhận nonce trực tiếp thay vì dùng select
-	as := <-client.accountStateChan
+	
 	pendingBalance := as.PendingBalance()
-	logger.Info("[Client] PendingBalance : %s", pendingBalance.String())
+
 	bRelatedAddresses := make([][]byte, len(relatedAddress))
 	for i, v := range relatedAddress {
 		bRelatedAddresses[i] = v.Bytes()
@@ -472,14 +480,11 @@ func (client *Client) AddAccountForClient(privateKey string, chainId string) (ty
 	if err != nil {
 		return nil, fmt.Errorf("transaction not found Sender")
 	}
-	// Gửi yêu cầu lấy trạng thái tài khoản
-	client.clientContext.MessageSender.SendBytes(
-		parentConn,
-		command.GetAccountState,
-		from.Bytes(),
-	)
-	as := <-client.accountStateChan
-	logger.Info("as", as)
+	as, err := client.GetAccountState(from, 10*time.Second)
+	if err != nil {
+		logger.Error("Failed to get account state: %v", err)
+		return nil, fmt.Errorf("failed to get account state: %w", err)
+	}
 
 	newDeviceKey := common.HexToHash(
 		"0000000000000000000000000000000000000000000000000000000000000000",
@@ -613,84 +618,62 @@ func (client *Client) SendTransactionWithDeviceKey(
 		}
 		parentConn = client.clientContext.ConnectionsManager.ParentConnection()
 	}
-	// Gửi yêu cầu lấy trạng thái tài khoản
-	client.clientContext.MessageSender.SendBytes(
-		parentConn,
-		command.GetAccountState,
-		fromAddress.Bytes(),
-	)
-	// Lắng nghe tài khoản trong kênh accountStateChan bằng for range
-	for as := range client.accountStateChan {
-		// Nếu không phải tài khoản mong muốn, tiếp tục lắng nghe mà không bỏ dữ liệu
-		if as.Address() != fromAddress {
-			// Gửi lại dữ liệu cho luồng khác đọc (không bỏ dữ liệu)
-			client.accountStateChan <- as
-			time.Sleep(50 * time.Millisecond) // Delay trước khi tiếp tục lặp
-			continue
-		}
-
-		// Nếu tìm thấy tài khoản phù hợp, xử lý giao dịch
-		lastHash := as.LastHash()
-		pendingBalance := as.PendingBalance()
-
-		err := client.clientContext.MessageSender.SendBytes(
-			parentConn,
-			"GetDeviceKey",
-			lastHash.Bytes(),
-		)
-
-		if err != nil {
-			return nil, err
-		}
-
-		// Lắng nghe deviceKey từ server
-		receiveDeviceKey := <-client.deviceKeyChan
-		TransactionHash := receiveDeviceKey.TransactionHash
-		lastDeviceKey := common.HexToHash(
-			hex.EncodeToString(receiveDeviceKey.LastDeviceKeyFromServer),
-		)
-
-		// Tạo khóa thiết bị mới
-		rawNewDeviceKeyBytes := []byte(fmt.Sprintf("%s-%d", hex.EncodeToString(TransactionHash), time.Now().Unix()))
-		rawNewDeviceKey := crypto.Keccak256(rawNewDeviceKeyBytes)
-		newDeviceKey := crypto.Keccak256Hash(rawNewDeviceKey)
-
-		// Chuyển đổi danh sách địa chỉ liên quan sang mảng byte
-		bRelatedAddresses := make([][]byte, len(relatedAddress))
-		for i, v := range relatedAddress {
-			bRelatedAddresses[i] = v.Bytes()
-		}
-		// Gửi giao dịch với device key
-		tx, err := client.transactionController.SendTransactionWithDeviceKey(
-			fromAddress,
-			toAddress,
-			pendingBalance,
-			amount,
-			maxGas,
-			maxGasPrice,
-			maxTimeUse,
-			data,
-			bRelatedAddresses,
-			lastDeviceKey,
-			newDeviceKey,
-			as.Nonce(),
-			rawNewDeviceKey,
-			client.clientContext.Config.ChainId,
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		// Chờ biên lai giao dịch (receipt)
-		receipt, err := client.waitReceipt(tx.Hash(), pendingReceiptTTL)
-		if err != nil {
-			return nil, err
-		}
-		return receipt, nil
+	as, err := client.GetAccountState(fromAddress, 10*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get account state: %w", err)
 	}
 
-	// Nếu kênh accountStateChan bị đóng, trả lỗi
-	return nil, fmt.Errorf("account state channel closed unexpectedly")
+	lastHash := as.LastHash()
+	pendingBalance := as.PendingBalance()
+
+	// Lấy deviceKey từ server
+	receiveDeviceKey, err := client.ChainGetDeviceKey(lastHash.Bytes())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get device key: %w", err)
+	}
+
+	TransactionHash := receiveDeviceKey.TransactionHash
+	lastDeviceKey := common.HexToHash(
+		hex.EncodeToString(receiveDeviceKey.LastDeviceKeyFromServer),
+	)
+
+	// Tạo khóa thiết bị mới
+	rawNewDeviceKeyBytes := []byte(fmt.Sprintf("%s-%d", hex.EncodeToString(TransactionHash), time.Now().Unix()))
+	rawNewDeviceKey := crypto.Keccak256(rawNewDeviceKeyBytes)
+	newDeviceKey := crypto.Keccak256Hash(rawNewDeviceKey)
+
+	// Chuyển đổi danh sách địa chỉ liên quan sang mảng byte
+	bRelatedAddresses := make([][]byte, len(relatedAddress))
+	for i, v := range relatedAddress {
+		bRelatedAddresses[i] = v.Bytes()
+	}
+	// Gửi giao dịch với device key
+	tx, err := client.transactionController.SendTransactionWithDeviceKey(
+		fromAddress,
+		toAddress,
+		pendingBalance,
+		amount,
+		maxGas,
+		maxGasPrice,
+		maxTimeUse,
+		data,
+		bRelatedAddresses,
+		lastDeviceKey,
+		newDeviceKey,
+		as.Nonce(),
+		rawNewDeviceKey,
+		client.clientContext.Config.ChainId,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Chờ biên lai giao dịch (receipt)
+	receipt, err := client.waitReceipt(tx.Hash(), pendingReceiptTTL)
+	if err != nil {
+		return nil, err
+	}
+	return receipt, nil
 }
 
 func (client *Client) SendAllTransactionsInDirectory(
@@ -732,114 +715,60 @@ func (client *Client) SaveTransactionWithDeviceKeyToFile(
 		}
 		parentConn = client.clientContext.ConnectionsManager.ParentConnection()
 	}
-	// Gửi yêu cầu lấy trạng thái tài khoản
-	client.clientContext.MessageSender.SendBytes(
-		parentConn,
-		command.GetAccountState,
-		fromAddress.Bytes(),
-	)
-	logger.Info("TcpRemoteAddr: %v", parentConn.TcpRemoteAddr())
-
-	logger.Info("TcpLocalAddr: %v", parentConn.TcpLocalAddr())
-	// Lắng nghe tài khoản trong kênh accountStateChan bằng for range
-	for as := range client.accountStateChan {
-		// Nếu không phải tài khoản mong muốn, tiếp tục lắng nghe mà không bỏ dữ liệu
-		if as.Address() != fromAddress {
-			// Gửi lại dữ liệu cho luồng khác đọc (không bỏ dữ liệu)
-			client.accountStateChan <- as
-			time.Sleep(50 * time.Millisecond) // Delay trước khi tiếp tục lặp
-			continue
-		}
-
-		// Nếu tìm thấy tài khoản phù hợp, xử lý giao dịch
-		lastHash := as.LastHash()
-		pendingBalance := as.PendingBalance()
-
-		err := client.clientContext.MessageSender.SendBytes(
-			parentConn,
-			"GetDeviceKey",
-			lastHash.Bytes(),
-		)
-
-		if err != nil {
-			return err
-		}
-
-		// Lắng nghe deviceKey từ server
-		receiveDeviceKey := <-client.deviceKeyChan
-		TransactionHash := receiveDeviceKey.TransactionHash
-		lastDeviceKey := common.HexToHash(
-			hex.EncodeToString(receiveDeviceKey.LastDeviceKeyFromServer),
-		)
-
-		// Tạo khóa thiết bị mới
-		rawNewDeviceKeyBytes := []byte(fmt.Sprintf("%s-%d", hex.EncodeToString(TransactionHash), time.Now().Unix()))
-		rawNewDeviceKey := crypto.Keccak256(rawNewDeviceKeyBytes)
-		newDeviceKey := crypto.Keccak256Hash(rawNewDeviceKey)
-
-		// Chuyển đổi danh sách địa chỉ liên quan sang mảng byte
-		bRelatedAddresses := make([][]byte, len(relatedAddress)+2)
-		for i, v := range relatedAddress {
-			bRelatedAddresses[i] = v.Bytes()
-		}
-		bRelatedAddresses[len(relatedAddress)] = fromAddress.Bytes()
-		bRelatedAddresses[len(relatedAddress)+1] = toAddress.Bytes()
-
-		// Gửi giao dịch với device key
-		err = client.transactionController.SaveTransactionWithDeviceKeyToFile(
-			fromAddress,
-			toAddress,
-			pendingBalance,
-			amount,
-			maxGas,
-			maxGasPrice,
-			maxTimeUse,
-			data,
-			bRelatedAddresses,
-			lastDeviceKey,
-			newDeviceKey,
-			as.Nonce(),
-			rawNewDeviceKey,
-			client.clientContext.Config.ChainId,
-		)
-		if err != nil {
-			return err
-		}
-
-		// Chờ biên lai giao dịch (receipt)
-		return nil
+	as, err := client.GetAccountState(fromAddress, 10*time.Second)
+	if err != nil {
+		return err
 	}
 
-	// Nếu kênh accountStateChan bị đóng, trả lỗi
-	return fmt.Errorf("account state channel closed unexpectedly")
-}
+	lastHash := as.LastHash()
+	pendingBalance := as.PendingBalance()
 
-func (client *Client) AccountState(address common.Address) (types.AccountState, error) {
-	// client.mu.Lock()
-	// defer client.mu.Unlock()
-	// get account state
-	parentConn := client.clientContext.ConnectionsManager.ParentConnection()
-	client.clientContext.MessageSender.SendBytes(
-		parentConn,
-		command.GetAccountState,
-		address.Bytes(),
-	)
-	as := <-client.accountStateChan
-	return as, nil
-}
+	// Lấy deviceKey từ server
+	receiveDeviceKey, err := client.ChainGetDeviceKey(lastHash.Bytes())
+	if err != nil {
+		return err
+	}
 
-func (client *Client) Get(address common.Address) (types.AccountState, error) {
-	// client.mu.Lock()
-	// defer client.mu.Unlock()
-	// get account state
-	parentConn := client.clientContext.ConnectionsManager.ParentConnection()
-	client.clientContext.MessageSender.SendBytes(
-		parentConn,
-		command.GetAccountState,
-		address.Bytes(),
+	TransactionHash := receiveDeviceKey.TransactionHash
+	lastDeviceKey := common.HexToHash(
+		hex.EncodeToString(receiveDeviceKey.LastDeviceKeyFromServer),
 	)
-	as := <-client.accountStateChan
-	return as, nil
+
+	// Tạo khóa thiết bị mới
+	rawNewDeviceKeyBytes := []byte(fmt.Sprintf("%s-%d", hex.EncodeToString(TransactionHash), time.Now().Unix()))
+	rawNewDeviceKey := crypto.Keccak256(rawNewDeviceKeyBytes)
+	newDeviceKey := crypto.Keccak256Hash(rawNewDeviceKey)
+
+	// Chuyển đổi danh sách địa chỉ liên quan sang mảng byte
+	bRelatedAddresses := make([][]byte, len(relatedAddress)+2)
+	for i, v := range relatedAddress {
+		bRelatedAddresses[i] = v.Bytes()
+	}
+	bRelatedAddresses[len(relatedAddress)] = fromAddress.Bytes()
+	bRelatedAddresses[len(relatedAddress)+1] = toAddress.Bytes()
+
+	// Gửi giao dịch với device key
+	err = client.transactionController.SaveTransactionWithDeviceKeyToFile(
+		fromAddress,
+		toAddress,
+		pendingBalance,
+		amount,
+		maxGas,
+		maxGasPrice,
+		maxTimeUse,
+		data,
+		bRelatedAddresses,
+		lastDeviceKey,
+		newDeviceKey,
+		as.Nonce(),
+		rawNewDeviceKey,
+		client.clientContext.Config.ChainId,
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func NewStorageClient(
