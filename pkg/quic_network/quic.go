@@ -3,7 +3,6 @@ package quic_network
 import (
 	"context"
 	"crypto/tls"
-	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -123,11 +122,10 @@ func SendChunkToRustServerQuic(conn quic.Connection, fileKey string, chunkIndex 
 	// Convert merkle root to hex string
 	merkleRootHex := hex.EncodeToString(merkleRoot[:])
 
-	// Tạo payload
+	// Tạo payload (không chứa Base64)
 	payload := file_model.UploadChunkPayload{
 		FileKey:           fileKey,
 		ChunkIndex:        chunkIndex,
-		ChunkDataBase64:   base64.StdEncoding.EncodeToString(chunkData),
 		Signature:         signature,
 		MerkleProofHashes: merkleProofHexStrings,
 		MerkleRoot:        merkleRootHex,
@@ -145,11 +143,20 @@ func SendChunkToRustServerQuic(conn quic.Connection, fileKey string, chunkIndex 
 
 	// Set deadline cho write
 	stream.SetWriteDeadline(time.Now().Add(chunkTimeout / 2))
-	fileTimeLogger.Info("📤 Bắt đầu gửi command cho chunk %d -key %s (size: %d bytes)", chunkIndex, fileKey, len(jsonData))
+	
+	// GỬI FRAME 1: JSON Metadata
+	fileTimeLogger.Info("📤 Bắt đầu gửi Frame 1 (JSON) cho chunk %d -key %s (size: %d bytes)", chunkIndex, fileKey, len(jsonData))
 	if err := writeFrameWithLength(stream, jsonData); err != nil {
-		return fmt.Errorf("lỗi khi gửi command: %v", err)
+		return fmt.Errorf("lỗi khi gửi Frame 1 (JSON): %v", err)
 	}
-	fileTimeLogger.Info("✅ Đã gửi command thành công cho chunk %d -key %s", chunkIndex, fileKey)
+	
+	// GỬI FRAME 2: Binary Chunk Data
+	fileTimeLogger.Info("📤 Bắt đầu gửi Frame 2 (Binary) cho chunk %d -key %s (size: %d bytes)", chunkIndex, fileKey, len(chunkData))
+	if err := writeFrameWithLength(stream, chunkData); err != nil {
+		return fmt.Errorf("lỗi khi gửi Frame 2 (Binary): %v", err)
+	}
+	
+	fileTimeLogger.Info("✅ Đã gửi 2 Frames thành công cho chunk %d -key %s", chunkIndex, fileKey)
 	// Set deadline cho read
 	stream.SetReadDeadline(time.Now().Add(chunkTimeout / 2))
 	fileTimeLogger.Info("📥 Bắt đầu chờ nhận response cho chunk %d -key %s", chunkIndex, fileKey)
