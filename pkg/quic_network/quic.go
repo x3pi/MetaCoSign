@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/meta-node-blockchain/meta-node/pkg/models/file_model"
@@ -74,8 +75,12 @@ func CreateQuicConnection(serverAddr string) (quic.Connection, error) {
 	const dialTimeout = 10 * time.Second // Tăng timeout lên 10s
 
 	quicConfig := &quic.Config{
-		MaxIdleTimeout:  7 * time.Second,  // Timeout nhạy hơn để phát hiện đứt mạng nhanh (7s)
-		KeepAlivePeriod: 2 * time.Second,  // Liên tục Ping thăm dò mỗi 2s
+		MaxIdleTimeout:                 7 * time.Second,  // Timeout nhạy hơn để phát hiện đứt mạng nhanh (7s)
+		KeepAlivePeriod:                2 * time.Second,  // Liên tục Ping thăm dò mỗi 2s
+		InitialStreamReceiveWindow:     10 * 1024 * 1024, // 10MB
+		MaxStreamReceiveWindow:         20 * 1024 * 1024, // 20MB
+		InitialConnectionReceiveWindow: 50 * 1024 * 1024, // 50MB
+		MaxConnectionReceiveWindow:     100 * 1024 * 1024, // 100MB
 	}
 
 	for i := 0; i < maxRetries; i++ {
@@ -96,22 +101,21 @@ func CreateQuicConnection(serverAddr string) (quic.Connection, error) {
 	return nil, fmt.Errorf("không thể kết nối QUIC đến %s sau %d lần thử: %v", serverAddr, maxRetries, err)
 }
 
-// SendChunkToRustServerQuic gửi chunk data qua QUIC
-func SendChunkToRustServerQuic(conn quic.Connection, fileKey string, chunkIndex int, chunkData []byte, signature string, merkleProofHashes [][32]byte, merkleRoot [32]byte) error {
-	// Mở stream với timeout
-	peerAddr := conn.RemoteAddr()
-	fileTimeLogger, _ := loggerfile.NewFileLogger("fileTimeLogger.log")
-	fileTimeLogger.Info("Đang gửi chunk %d -key %s đến peer: %s\n", chunkIndex, fileKey, peerAddr.String())
-	const chunkTimeout = 120 * time.Second
-	// Tạo context với timeout cho toàn bộ quá trình gửi/nhận
-	ctx, cancel := context.WithTimeout(context.Background(), chunkTimeout)
-	defer cancel()
+type StreamContext struct {
+	Mu     sync.Mutex
+	Stream quic.Stream
+}
 
-	stream, err := conn.OpenStreamSync(ctx)
-	if err != nil {
-		return fmt.Errorf("không thể mở stream: %v", err)
-	}
-	defer stream.Close()
+// SendChunkToRustServerQuic gửi chunk data qua QUIC
+func SendChunkToRustServerQuic(streamCtx *StreamContext, fileKey string, chunkIndex int, chunkData []byte, signature string, merkleProofHashes [][32]byte, merkleRoot [32]byte) error {
+	// Sử dụng stream đã mở và lock để đồng bộ
+	streamCtx.Mu.Lock()
+	defer streamCtx.Mu.Unlock()
+	stream := streamCtx.Stream
+	
+	fileTimeLogger, _ := loggerfile.NewFileLogger("fileTimeLogger.log")
+	fileTimeLogger.Info("Đang gửi chunk %d -key %s qua QUIC stream", chunkIndex, fileKey)
+	const chunkTimeout = 120 * time.Second
 
 	// Convert merkle proof hashes to hex strings
 	merkleProofHexStrings := make([]string, len(merkleProofHashes))
