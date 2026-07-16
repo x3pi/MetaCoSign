@@ -277,26 +277,35 @@ func (p *RpcReverseProxy) proxyClientToUpstreamWithoutInterceptor(
 			}
 			return
 		}
-		rpcResp, handled := p.RouteWebSocketMessage(req)
-		if handled && rpcResp != nil {
-			if err := clientWriter.WriteJSON(rpcResp); err != nil {
-				logger.Error("Error writing RPC response to client %s: %v", clientConn.RemoteAddr(), err)
-				select {
-				case errChan <- fmt.Errorf("client write error: %w", err):
-				case <-quit:
+
+		go func(req models.JSONRPCRequestRaw) {
+			defer func() {
+				if r := recover(); r != nil {
+					logger.Error("Panic in proxyClientToUpstreamWithoutInterceptor: %v", r)
 				}
-				return
-			}
-		} else {
-			if err := targetWriter.WriteJSON(req); err != nil {
-				logger.Error("Error writing to upstream for client %s: %v", clientConn.RemoteAddr(), err)
-				select {
-				case errChan <- fmt.Errorf("upstream write error: %w", err):
-				case <-quit:
+			}()
+
+			rpcResp, handled := p.RouteWebSocketMessage(req)
+			if handled && rpcResp != nil {
+				if err := clientWriter.WriteJSON(rpcResp); err != nil {
+					logger.Error("Error writing RPC response to client %s: %v", clientConn.RemoteAddr(), err)
+					select {
+					case errChan <- fmt.Errorf("client write error: %w", err):
+					case <-quit:
+					}
+					return
 				}
-				return
+			} else {
+				if err := targetWriter.WriteJSON(req); err != nil {
+					logger.Error("Error writing to upstream for client %s: %v", clientConn.RemoteAddr(), err)
+					select {
+					case errChan <- fmt.Errorf("upstream write error: %w", err):
+					case <-quit:
+					}
+					return
+				}
 			}
-		}
+		}(req)
 	}
 }
 
@@ -395,8 +404,8 @@ func (p *RpcReverseProxy) proxyClientToUpstream(
 			return
 		}
 
-		// Handle panic recovery for RPC processing
-		func() {
+		// Handle panic recovery and RPC processing concurrently
+		go func(req models.JSONRPCRequestRaw) {
 			defer func() {
 				if r := recover(); r != nil {
 					logger.Error("Panic in proxyClientToUpstream for method %s: %v", req.Method, r)
@@ -450,7 +459,7 @@ func (p *RpcReverseProxy) proxyClientToUpstream(
 					return
 				}
 			}
-		}()
+		}(req)
 	}
 }
 
@@ -484,15 +493,16 @@ func (p *RpcReverseProxy) proxyUpstreamToClient(
 			return
 		}
 
-		// Forward message to client
-		if err := clientWriter.WriteMessage(messageType, message); err != nil {
-			logger.Error("Error writing to client: %v", err)
-			select {
-			case errChan <- fmt.Errorf("client write error: %w", err):
-			case <-quit:
+		// Forward message to client asynchronously
+		go func(mType int, msg []byte) {
+			if err := clientWriter.WriteMessage(mType, msg); err != nil {
+				logger.Error("Error writing to client: %v", err)
+				select {
+				case errChan <- fmt.Errorf("client write error: %w", err):
+				case <-quit:
+				}
 			}
-			return
-		}
+		}(messageType, message)
 	}
 }
 
