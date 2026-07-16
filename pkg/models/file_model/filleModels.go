@@ -3,6 +3,7 @@ package file_model
 import (
 	"math/big"
 	"sync/atomic"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/meta-node-blockchain/meta-node/types"
@@ -46,8 +47,9 @@ type DownloadResponse struct {
 }
 
 type FileUploadProgress struct {
-	UploadedChunks atomic.Uint64
-	TotalChunks    *big.Int
+	CompletedServers atomic.Uint32
+	TotalChunks      *big.Int
+	StartTime      time.Time
 }
 
 type ConfirmationJob struct {
