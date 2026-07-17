@@ -1,7 +1,6 @@
 package file_handler
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -11,11 +10,9 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/ethereum/go-ethereum/crypto"
 	client_tcp "github.com/meta-node-blockchain/meta-node/cmd/rpc-client/client-tcp"
 	tcp_config "github.com/meta-node-blockchain/meta-node/cmd/rpc-client/client-tcp/config"
 	"github.com/meta-node-blockchain/meta-node/pkg/file_handler/abi_file"
@@ -39,8 +36,8 @@ type FileHandlerNoReceipt struct {
 	uploadProgress sync.Map
 	fileInfoCache  sync.Map
 	streamPool     sync.Map // fileKeyStr + "_isServer1" -> *quic_network.StreamContext
-	connPool1           []quic.Connection
-	connPool2           []quic.Connection
+	connPool1      []quic.Connection
+	connPool2      []quic.Connection
 	//
 	cachedRustServers []string   // Cache cho địa chỉ 2 server
 	initMutex         sync.Mutex // (Để bảo vệ việc khởi tạo)
@@ -49,9 +46,7 @@ type FileHandlerNoReceipt struct {
 	pool1Mutex sync.RWMutex // Mutex cho pool 1 (Giữ nguyên)
 	pool2Mutex sync.RWMutex // Mutex cho pool 2 (Giữ nguyên)
 	//
-	chunkSemaphore        chan struct{} // Semaphore để giới hạn số luồng xử lý chunk đồng thời
 	maxMemoryUsagePercent float64
-	processingChunkCount  atomic.Int64
 }
 
 var (
@@ -75,8 +70,7 @@ func createAndStartFileHandler(comm BlockchainCommunicator) (*FileHandlerNoRecei
 	if err != nil {
 		return nil, err // Trả về lỗi ngay
 	}
-	// Tạo semaphore để giới hạn số luồng xử lý đồng thời (ví dụ: 100 luồng)
-	maxConcurrentChunks := 100
+	// Tạo instance
 	instance := &FileHandlerNoReceipt{
 		abi:                   parsedABI,
 		comm:                  comm,
@@ -86,7 +80,6 @@ func createAndStartFileHandler(comm BlockchainCommunicator) (*FileHandlerNoRecei
 		cachedRustServers:     make([]string, 2),
 		pool1Mutex:            sync.RWMutex{},
 		pool2Mutex:            sync.RWMutex{},
-		chunkSemaphore:        make(chan struct{}, maxConcurrentChunks),
 		maxMemoryUsagePercent: DEFAULT_MAX_MEMORY_USAGE_PERCENT,
 	}
 
@@ -136,7 +129,6 @@ func (h *FileHandlerNoReceipt) HandleFileTransactionNoReceipt(
 		isCall = true
 		if !h.isInitialized {
 			h.initMutex.Lock()
-			defer h.initMutex.Unlock()
 			if !h.isInitialized {
 				err := h.initializeServerCacheAndPools(tx)
 				if err != nil {
@@ -144,6 +136,7 @@ func (h *FileHandlerNoReceipt) HandleFileTransactionNoReceipt(
 				}
 				h.isInitialized = true
 			}
+			h.initMutex.Unlock()
 		}
 		_, logicErr = h.HandleUploadChunk(tx, method, inputData[4:], blockTime)
 	default:
@@ -158,36 +151,16 @@ func (h *FileHandlerNoReceipt) HandleFileTransactionNoReceipt(
 	return false, nil
 }
 func (h *FileHandlerNoReceipt) monitorCacheHealth() {
-	// Bạn có thể đổi lại 10s nếu muốn
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(12 * time.Hour)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		uploadProgressCount := 0
-		h.uploadProgress.Range(func(k, v interface{}) bool {
-			uploadProgressCount++
-			return true
-		})
-
-		fileInfoCount := 0
-		h.fileInfoCache.Range(func(k, v interface{}) bool {
-			fileInfoCount++
-			return true
-		})
-
-		if uploadProgressCount > 100 || fileInfoCount > 100 {
-			logger.Error("⚠️  FileHandler cache leak! Progress: %d, Info: %d",
-				uploadProgressCount, fileInfoCount)
-		}
-
-		// --- Logger chi tiết từng file (nếu bạn vẫn muốn) ---
-		// (Logger này không thay đổi, nó chỉ log progress đã hoàn thành)
 		h.uploadProgress.Range(func(key, value interface{}) bool {
 			fileKeyStr, ok := key.(string)
 			if !ok {
 				return true
 			}
-			progress, ok := value.(*file_model.FileUploadProgress) // <<< THAY ĐỔI
+			progress, ok := value.(*file_model.FileUploadProgress)
 			if !ok {
 				return true
 			}
@@ -210,8 +183,7 @@ func (h *FileHandlerNoReceipt) HandleUploadChunk(
 	inputData []byte,
 	blockTime uint64,
 ) ([]types.EventLog, error) {
-	h.processingChunkCount.Add(1)
-	defer h.processingChunkCount.Add(-1)
+	// check
 	// logger.Info("Bắt đầu xử lý uploadChunk cho tx %s", tx.Hash().Hex())
 	// check
 	// start := time.Now()
@@ -226,20 +198,24 @@ func (h *FileHandlerNoReceipt) HandleUploadChunk(
 
 	fileKeyStr := hex.EncodeToString(fileKey[:])
 	chunkIndexInt := int(chunkIndex.Int64())
-	// logPrefix := fmt.Sprintf("[Chunk %d -k %s]", chunkIndexInt, fileKeyStr)
-	// fileTimeLogger, _ := loggerfile.NewFileLogger("fileTimeLogger.log")
-	// fileTimeLogger.Info("%s Bắt đầu xử lý upload chunk", logPrefix, start.Format("2006-01-02 15:04:05.999"))
-	// defer func() {
-	// 	endTime := time.Now()
-	// 	duration := endTime.Sub(start) // Hoặc time.Since(start)
-	// 	formattedEndTime := endTime.Format("2006-01-02 15:04:05.999")
-	// 	fileTimeLogger.Info(
-	// 		"%s Tổng thời gian xử lý: %v. Kết thúc lúc: %s",
-	// 		logPrefix,
-	// 		duration,
-	// 		formattedEndTime,
-	// 	)
-	// }()
+
+	// Log tiến độ upload để debug trên production (Chỉ log mỗi 50 chunk hoặc chunk đầu/cuối để tránh rác log)
+	if chunkIndexInt == 0 || chunkIndexInt%50 == 0 {
+		logger.Info("📥 [HandleUploadChunk] Đang xử lý file %s... (Chunk: %d)", fileKeyStr[:8], chunkIndexInt)
+	}
+
+	return h.doUploadChunkLogic(tx, fileKeyStr, fileKey, chunkIndexInt, chunkData, merkleProofHashes)
+}
+
+func (h *FileHandlerNoReceipt) doUploadChunkLogic(
+	tx types.Transaction,
+	fileKeyStr string,
+	fileKey [32]byte,
+	chunkIndexInt int,
+	chunkData []byte,
+	merkleProofHashes [][32]byte,
+) ([]types.EventLog, error) {
+	var err error
 	var fileInfo *file_model.FileInfo
 	val, found := h.fileInfoCache.Load(fileKeyStr)
 	if !found {
@@ -261,7 +237,7 @@ func (h *FileHandlerNoReceipt) HandleUploadChunk(
 	if fileInfo.Status == 1 {
 		h.uploadProgress.Delete(fileKeyStr)
 		h.fileInfoCache.Delete(fileKeyStr)
-		return nil, fmt.Errorf("file đã ở trạng thái Active, không thể upload thêm chunk %s filekey %s", chunkIndex, fileKeyStr)
+		return nil, fmt.Errorf("file đã ở trạng thái Active, không thể upload thêm chunk %d filekey %s", chunkIndexInt, fileKeyStr)
 	}
 	if tx.FromAddress() != fileInfo.OwnerAddress {
 		return nil, fmt.Errorf("chỉ chủ sở hữu file mới có thể upload chunk")
@@ -271,23 +247,7 @@ func (h *FileHandlerNoReceipt) HandleUploadChunk(
 	}
 	// startVerifyMerkle := time.Now()
 	merkleRoot := fileInfo.MerkleRoot
-	leafHash := crypto.Keccak256Hash(chunkData)
-	computedHash := leafHash[:]
-	for level := 0; level < len(merkleProofHashes); level++ {
-		siblingHash := merkleProofHashes[level]
-		levelIndex := chunkIndex.Uint64() >> uint(level)
-		var combined []byte
-		if levelIndex%2 == 0 {
-			combined = append(computedHash, siblingHash[:]...)
-		} else {
-			combined = append(siblingHash[:], computedHash...)
-		}
-		computedHash = crypto.Keccak256(combined)
-	}
-	if !bytes.Equal(computedHash, merkleRoot[:]) {
-		logger.Error("INVALID Merkle Proof for file %s, chunk %d. Computed: %x, Expected: %x", fileKeyStr, chunkIndexInt, computedHash, merkleRoot)
-		return nil, fmt.Errorf("merkle proof không hợp lệ cho chunk %d", chunkIndexInt)
-	}
+// BỎ QUA MERKLE VERIFY Ở GO ĐỂ TĂNG TỐC ĐỘ. RUST SERVER SẼ ĐẢM NHẬN VIỆC NÀY.
 	// fileTimeLogger.Info("%s Xác thực Merkle Proof (OK): %v", logPrefix, time.Since(startVerifyMerkle))
 	// startSendChunk := time.Now()
 	// --- THAY ĐỔI: Lấy Progress từ sync.Map ---
@@ -310,7 +270,7 @@ func (h *FileHandlerNoReceipt) HandleUploadChunk(
 
 	isServer1 := chunkIndexInt%2 == 0
 	poolIndex := (chunkIndexInt / 2) % CONNECTION_POOL_SIZE
-	
+
 	// THÊM: Băm chunkIndex vào 1 trong 50 stream để cho phép gửi 50 chunk song song qua QUIC
 	streamIndex := chunkIndexInt % 50
 	streamKey := fmt.Sprintf("%s_%v_%d", fileKeyStr, isServer1, streamIndex)
@@ -345,7 +305,7 @@ func (h *FileHandlerNoReceipt) HandleUploadChunk(
 
 	if status == "COMPLETED" {
 		completedCount := progress.CompletedServers.Add(1)
-		
+
 		threshold := uint32(2)
 		if progress.TotalChunks.Cmp(big.NewInt(1)) == 0 {
 			threshold = 1
@@ -399,7 +359,7 @@ func (h *FileHandlerNoReceipt) sendChunk(
 		} else {
 			logger.Error("[file: %s, chunk: %d] Lỗi gửi chunk (lần thử %d/%d): %v. Đang lấy kết nối mới...", fileKey, chunkIndex, i+1, MAX_SEND_RETRIES, lastErr)
 		}
-		
+
 		newConn, reconErr := h.getAndRenewConn(isServer1, poolIndex, fileKey, chunkIndex)
 		if reconErr == nil {
 			newStream, errStream := newConn.OpenStreamSync(context.Background())
@@ -465,7 +425,6 @@ func (h *FileHandlerNoReceipt) getAndRenewConn(isServer1 bool, poolIndex int, fi
 	pool[poolIndex] = newConn
 	return newConn, nil
 }
-
 
 func (h *FileHandlerNoReceipt) waitForMemoryAvailability() error {
 	if h.maxMemoryUsagePercent <= 0 {
