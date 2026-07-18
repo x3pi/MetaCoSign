@@ -74,12 +74,8 @@ func CreateQuicConnection(serverAddr string) (quic.Connection, error) {
 	const dialTimeout = 10 * time.Second // Tăng timeout lên 10s
 
 	quicConfig := &quic.Config{
-		MaxIdleTimeout:                 7 * time.Second,  // Timeout nhạy hơn để phát hiện đứt mạng nhanh (7s)
-		KeepAlivePeriod:                2 * time.Second,  // Liên tục Ping thăm dò mỗi 2s
-		InitialStreamReceiveWindow:     10 * 1024 * 1024, // 10MB
-		MaxStreamReceiveWindow:         20 * 1024 * 1024, // 20MB
-		InitialConnectionReceiveWindow: 50 * 1024 * 1024, // 50MB
-		MaxConnectionReceiveWindow:     100 * 1024 * 1024, // 100MB
+		MaxIdleTimeout:  7 * time.Second, // Timeout nhạy hơn để phát hiện đứt mạng nhanh (7s)
+		KeepAlivePeriod: 2 * time.Second, // Liên tục Ping thăm dò mỗi 2s
 	}
 
 	for i := 0; i < maxRetries; i++ {
@@ -111,7 +107,7 @@ func SendChunkToRustServerQuic(streamCtx *StreamContext, fileKey string, chunkIn
 	streamCtx.Mu.Lock()
 	defer streamCtx.Mu.Unlock()
 	stream := streamCtx.Stream
-	
+
 	const chunkTimeout = 120 * time.Second
 
 	// Convert merkle proof hashes to hex strings
@@ -147,12 +143,12 @@ func SendChunkToRustServerQuic(streamCtx *StreamContext, fileKey string, chunkIn
 	if err := writeFrameWithLength(stream, jsonData); err != nil {
 		return "", fmt.Errorf("lỗi khi gửi command (Frame 1): %v", err)
 	}
-	
+
 	// Gửi Frame 2: Raw Binary Data
 	if err := writeFrameWithLength(stream, chunkData); err != nil {
 		return "", fmt.Errorf("lỗi khi gửi binary data (Frame 2): %v", err)
 	}
-	
+
 	// Set deadline cho read
 	stream.SetReadDeadline(time.Now().Add(chunkTimeout / 2))
 	responseData, err := readFrameWithLength(stream)
