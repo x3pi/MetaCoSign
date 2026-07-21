@@ -45,14 +45,19 @@ func processEthCallParams(appCtx *app.Context, id interface{}, callObjectRaw jso
 			return utils.MakeInternalError(id, "Account handler error: "+err.Error())
 		}
 		if result != nil && err == nil {
-			// Encode result thành JSON hex string
-			jsonBytes, err := json.Marshal(result)
-			if err != nil {
-				return utils.MakeInternalError(id, "Failed to encode result: "+err.Error())
+			var hexResult string
+			if strResult, ok := result.(string); ok && len(strResult) > 2 && strResult[:2] == "0x" {
+				// Nếu result đã là chuỗi hex "0x...", trả về luôn, không cần json.Marshal
+				hexResult = strResult
+			} else {
+				// Encode result thành JSON hex string cho các struct/map (như getAccounts)
+				jsonBytes, err := json.Marshal(result)
+				if err != nil {
+					return utils.MakeInternalError(id, "Failed to encode result: "+err.Error())
+				}
+				// Convert JSON to hex string (0x...)
+				hexResult = "0x" + ethCommon.Bytes2Hex(jsonBytes)
 			}
-
-			// Convert JSON to hex string (0x...)
-			hexResult := "0x" + ethCommon.Bytes2Hex(jsonBytes)
 			return rpc_client.JSONRPCResponse{
 				Jsonrpc: "2.0",
 				Result:  hexResult,

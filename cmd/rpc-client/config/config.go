@@ -11,6 +11,7 @@ import (
 )
 
 type Config struct {
+	ConfigPath              string   `json:"-"`
 	RPCServerURL            string   `json:"rpc_server_url"`
 	WSSServerURL            string   `json:"wss_server_url"`
 	ReadonlyRPCServerURL    string   `json:"readonly_rpc_server_url"`
@@ -77,6 +78,7 @@ func Load(path string, tcpCfgPath string) (*Config, *tcp_config.ClientConfig, er
 	if err := json.Unmarshal(content, config); err != nil {
 		return nil, nil, fmt.Errorf("failed to decode config file %s into struct: %w", path, err)
 	}
+	config.ConfigPath = path
 
 	if chainIdVal, ok := rawConfig["chain_id"]; ok {
 		switch v := chainIdVal.(type) {

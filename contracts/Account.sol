@@ -57,4 +57,28 @@ contract AccountManager {
     }
     function getMyContracts(address adder, uint256 page, uint256 pageSize) external {
     }
+    uint256 public extraAccount;
+    uint256 public freeGasMinBalance;
+    uint256 public rewardAmount;
+    bool public disableFreeGas;
+
+    function setExtraAccount(uint256 _extraAccount) external {
+        extraAccount = _extraAccount;
+    }
+
+    function setFreeGasMinBalance(uint256 _freeGasMinBalance) external {
+        freeGasMinBalance = _freeGasMinBalance;
+    }
+
+    function setRewardAmount(uint256 _rewardAmount) external {
+        rewardAmount = _rewardAmount;
+    }
+
+    function setDisableFreeGas(bool _disableFreeGas) external {
+        disableFreeGas = _disableFreeGas;
+    }
+
+    function getConfig() external view returns (uint256 _extraAccount, uint256 _freeGasMinBalance, uint256 _rewardAmount, bool _disableFreeGas) {
+        return (extraAccount, freeGasMinBalance, rewardAmount, disableFreeGas);
+    }
 }

@@ -48,6 +48,20 @@ func NewContractFreeGasStorage(ldb *ldb_storage.LevelDBStorage) *ContractFreeGas
 	return &ContractFreeGasStorage{ldb: ldb}
 }
 
+const PREFIX_APP_CONFIG = "app_cfg:"
+
+// SaveAppConfig saves a specific configuration value
+func (s *ContractFreeGasStorage) SaveAppConfig(key string, value []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.ldb.Put([]byte(PREFIX_APP_CONFIG+key), value)
+}
+
+// GetAppConfig retrieves a specific configuration value
+func (s *ContractFreeGasStorage) GetAppConfig(key string) ([]byte, error) {
+	return s.ldb.Get([]byte(PREFIX_APP_CONFIG + key))
+}
+
 // ==================== GENERIC HELPERS ====================
 
 func padEntityID(id uint64) string {

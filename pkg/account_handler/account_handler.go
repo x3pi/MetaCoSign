@@ -126,6 +126,9 @@ func (h *AccountHandlerNoReceipt) HandleAccountTransaction(
 		return true, result, err
 	case "setAccountType":
 		return false, nil, nil
+	case "setExtraAccount", "setFreeGasMinBalance", "setRewardAmount", "setDisableFreeGas":
+		result, err = h.handleUpdateConfig(tx, method, inputData[4:])
+		return true, result, err
 	default:
 		logger.Info("___default for tx %s", method.Name)
 		return false, nil, nil
@@ -146,6 +149,8 @@ func (h *AccountHandlerNoReceipt) HandleEthCall(ctx context.Context, data []byte
 		return h.handleGetAllAccount(method, data[4:])
 	case "getNotifications": // ✅ THÊM
 		return h.handleGetNotifications(method, data[4:])
+	case "getConfig":
+		return h.handleGetConfig(method, data[4:])
 	case "getAllContractFreeGas":
 		return h.handleGetAllContractFreeGas(method, data[4:])
 	case "getMyContracts":
@@ -225,6 +230,74 @@ func (h *AccountHandlerNoReceipt) handleSetBlsPublicKey(
 		msgNoti,
 	)
 	return nil
+}
+
+
+
+func (h *AccountHandlerNoReceipt) handleUpdateConfig(
+	tx mt_types.Transaction,
+	method *abi.Method,
+	inputData []byte,
+) (interface{}, error) {
+	fromAddress := tx.FromAddress()
+	ownerAddr := ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress)
+	if fromAddress != ownerAddr {
+		return nil, fmt.Errorf("unauthorized: only owner %s can update config", ownerAddr.Hex())
+	}
+
+	args, err := method.Inputs.Unpack(inputData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unpack input data: %v", err)
+	}
+
+	var result interface{}
+
+	switch method.Name {
+	case "setExtraAccount":
+		val, ok := args[0].(*big.Int)
+		if !ok {
+			return nil, fmt.Errorf("invalid arg type for setExtraAccount")
+		}
+		h.appCtx.Cfg.ExtraAmount = val
+		h.appCtx.LdbContractFreeGas.SaveAppConfig("extra_account", []byte(val.String()))
+		logger.Info("Config updated: ExtraAccount = %s", val.String())
+		result = val
+	case "setFreeGasMinBalance":
+		val, ok := args[0].(*big.Int)
+		if !ok {
+			return nil, fmt.Errorf("invalid arg type for setFreeGasMinBalance")
+		}
+		h.appCtx.Cfg.FreeGasMinBalance = val
+		h.appCtx.LdbContractFreeGas.SaveAppConfig("free_gas_min_balance", []byte(val.String()))
+		logger.Info("Config updated: FreeGasMinBalance = %s", val.String())
+		result = val
+	case "setRewardAmount":
+		val, ok := args[0].(*big.Int)
+		if !ok {
+			return nil, fmt.Errorf("invalid arg type for setRewardAmount")
+		}
+		h.appCtx.Cfg.RewardAmount = val
+		h.appCtx.LdbContractFreeGas.SaveAppConfig("reward_amount", []byte(val.String()))
+		logger.Info("Config updated: RewardAmount = %s", val.String())
+		result = val
+	case "setDisableFreeGas":
+		val, ok := args[0].(bool)
+		if !ok {
+			return nil, fmt.Errorf("invalid arg type for setDisableFreeGas")
+		}
+		h.appCtx.Cfg.DisableFreeGas = val
+		valStr := "false"
+		if val {
+			valStr = "true"
+		}
+		h.appCtx.LdbContractFreeGas.SaveAppConfig("disable_free_gas", []byte(valStr))
+		logger.Info("Config updated: DisableFreeGas = %v", val)
+		result = val
+	default:
+		return nil, fmt.Errorf("unhandled config method %s", method.Name)
+	}
+
+	return result, nil
 }
 
 func (h *AccountHandlerNoReceipt) handleConfirmAccountWithoutSign(
@@ -660,8 +733,35 @@ func (h *AccountHandlerNoReceipt) handleGetAllAccount(
 
 	logger.Info("✅ Trả về %d accounts (tổng: %d)", len(accounts), total)
 	return result, nil
-
 }
+
+func (h *AccountHandlerNoReceipt) handleGetConfig(
+	method *abi.Method,
+	inputData []byte,
+) (interface{}, error) {
+	extraAcc := h.appCtx.Cfg.ExtraAmount
+	freeGasMin := h.appCtx.Cfg.FreeGasMinBalance
+	reward := h.appCtx.Cfg.RewardAmount
+	disableFreeGas := h.appCtx.Cfg.DisableFreeGas
+
+	if extraAcc == nil {
+		extraAcc = big.NewInt(0)
+	}
+	if freeGasMin == nil {
+		freeGasMin = big.NewInt(0)
+	}
+	if reward == nil {
+		reward = big.NewInt(0)
+	}
+
+	resBytes, err := method.Outputs.Pack(extraAcc, freeGasMin, reward, disableFreeGas)
+	if err != nil {
+		return nil, fmt.Errorf("failed to pack getConfig outputs: %v", err)
+	}
+
+	return "0x" + ethCommon.Bytes2Hex(resBytes), nil
+}
+
 func (h *AccountHandlerNoReceipt) handleGetNotifications(
 	method *abi.Method,
 	inputData []byte,

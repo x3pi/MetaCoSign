@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"math/big"
 
 	ethCommon "github.com/ethereum/go-ethereum/common"
 	client_tcp "github.com/meta-node-blockchain/meta-node/cmd/rpc-client/client-tcp"
@@ -110,6 +111,26 @@ func New(cfg *config.Config, tcpCfg *tcp_config.ClientConfig) (*Context, error) 
 	}
 	contractFreeGasStorage := storage.NewContractFreeGasStorage(ldbContractFreeGas)
 	contractFreeGasStorage.AddContract(ethCommon.HexToAddress(cfg.ContractsInterceptor[0]), ethCommon.HexToAddress(cfg.OwnerRpcAddress))
+
+	// Load dynamic configs from LevelDB (overriding config-rpc.json)
+	if extraVal, err := contractFreeGasStorage.GetAppConfig("extra_account"); err == nil {
+		if bigInt, ok := new(big.Int).SetString(string(extraVal), 10); ok {
+			cfg.ExtraAmount = bigInt
+		}
+	}
+	if minBalanceVal, err := contractFreeGasStorage.GetAppConfig("free_gas_min_balance"); err == nil {
+		if bigInt, ok := new(big.Int).SetString(string(minBalanceVal), 10); ok {
+			cfg.FreeGasMinBalance = bigInt
+		}
+	}
+	if rewardVal, err := contractFreeGasStorage.GetAppConfig("reward_amount"); err == nil {
+		if bigInt, ok := new(big.Int).SetString(string(rewardVal), 10); ok {
+			cfg.RewardAmount = bigInt
+		}
+	}
+	if disableGasVal, err := contractFreeGasStorage.GetAppConfig("disable_free_gas"); err == nil {
+		cfg.DisableFreeGas = string(disableGasVal) == "true"
+	}
 
 	// 7. Initialize LevelDB for Transaction Storage
 	var transactionStorage *storage.RobotTransaction
