@@ -5,8 +5,10 @@ import (
 
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/handlers"
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/models"
+	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/utils"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	"github.com/meta-node-blockchain/meta-node/pkg/rpc_client"
+	"github.com/tidwall/gjson"
 )
 
 // JSONRPCRequestRaw represents a raw JSON-RPC request
@@ -60,6 +62,29 @@ func (p *RpcReverseProxy) RouteWebSocketMessage(req models.JSONRPCRequestRaw) (*
 			return handlers.HandleRpcRegisterBlsKeyWithSignature(p.AppCtx, req)
 		}, req.Method).(rpc_client.JSONRPCResponse)
 		return &resp, true
+
+	case "mtn_sendRawTransactionWithDeviceKey":
+		resp := p.handleWithPanicRecovery(func() interface{} {
+			rawTxResult := gjson.GetBytes(req.Params, "0")
+			if !rawTxResult.Exists() {
+				return utils.MakeInvalidParamError(req.Id, "Invalid params for sendRawTransactionWithDeviceKey")
+			}
+			isPrevent, hash, err := handlers.ProcessSendRawTransactionWithDeviceKey(p.AppCtx, rawTxResult.String(), req.Id)
+			if isPrevent {
+				if err != nil {
+					return utils.MakeInternalError(req.Id, err.Error())
+				}
+				return rpc_client.JSONRPCResponse{Jsonrpc: "2.0", Id: req.Id, Result: hash}
+			}
+			// Return nil to indicate it should be forwarded
+			return nil
+		}, req.Method)
+
+		if resp == nil {
+			return nil, false
+		}
+		r := resp.(rpc_client.JSONRPCResponse)
+		return &r, true
 
 	default:
 		// Not handled by proxy - forward to upstream

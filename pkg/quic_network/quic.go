@@ -3,18 +3,17 @@ package quic_network
 import (
 	"context"
 	"crypto/tls"
-	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/meta-node-blockchain/meta-node/pkg/models/file_model"
 
-	"github.com/meta-node-blockchain/meta-node/pkg/loggerfile"
 	"github.com/quic-go/quic-go"
 )
 
@@ -75,8 +74,8 @@ func CreateQuicConnection(serverAddr string) (quic.Connection, error) {
 	const dialTimeout = 10 * time.Second // Tăng timeout lên 10s
 
 	quicConfig := &quic.Config{
-		MaxIdleTimeout:  7 * time.Second,  // Timeout nhạy hơn để phát hiện đứt mạng nhanh (7s)
-		KeepAlivePeriod: 2 * time.Second,  // Liên tục Ping thăm dò mỗi 2s
+		MaxIdleTimeout:  7 * time.Second, // Timeout nhạy hơn để phát hiện đứt mạng nhanh (7s)
+		KeepAlivePeriod: 2 * time.Second, // Liên tục Ping thăm dò mỗi 2s
 	}
 
 	for i := 0; i < maxRetries; i++ {
@@ -97,22 +96,19 @@ func CreateQuicConnection(serverAddr string) (quic.Connection, error) {
 	return nil, fmt.Errorf("không thể kết nối QUIC đến %s sau %d lần thử: %v", serverAddr, maxRetries, err)
 }
 
-// SendChunkToRustServerQuic gửi chunk data qua QUIC
-func SendChunkToRustServerQuic(conn quic.Connection, fileKey string, chunkIndex int, chunkData []byte, signature string, merkleProofHashes [][32]byte, merkleRoot [32]byte) error {
-	// Mở stream với timeout
-	peerAddr := conn.RemoteAddr()
-	fileTimeLogger, _ := loggerfile.NewFileLogger("fileTimeLogger.log")
-	fileTimeLogger.Info("Đang gửi chunk %d -key %s đến peer: %s\n", chunkIndex, fileKey, peerAddr.String())
-	const chunkTimeout = 120 * time.Second
-	// Tạo context với timeout cho toàn bộ quá trình gửi/nhận
-	ctx, cancel := context.WithTimeout(context.Background(), chunkTimeout)
-	defer cancel()
+type StreamContext struct {
+	Mu     sync.Mutex
+	Stream quic.Stream
+}
 
-	stream, err := conn.OpenStreamSync(ctx)
-	if err != nil {
-		return fmt.Errorf("không thể mở stream: %v", err)
-	}
-	defer stream.Close()
+// SendChunkToRustServerQuic gửi chunk data qua QUIC
+func SendChunkToRustServerQuic(streamCtx *StreamContext, fileKey string, chunkIndex int, chunkData []byte, signature string, merkleProofHashes [][32]byte, merkleRoot [32]byte) (string, error) {
+	// Sử dụng stream đã mở và lock để đồng bộ
+	streamCtx.Mu.Lock()
+	defer streamCtx.Mu.Unlock()
+	stream := streamCtx.Stream
+
+	const chunkTimeout = 120 * time.Second
 
 	// Convert merkle proof hashes to hex strings
 	merkleProofHexStrings := make([]string, len(merkleProofHashes))
@@ -123,11 +119,10 @@ func SendChunkToRustServerQuic(conn quic.Connection, fileKey string, chunkIndex 
 	// Convert merkle root to hex string
 	merkleRootHex := hex.EncodeToString(merkleRoot[:])
 
-	// Tạo payload
+	// Tạo payload (không chứa Base64)
 	payload := file_model.UploadChunkPayload{
 		FileKey:           fileKey,
 		ChunkIndex:        chunkIndex,
-		ChunkDataBase64:   base64.StdEncoding.EncodeToString(chunkData),
 		Signature:         signature,
 		MerkleProofHashes: merkleProofHexStrings,
 		MerkleRoot:        merkleRootHex,
@@ -137,7 +132,7 @@ func SendChunkToRustServerQuic(conn quic.Connection, fileKey string, chunkIndex 
 	// Encode JSON và gửi với length prefix
 	jsonData, err := json.Marshal(command)
 	if err != nil {
-		return fmt.Errorf("lỗi khi encode command: %v", err)
+		return "", fmt.Errorf("lỗi khi encode command: %v", err)
 	}
 
 	// Thêm \n để Rust server parse JSON
@@ -145,26 +140,29 @@ func SendChunkToRustServerQuic(conn quic.Connection, fileKey string, chunkIndex 
 
 	// Set deadline cho write
 	stream.SetWriteDeadline(time.Now().Add(chunkTimeout / 2))
-	fileTimeLogger.Info("📤 Bắt đầu gửi command cho chunk %d -key %s (size: %d bytes)", chunkIndex, fileKey, len(jsonData))
 	if err := writeFrameWithLength(stream, jsonData); err != nil {
-		return fmt.Errorf("lỗi khi gửi command: %v", err)
-	}
-	fileTimeLogger.Info("✅ Đã gửi command thành công cho chunk %d -key %s", chunkIndex, fileKey)
-	// Set deadline cho read
-	stream.SetReadDeadline(time.Now().Add(chunkTimeout / 2))
-	fileTimeLogger.Info("📥 Bắt đầu chờ nhận response cho chunk %d -key %s", chunkIndex, fileKey)
-	responseData, err := readFrameWithLength(stream)
-	if err != nil {
-		return fmt.Errorf("lỗi khi đọc phản hồi (có thể timeout): %v", err)
-	}
-	fileTimeLogger.Info("✅ Đã nhận response cho chunk %d -key %s (size: %d bytes)", chunkIndex, fileKey, len(responseData))
-	var response file_model.GenericResponse
-	if err := json.Unmarshal(responseData, &response); err != nil {
-		return fmt.Errorf("lỗi khi parse response: %v", err)
+		return "", fmt.Errorf("lỗi khi gửi command (Frame 1): %v", err)
 	}
 
-	if response.Status != "SUCCESS" {
-		return fmt.Errorf("server báo lỗi: %s", response.Message)
+	// Gửi Frame 2: Raw Binary Data
+	if err := writeFrameWithLength(stream, chunkData); err != nil {
+		return "", fmt.Errorf("lỗi khi gửi binary data (Frame 2): %v", err)
 	}
-	return nil
+
+	// Set deadline cho read
+	stream.SetReadDeadline(time.Now().Add(chunkTimeout / 2))
+	responseData, err := readFrameWithLength(stream)
+	if err != nil {
+		return "", fmt.Errorf("lỗi khi đọc phản hồi (có thể timeout): %v", err)
+	}
+	var response file_model.GenericResponse
+	if err := json.Unmarshal(responseData, &response); err != nil {
+		return "", fmt.Errorf("lỗi khi parse response: %v", err)
+	}
+
+	if response.Status != "SUCCESS" && response.Status != "COMPLETED" {
+		return response.Status, fmt.Errorf("server báo lỗi: %s", response.Message)
+	}
+
+	return response.Status, nil
 }

@@ -3,6 +3,7 @@ package file_model
 import (
 	"math/big"
 	"sync/atomic"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/meta-node-blockchain/meta-node/types"
@@ -25,7 +26,6 @@ type Command struct {
 type UploadChunkPayload struct {
 	FileKey           string   `json:"file_key"`
 	ChunkIndex        int      `json:"chunk_index"`
-	ChunkDataBase64   string   `json:"chunk_data_base64"`
 	Signature         string   `json:"signature"`
 	MerkleProofHashes []string `json:"merkle_proof_hashes"` // Hex strings of proof hashes
 	MerkleRoot        string   `json:"merkle_root"`         // Hex string of merkle root
@@ -47,8 +47,9 @@ type DownloadResponse struct {
 }
 
 type FileUploadProgress struct {
-	UploadedChunks atomic.Uint64
-	TotalChunks    *big.Int
+	CompletedServers atomic.Uint32
+	TotalChunks      *big.Int
+	StartTime      time.Time
 }
 
 type ConfirmationJob struct {

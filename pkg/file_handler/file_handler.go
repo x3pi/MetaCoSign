@@ -1,7 +1,6 @@
 package file_handler
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -11,16 +10,14 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/ethereum/go-ethereum/crypto"
 	client_tcp "github.com/meta-node-blockchain/meta-node/cmd/rpc-client/client-tcp"
 	tcp_config "github.com/meta-node-blockchain/meta-node/cmd/rpc-client/client-tcp/config"
 	"github.com/meta-node-blockchain/meta-node/pkg/file_handler/abi_file"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
-	"github.com/meta-node-blockchain/meta-node/pkg/loggerfile"
+
 	file_model "github.com/meta-node-blockchain/meta-node/pkg/models/file_model"
 	"github.com/meta-node-blockchain/meta-node/pkg/quic_network"
 	"github.com/meta-node-blockchain/meta-node/types"
@@ -28,7 +25,7 @@ import (
 	"github.com/shirou/gopsutil/mem"
 )
 
-const MAX_SIZE_CHUNK = 250 * 1024
+const MAX_SIZE_CHUNK = 1024 * 1024
 const DEFAULT_MAX_MEMORY_USAGE_PERCENT = 99
 
 const MAX_CHUNK = 8192 // 2GB
@@ -38,10 +35,9 @@ type FileHandlerNoReceipt struct {
 	comm           BlockchainCommunicator
 	uploadProgress sync.Map
 	fileInfoCache  sync.Map
-	// mapMutex và cacheMutex đã bị XÓA BỎ
-	confirmationChannel chan file_model.ConfirmationJob
-	connPool1           []quic.Connection
-	connPool2           []quic.Connection
+	streamPool     sync.Map // fileKeyStr + "_isServer1" -> *quic_network.StreamContext
+	connPool1      []quic.Connection
+	connPool2      []quic.Connection
 	//
 	cachedRustServers []string   // Cache cho địa chỉ 2 server
 	initMutex         sync.Mutex // (Để bảo vệ việc khởi tạo)
@@ -50,9 +46,7 @@ type FileHandlerNoReceipt struct {
 	pool1Mutex sync.RWMutex // Mutex cho pool 1 (Giữ nguyên)
 	pool2Mutex sync.RWMutex // Mutex cho pool 2 (Giữ nguyên)
 	//
-	chunkSemaphore        chan struct{} // Semaphore để giới hạn số luồng xử lý chunk đồng thời
 	maxMemoryUsagePercent float64
-	processingChunkCount  atomic.Int64
 }
 
 var (
@@ -76,22 +70,19 @@ func createAndStartFileHandler(comm BlockchainCommunicator) (*FileHandlerNoRecei
 	if err != nil {
 		return nil, err // Trả về lỗi ngay
 	}
-	// Tạo semaphore với số lượng bằng số CPU cores để giới hạn số luồng xử lý
-	maxConcurrentChunks := int(float64(runtime.NumCPU()))
-	if maxConcurrentChunks < 1 {
-		maxConcurrentChunks = 1 // Đảm bảo ít nhất 1 luồng
-	}
+	// Tạo instance
 	instance := &FileHandlerNoReceipt{
 		abi:                   parsedABI,
 		comm:                  comm,
-		confirmationChannel:   make(chan file_model.ConfirmationJob, 1000),
+		uploadProgress:        sync.Map{},
+		fileInfoCache:         sync.Map{},
+		streamPool:            sync.Map{},
 		cachedRustServers:     make([]string, 2),
 		pool1Mutex:            sync.RWMutex{},
 		pool2Mutex:            sync.RWMutex{},
-		chunkSemaphore:        make(chan struct{}, maxConcurrentChunks),
 		maxMemoryUsagePercent: DEFAULT_MAX_MEMORY_USAGE_PERCENT,
 	}
-	go instance.startConfirmationWorker()
+
 	go instance.waitForMemoryAvailability()
 	go instance.monitorCacheHealth()
 
@@ -128,8 +119,8 @@ func (h *FileHandlerNoReceipt) HandleFileTransactionNoReceipt(
 	}
 	method, err := h.abi.MethodById(inputData[:4])
 	if err != nil {
-		err := fmt.Errorf("FileHandler: Lỗi khi lấy method từ input data: %v", err)
-		return true, err
+		// Bỏ qua các method không có trong ABI của file handler để EVM tự xử lý
+		return false, nil
 	}
 	var logicErr error
 	var isCall bool = false
@@ -138,7 +129,6 @@ func (h *FileHandlerNoReceipt) HandleFileTransactionNoReceipt(
 		isCall = true
 		if !h.isInitialized {
 			h.initMutex.Lock()
-			defer h.initMutex.Unlock()
 			if !h.isInitialized {
 				err := h.initializeServerCacheAndPools(tx)
 				if err != nil {
@@ -146,6 +136,7 @@ func (h *FileHandlerNoReceipt) HandleFileTransactionNoReceipt(
 				}
 				h.isInitialized = true
 			}
+			h.initMutex.Unlock()
 		}
 		_, logicErr = h.HandleUploadChunk(tx, method, inputData[4:], blockTime)
 	default:
@@ -160,64 +151,26 @@ func (h *FileHandlerNoReceipt) HandleFileTransactionNoReceipt(
 	return false, nil
 }
 func (h *FileHandlerNoReceipt) monitorCacheHealth() {
-	fileLogger, _ := loggerfile.NewFileLogger("file_handler_debug.log")
-	// Bạn có thể đổi lại 10s nếu muốn
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(12 * time.Hour)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		uploadProgressCount := 0
-		h.uploadProgress.Range(func(k, v interface{}) bool {
-			uploadProgressCount++
-			return true
-		})
-
-		fileInfoCount := 0
-		h.fileInfoCache.Range(func(k, v interface{}) bool {
-			fileInfoCount++
-			return true
-		})
-
-		// <<< THÊM MỚI: Lấy số chunk đang xử lý đồng thời
-		activeChunks := h.processingChunkCount.Load()
-
-		fileLogger.Info("Tổng quan: %d files đang upload | %d chunks đang xử lý (đồng thời) | %d fileInfo cache",
-			uploadProgressCount, activeChunks, fileInfoCount)
-
-		if uploadProgressCount > 100 || fileInfoCount > 100 {
-			logger.Error("⚠️  FileHandler cache leak! Progress: %d, Info: %d",
-				uploadProgressCount, fileInfoCount)
-		}
-
-		// Log chunkSemaphore status
-		fileLogger.Info("chunkSemaphore available: %d/%d",
-			cap(h.chunkSemaphore)-len(h.chunkSemaphore), cap(h.chunkSemaphore))
-
-		// --- Logger chi tiết từng file (nếu bạn vẫn muốn) ---
-		// (Logger này không thay đổi, nó chỉ log progress đã hoàn thành)
 		h.uploadProgress.Range(func(key, value interface{}) bool {
 			fileKeyStr, ok := key.(string)
 			if !ok {
 				return true
 			}
-			progress, ok := value.(*file_model.FileUploadProgress) // <<< THAY ĐỔI
+			progress, ok := value.(*file_model.FileUploadProgress)
 			if !ok {
 				return true
 			}
-
-			// Đọc giá trị atomic một cách an toàn
-			uploadedCount := progress.UploadedChunks.Load() // <<< THAY ĐỔI
-			// Chuyển đổi để log
-			uploaded := new(big.Int).SetUint64(uploadedCount) // <<< THAY ĐỔI
-			total := progress.TotalChunks
-
-			shortKey := fileKeyStr
-			if len(shortKey) > 10 {
-				shortKey = shortKey[:10]
+			// --- GARBAGE COLLECTION ---
+			// Tránh memory leak nếu người dùng bỏ dở upload hoặc mạng đứt hoàn toàn
+			if time.Since(progress.StartTime) > 24*time.Hour {
+				logger.Warn("🗑️ Xóa cache upload bị treo quá 24h: %s", fileKeyStr)
+				h.uploadProgress.Delete(fileKeyStr)
+				h.fileInfoCache.Delete(fileKeyStr)
 			}
-
-			fileLogger.Info("[ProgressMonitor] File: %s... | Uploaded: %s / %s",
-				shortKey, uploaded.String(), total.String())
 			return true
 		})
 	}
@@ -230,11 +183,10 @@ func (h *FileHandlerNoReceipt) HandleUploadChunk(
 	inputData []byte,
 	blockTime uint64,
 ) ([]types.EventLog, error) {
-	h.processingChunkCount.Add(1)
-	defer h.processingChunkCount.Add(-1)
-	logger.Info("Bắt đầu xử lý uploadChunk cho tx %s", tx.Hash().Hex())
 	// check
-	start := time.Now()
+	// logger.Info("Bắt đầu xử lý uploadChunk cho tx %s", tx.Hash().Hex())
+	// check
+	// start := time.Now()
 	args, err := method.Inputs.Unpack(inputData)
 	if err != nil {
 		return nil, fmt.Errorf("Lỗi khi unpack input data: %v", err)
@@ -246,20 +198,24 @@ func (h *FileHandlerNoReceipt) HandleUploadChunk(
 
 	fileKeyStr := hex.EncodeToString(fileKey[:])
 	chunkIndexInt := int(chunkIndex.Int64())
-	logPrefix := fmt.Sprintf("[Chunk %d -k %s]", chunkIndexInt, fileKeyStr)
-	fileTimeLogger, _ := loggerfile.NewFileLogger("fileTimeLogger.log")
-	fileTimeLogger.Info("%s Bắt đầu xử lý upload chunk", logPrefix, start.Format("2006-01-02 15:04:05.999"))
-	defer func() {
-		endTime := time.Now()
-		duration := endTime.Sub(start) // Hoặc time.Since(start)
-		formattedEndTime := endTime.Format("2006-01-02 15:04:05.999")
-		fileTimeLogger.Info(
-			"%s Tổng thời gian xử lý: %v. Kết thúc lúc: %s",
-			logPrefix,
-			duration,
-			formattedEndTime,
-		)
-	}()
+
+	// Log tiến độ upload để debug trên production (Chỉ log mỗi 50 chunk hoặc chunk đầu/cuối để tránh rác log)
+	if chunkIndexInt == 0 || chunkIndexInt%50 == 0 {
+		logger.Info("📥 [HandleUploadChunk] Đang xử lý file %s... (Chunk: %d)", fileKeyStr[:8], chunkIndexInt)
+	}
+
+	return h.doUploadChunkLogic(tx, fileKeyStr, fileKey, chunkIndexInt, chunkData, merkleProofHashes)
+}
+
+func (h *FileHandlerNoReceipt) doUploadChunkLogic(
+	tx types.Transaction,
+	fileKeyStr string,
+	fileKey [32]byte,
+	chunkIndexInt int,
+	chunkData []byte,
+	merkleProofHashes [][32]byte,
+) ([]types.EventLog, error) {
+	var err error
 	var fileInfo *file_model.FileInfo
 	val, found := h.fileInfoCache.Load(fileKeyStr)
 	if !found {
@@ -281,7 +237,7 @@ func (h *FileHandlerNoReceipt) HandleUploadChunk(
 	if fileInfo.Status == 1 {
 		h.uploadProgress.Delete(fileKeyStr)
 		h.fileInfoCache.Delete(fileKeyStr)
-		return nil, fmt.Errorf("file đã ở trạng thái Active, không thể upload thêm chunk %s filekey %s", chunkIndex, fileKeyStr)
+		return nil, fmt.Errorf("file đã ở trạng thái Active, không thể upload thêm chunk %d filekey %s", chunkIndexInt, fileKeyStr)
 	}
 	if tx.FromAddress() != fileInfo.OwnerAddress {
 		return nil, fmt.Errorf("chỉ chủ sở hữu file mới có thể upload chunk")
@@ -289,33 +245,18 @@ func (h *FileHandlerNoReceipt) HandleUploadChunk(
 	if len(chunkData) > MAX_SIZE_CHUNK {
 		return nil, fmt.Errorf("kích thước chunk vượt quá giới hạn %d KB", MAX_SIZE_CHUNK/1024)
 	}
-	startVerifyMerkle := time.Now()
+	// startVerifyMerkle := time.Now()
 	merkleRoot := fileInfo.MerkleRoot
-	leafHash := crypto.Keccak256Hash(chunkData)
-	computedHash := leafHash[:]
-	for level := 0; level < len(merkleProofHashes); level++ {
-		siblingHash := merkleProofHashes[level]
-		levelIndex := chunkIndex.Uint64() >> uint(level)
-		var combined []byte
-		if levelIndex%2 == 0 {
-			combined = append(computedHash, siblingHash[:]...)
-		} else {
-			combined = append(siblingHash[:], computedHash...)
-		}
-		computedHash = crypto.Keccak256(combined)
-	}
-	if !bytes.Equal(computedHash, merkleRoot[:]) {
-		logger.Error("INVALID Merkle Proof for file %s, chunk %d. Computed: %x, Expected: %x", fileKeyStr, chunkIndexInt, computedHash, merkleRoot)
-		return nil, fmt.Errorf("merkle proof không hợp lệ cho chunk %d", chunkIndexInt)
-	}
-	fileTimeLogger.Info("%s Xác thực Merkle Proof (OK): %v", logPrefix, time.Since(startVerifyMerkle))
-	startSendChunk := time.Now()
+// BỎ QUA MERKLE VERIFY Ở GO ĐỂ TĂNG TỐC ĐỘ. RUST SERVER SẼ ĐẢM NHẬN VIỆC NÀY.
+	// fileTimeLogger.Info("%s Xác thực Merkle Proof (OK): %v", logPrefix, time.Since(startVerifyMerkle))
+	// startSendChunk := time.Now()
 	// --- THAY ĐỔI: Lấy Progress từ sync.Map ---
 	var progress *file_model.FileUploadProgress
 	val, found = h.uploadProgress.Load(fileKeyStr)
 	if !found {
 		newProgress := &file_model.FileUploadProgress{
 			TotalChunks: fileInfo.TotalChunks,
+			StartTime:   time.Now(),
 		}
 		actualVal, loaded := h.uploadProgress.LoadOrStore(fileKeyStr, newProgress)
 		if loaded {
@@ -327,56 +268,75 @@ func (h *FileHandlerNoReceipt) HandleUploadChunk(
 		progress = val.(*file_model.FileUploadProgress)
 	}
 
-	var conn quic.Connection
 	isServer1 := chunkIndexInt%2 == 0
 	poolIndex := (chunkIndexInt / 2) % CONNECTION_POOL_SIZE
-	conn, err = h.getAndRenewConn(isServer1, poolIndex, fileKeyStr, chunkIndexInt) // Truyền log ID
-	if err != nil {
-		return nil, fmt.Errorf("không thể lấy/tạo kết nối cho chunk %d: %v", chunkIndexInt, err)
+
+	// THÊM: Băm chunkIndex vào 1 trong 50 stream để cho phép gửi 50 chunk song song qua QUIC
+	streamIndex := chunkIndexInt % 50
+	streamKey := fmt.Sprintf("%s_%v_%d", fileKeyStr, isServer1, streamIndex)
+
+	var streamCtx *quic_network.StreamContext
+	valStream, foundStream := h.streamPool.Load(streamKey)
+	if !foundStream {
+		conn, errConn := h.getAndRenewConn(isServer1, poolIndex, fileKeyStr, chunkIndexInt)
+		if errConn != nil {
+			return nil, fmt.Errorf("không thể lấy/tạo kết nối cho chunk %d: %v", chunkIndexInt, errConn)
+		}
+		stream, errStream := conn.OpenStreamSync(context.Background())
+		if errStream != nil {
+			return nil, fmt.Errorf("không thể mở stream: %v", errStream)
+		}
+		newStreamCtx := &quic_network.StreamContext{Stream: stream}
+		actualVal, loaded := h.streamPool.LoadOrStore(streamKey, newStreamCtx)
+		if loaded {
+			stream.Close()
+			streamCtx = actualVal.(*quic_network.StreamContext)
+		} else {
+			streamCtx = newStreamCtx
+		}
+	} else {
+		streamCtx = valStream.(*quic_network.StreamContext)
 	}
-	err = h.sendChunk(conn, isServer1, poolIndex, fileKeyStr, chunkIndexInt, chunkData, fileInfo.Signature, merkleProofHashes, merkleRoot)
+
+	status, err := h.sendChunk(streamCtx, isServer1, poolIndex, fileKeyStr, chunkIndexInt, chunkData, fileInfo.Signature, merkleProofHashes, merkleRoot)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send chunk %d: %v", chunkIndexInt, err)
 	}
-	durationSendChunk := time.Since(startSendChunk)
-	fileTimeLogger.Info("%s Gửi chunk (sendChunk): %v", logPrefix, durationSendChunk)
-	startUpdateCounter := time.Now()
-	// --- BƯỚC 2: Cập nhật bộ đếm ---
-	var isComplete bool
-	newUploadedCount := progress.UploadedChunks.Add(1)
-	uploadedBigInt := new(big.Int).SetUint64(newUploadedCount)
-	isComplete = (uploadedBigInt.Cmp(progress.TotalChunks) >= 0)
-	if isComplete {
-		job := file_model.ConfirmationJob{
-			FileKey: fileKey,
-			Tx:      tx,
-		}
-		h.confirmationChannel <- job
 
+	if status == "COMPLETED" {
+		completedCount := progress.CompletedServers.Add(1)
+
+		threshold := uint32(2)
+		if progress.TotalChunks.Cmp(big.NewInt(1)) == 0 {
+			threshold = 1
+		}
+
+		if completedCount >= threshold {
+			// Dọn dẹp cache RAM ngay lập tức ở Go Client,
+			// phần Confirm giao dịch giờ đã do Server Rust đảm nhiệm!
+			h.uploadProgress.Delete(fileKeyStr)
+			h.fileInfoCache.Delete(fileKeyStr)
+			logger.Info("✅ Nhận đủ %d COMPLETED confirm từ Rust Server. Đã xóa cache cho file %s!", threshold, fileKeyStr)
+			// Cleanup streams
+			for i := 0; i < 50; i++ {
+				key1 := fmt.Sprintf("%s_true_%d", fileKeyStr, i)
+				if sCtx, ok := h.streamPool.Load(key1); ok {
+					sCtx.(*quic_network.StreamContext).Stream.Close()
+					h.streamPool.Delete(key1)
+				}
+				key2 := fmt.Sprintf("%s_false_%d", fileKeyStr, i)
+				if sCtx, ok := h.streamPool.Load(key2); ok {
+					sCtx.(*quic_network.StreamContext).Stream.Close()
+					h.streamPool.Delete(key2)
+				}
+			}
+		}
 	}
-	// logger.Info("✅ Hoàn thành upload chunk %d", chunkIndexInt)
-	durationUpdateCounter := time.Since(startUpdateCounter)
-	fileTimeLogger.Info("%s Cập nhật counter và kiểm tra hoàn thành: %v, count %d", logPrefix, durationUpdateCounter, uploadedBigInt)
-	// logger.Warn("Uploaded chunk %d / %d for file %s", uploadedCount, progress.progress.TotalChunks, fileKeyStr)
 	return nil, nil
 }
 
-func (h *FileHandlerNoReceipt) startConfirmationWorker() {
-	for job := range h.confirmationChannel {
-		err := h.sendConfirmationTransaction(job)
-		if err != nil {
-			logger.Error("Worker: Failed to send confirmation for file %s: %v", hex.EncodeToString(job.FileKey[:]), err)
-		} else {
-			logger.Info("Worker: Successfully sent confirmation transaction for file %s.", hex.EncodeToString(job.FileKey[:]))
-		}
-		fileKeyStr := hex.EncodeToString(job.FileKey[:])
-		h.uploadProgress.Delete(fileKeyStr)
-		h.fileInfoCache.Delete(fileKeyStr)
-	}
-}
-
 func (h *FileHandlerNoReceipt) sendChunk(
-	initialConn quic.Connection,
+	streamCtx *quic_network.StreamContext,
 	isServer1 bool,
 	poolIndex int,
 	fileKey string,
@@ -385,30 +345,37 @@ func (h *FileHandlerNoReceipt) sendChunk(
 	signature string,
 	merkleProofHashes [][32]byte,
 	merkleRoot [32]byte,
-) error {
-	currentConn := initialConn
+) (string, error) {
 	var lastErr error
+	var status string
 	for i := 0; i < MAX_SEND_RETRIES; i++ {
-		lastErr = quic_network.SendChunkToRustServerQuic(currentConn, fileKey, chunkIndex, chunkData, signature, merkleProofHashes, merkleRoot)
+		status, lastErr = quic_network.SendChunkToRustServerQuic(streamCtx, fileKey, chunkIndex, chunkData, signature, merkleProofHashes, merkleRoot)
 		if lastErr == nil {
-			return nil
+			return status, nil
 		}
 		if errors.Is(lastErr, context.DeadlineExceeded) || strings.Contains(lastErr.Error(), "deadline exceeded") {
 			logger.Warn("[file: %s, chunk: %d] Stream timeout, sẽ thử stream mới...", fileKey, chunkIndex)
-			continue // vòng lặp sẽ mở stream mới trên cùng connection
+			// Không continue ngay, tiếp tục xuống dưới để renew kết nối và stream
 		} else {
 			logger.Error("[file: %s, chunk: %d] Lỗi gửi chunk (lần thử %d/%d): %v. Đang lấy kết nối mới...", fileKey, chunkIndex, i+1, MAX_SEND_RETRIES, lastErr)
 		}
-		
+
 		newConn, reconErr := h.getAndRenewConn(isServer1, poolIndex, fileKey, chunkIndex)
-		if reconErr != nil {
-			time.Sleep(100 * time.Millisecond)
-		} else {
-			currentConn = newConn
+		if reconErr == nil {
+			newStream, errStream := newConn.OpenStreamSync(context.Background())
+			if errStream == nil {
+				streamCtx.Mu.Lock()
+				if streamCtx.Stream != nil {
+					streamCtx.Stream.Close()
+				}
+				streamCtx.Stream = newStream
+				streamCtx.Mu.Unlock()
+			}
 		}
+		time.Sleep(100 * time.Millisecond)
 	}
 	h.isInitialized = false
-	return fmt.Errorf("❌❌ [file: %s, chunk: %d] không thể gửi chunk sau %d lần thử: %v",
+	return "", fmt.Errorf("❌❌ [file: %s, chunk: %d] không thể gửi chunk sau %d lần thử: %v",
 		fileKey, chunkIndex, MAX_SEND_RETRIES, lastErr)
 }
 
@@ -457,15 +424,6 @@ func (h *FileHandlerNoReceipt) getAndRenewConn(isServer1 bool, poolIndex int, fi
 
 	pool[poolIndex] = newConn
 	return newConn, nil
-}
-
-func (h *FileHandlerNoReceipt) sendConfirmationTransaction(job file_model.ConfirmationJob) error {
-	receipt, err := h.comm.SendConfirmation(job.FileKey, job.Tx)
-	if err != nil {
-		return fmt.Errorf("failed to create confirmation transaction: %v", err)
-	}
-	logger.Error("Receipt: %v", receipt)
-	return nil
 }
 
 func (h *FileHandlerNoReceipt) waitForMemoryAvailability() error {

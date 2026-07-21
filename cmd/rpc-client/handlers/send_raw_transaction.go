@@ -15,9 +15,12 @@ import (
 	robothandler "github.com/meta-node-blockchain/meta-node/pkg/robot_handler"
 
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
+	pb "github.com/meta-node-blockchain/meta-node/pkg/proto"
 	"github.com/meta-node-blockchain/meta-node/pkg/rpc_client"
+	"github.com/meta-node-blockchain/meta-node/pkg/transaction"
 	mt_types "github.com/meta-node-blockchain/meta-node/types"
 	"github.com/tidwall/gjson"
+	"google.golang.org/protobuf/proto"
 )
 
 func HandleSendRawTransaction(appCtx *app.Context, req models.JSONRPCRequestRaw) rpc_client.JSONRPCResponse {
@@ -254,6 +257,7 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 		// }
 		fileAbi, _ := file_handler.GetFileAbi()
 		name, _ := fileAbi.ParseMethodName(tx)
+		
 		if !(tx.ToAddress() == file_handler.PredictContractAddress(ethCommon.HexToAddress(appCtx.ClientTcp.GetClientContext().Config.OwnerFileStorageAddress)) && name == "uploadChunk") {
 			rs := appCtx.ClientRpc.SendRawTransactionBinary(bTx, releaseTx, decodedTxBytes, releaseDecodedOnce, nil)
 			releaseDecodedOnce()
@@ -300,4 +304,45 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 		}
 		return utils.MakeInternalError(id, errMsg)
 	}
+}
+
+func ProcessSendRawTransactionWithDeviceKey(appCtx *app.Context, rawTransactionHex string, id interface{}) (bool, string, error) {
+	decodedTxBytes, releaseDecoded, err := utils.DecodeHexPooled(rawTransactionHex)
+	if err != nil {
+		return false, "", fmt.Errorf("Invalid raw transaction hex data")
+	}
+	defer func() {
+		if releaseDecoded != nil {
+			releaseDecoded()
+		}
+	}()
+
+	txD := &pb.TransactionWithDeviceKey{}
+	err = proto.Unmarshal(decodedTxBytes, txD)
+	if err != nil {
+		return false, "", fmt.Errorf("Error Unmarshal input: %v", err)
+	}
+
+	txM := &transaction.Transaction{}
+	txM.FromProto(txD.Transaction)
+
+	fileAbi, _ := file_handler.GetFileAbi()
+	name, _ := fileAbi.ParseMethodName(txM)
+	
+	if txM.ToAddress() == file_handler.PredictContractAddress(ethCommon.HexToAddress(appCtx.ClientTcp.GetClientContext().Config.OwnerFileStorageAddress)) && name == "uploadChunk" {
+		fileHandler, err := file_handler.GetFileHandlerTCP(appCtx.ClientTcp, appCtx.TcpCfg)
+		if err != nil {
+			return true, "", fmt.Errorf("Failed to build transaction: " + err.Error())
+		}
+		isPrevent, err := fileHandler.HandleFileTransactionNoReceipt(context.Background(), txM)
+		if err != nil {
+			return true, "", fmt.Errorf("Failed to build transaction: " + err.Error())
+		}
+		if isPrevent {
+			return true, txM.Hash().Hex(), nil
+		}
+		return true, "", fmt.Errorf("Failed to process transaction in fast-path")
+	}
+
+	return false, "", nil
 }
