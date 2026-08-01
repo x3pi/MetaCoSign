@@ -9,12 +9,16 @@ import (
 	"io"
 	"path/filepath"
 
+	"errors"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	"github.com/syndtr/goleveldb/leveldb"
-	"github.com/syndtr/goleveldb/leveldb/errors"
+	ldbErrors "github.com/syndtr/goleveldb/leveldb/errors"
 	"golang.org/x/crypto/scrypt"
 )
+
+var ErrKeyNotFound = errors.New("private key not found")
 
 const (
 	privateKeyDBPathEncrypted = "privatekey_db_encrypted"
@@ -103,7 +107,7 @@ func NewPrivateKeyStore(masterPassword, appPepper string) (*PrivateKeyStore, err
 	var kdfSalt []byte
 	kdfSaltHex, err := db.Get([]byte(kdfSaltKey), nil)
 	if err != nil {
-		if err == errors.ErrNotFound {
+		if err == ldbErrors.ErrNotFound {
 			kdfSalt = make([]byte, kdfSaltSize)
 			if _, err := io.ReadFull(rand.Reader, kdfSalt); err != nil {
 				db.Close()
@@ -154,8 +158,8 @@ func (pks *PrivateKeyStore) SetPrivateKey(address common.Address, privateKey str
 func (pks *PrivateKeyStore) GetPrivateKey(address common.Address) (string, error) {
 	encryptedPrivateKey, err := pks.db.Get(address.Bytes(), nil)
 	if err != nil {
-		if err == errors.ErrNotFound {
-			return "", fmt.Errorf("không tìm thấy private key")
+		if err == ldbErrors.ErrNotFound {
+			return "", ErrKeyNotFound
 		}
 		return "", err
 	}

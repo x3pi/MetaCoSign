@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"github.com/ethereum/go-ethereum/rpc"
+
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -100,6 +102,11 @@ func processRegisterBlsKeyParams(appCtx *app.Context, params models.RegisterBlsK
 
 	if appCtx.PKS == nil {
 		return utils.MakeInternalError(id, "Internal server error: Private key store not available.")
+	}
+
+	as, err := appCtx.ClientRpc.GetAccountState(signerAddress, rpc.BlockNumberOrHashWithNumber(rpc.LatestBlockNumber))
+	if err == nil && len(as.PublicKeyBls()) > 0 && bytes.Equal(as.PublicKeyBls(), appCtx.ClientRpc.KeyPair.BytesPublicKey()) {
+		return utils.MakeSuccessResponse(id, "BLS private key already registered with RPC.")
 	}
 
 	err = appCtx.PKS.SetPrivateKey(signerAddress, params.BlsPrivateKey)

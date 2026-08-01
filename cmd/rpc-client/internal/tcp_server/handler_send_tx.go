@@ -1,11 +1,18 @@
 package tcp_server
 
 import (
+	"time"
+
+	"bytes"
+
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"time"
+
+	mt_common "github.com/meta-node-blockchain/meta-node/pkg/common"
+	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/store"
 
 	ethCommon "github.com/ethereum/go-ethereum/common"
 	e_types "github.com/ethereum/go-ethereum/core/types"
@@ -103,31 +110,36 @@ func (srv *RpcTcpServer) handleSendRawTransactionTCP(conn t_network.Connection, 
 		return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{Code: -32603, Message: "Failed to get sender: " + err.Error()})
 	}
 
-	exists, err := srv.AppCtx.PKS.HasPrivateKey(fromAddr)
+	var customBlsKey interface{}
+	senderPkString, err := srv.AppCtx.PKS.GetPrivateKey(fromAddr)
 	if err != nil {
-		return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{Code: -32603, Message: "error checking private key store: " + err.Error()})
+		if !errors.Is(err, store.ErrKeyNotFound) {
+			return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{Code: -32603, Message: "error checking private key store: " + err.Error()})
+		}
+	} else {
+		keyPair := bls.NewKeyPair(ethCommon.FromHex(senderPkString))
+		if !bytes.Equal(keyPair.PrivateKey().Bytes(), srv.AppCtx.ClientRpc.KeyPair.PrivateKey().Bytes()) {
+			customBlsKey = keyPair.PrivateKey()
+		}
 	}
 
-	// topUpFunc: đưa giao dịch chuyển native coin vào hàng chờ owner (tuần tự) để tránh nonce conflict
-	ownerAddr := ethCommon.HexToAddress(srv.AppCtx.Cfg.OwnerRpcAddress)
 	topUpFunc := func(toAddress ethCommon.Address) error {
 		ah, err := account_handler.GetAccountHandler(srv.AppCtx)
 		if err != nil {
 			return fmt.Errorf("get account handler error: %w", err)
 		}
-		result := ah.SendOwnerTransfer(ownerAddr, toAddress, srv.AppCtx.Cfg.ExtraAmount)
+
+		result := ah.SendHelpPayTransfer(toAddress, srv.AppCtx.Cfg.ExtraAmount)
 		return result.Err
 	}
 
-	if !exists {
+	if customBlsKey == nil {
 		bTx, tx, releaseTx, buildErr = srv.AppCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTxTCP(
 			ethTx, srv.AppCtx.TcpCfg, srv.AppCtx.Cfg, srv.AppCtx.LdbContractFreeGas, false, chainClient, topUpFunc,
 		)
 	} else {
-		senderPkString, _ := srv.AppCtx.PKS.GetPrivateKey(fromAddr)
-		keyPair := bls.NewKeyPair(ethCommon.FromHex(senderPkString))
 		bTx, tx, releaseTx, buildErr = srv.AppCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKeyTCP(
-			ethTx, srv.AppCtx.TcpCfg, srv.AppCtx.Cfg, srv.AppCtx.LdbContractFreeGas, keyPair.PrivateKey(), chainClient, topUpFunc,
+			ethTx, srv.AppCtx.TcpCfg, srv.AppCtx.Cfg, srv.AppCtx.LdbContractFreeGas, customBlsKey.(mt_common.PrivateKey), chainClient, topUpFunc,
 		)
 	}
 	txReleased := false

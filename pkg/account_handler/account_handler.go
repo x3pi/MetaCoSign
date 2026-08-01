@@ -30,20 +30,27 @@ type AccountHandlerNoReceipt struct {
 	abi     abi.ABI
 	storage *storage.BlsAccountStorage
 	appCtx  *app.Context
-	// Owner TX Queue — xử lý tuần tự các giao dịch từ ví owner (reward, transfer)
-	ownerTxQueue chan *OwnerTxRequest
+	// User TX Queues — xử lý giao dịch song song cho từng ví user (để tránh nonce conflict trên cùng 1 ví, nhưng cho phép nhiều ví chạy song song)
+	userTxQueues sync.Map // map[ethCommon.Address]chan *TransferTxRequest
+	
+	// Centralized Queue cho các yêu cầu Free Gas Top-up & Reward
+	helpPayTxQueue chan *TransferTxRequest
+	
+	// Quản lý lifecycle của các worker (mỗi ví 1 worker)
+	helpPayWorkers map[ethCommon.Address]context.CancelFunc
+	workerMu       sync.Mutex
 }
 
-// OwnerTxRequest là request gửi transaction từ ví owner
-type OwnerTxRequest struct {
+// TransferTxRequest là request gửi transaction từ bất kỳ ví nào (user hoặc admin)
+type TransferTxRequest struct {
 	FromAddress ethCommon.Address
 	ToAddress   ethCommon.Address
 	Amount      *big.Int
-	ResultCh    chan *OwnerTxResult // channel trả kết quả về caller
+	ResultCh    chan *TransferTxResult // channel trả kết quả về caller
 }
 
-// OwnerTxResult là kết quả xử lý transaction owner
-type OwnerTxResult struct {
+// TransferTxResult là kết quả xử lý transaction
+type TransferTxResult struct {
 	TxHash string
 	Err    error
 }
@@ -63,13 +70,15 @@ func GetAccountHandler(appCtx *app.Context) (*AccountHandlerNoReceipt, error) {
 		}
 
 		accountHandlerInstance = &AccountHandlerNoReceipt{
-			abi:          parsedABI,
-			storage:      storage.NewBlsAccountStorage(appCtx.LdbBlsWallet),
-			appCtx:       appCtx,
-			ownerTxQueue: make(chan *OwnerTxRequest, 1000),
+			abi:            parsedABI,
+			storage:        storage.NewBlsAccountStorage(appCtx.LdbBlsWallet),
+			appCtx:         appCtx,
+			helpPayTxQueue: make(chan *TransferTxRequest, 10000), // Queue tập trung chịu tải lớn
+			helpPayWorkers: make(map[ethCommon.Address]context.CancelFunc),
 		}
-		// Start owner TX queue worker
-		go accountHandlerInstance.processOwnerTxQueue()
+		
+		// Đồng bộ danh sách worker (ví trả hộ) từ DB
+		accountHandlerInstance.syncHelpPayWorkers()
 	})
 
 	return accountHandlerInstance, err
@@ -106,17 +115,17 @@ func (h *AccountHandlerNoReceipt) HandleAccountTransaction(
 	case "transferFrom":
 		result, err = h.handleTransferFrom(tx, method, inputData[4:])
 		return true, result, err
-	case "addContractFreeGas":
-		result, err = h.handleAddContractFreeGas(tx, method, inputData[4:])
-		return true, result, err
-	case "removeContractFreeGas":
-		result, err = h.handleRemoveContractFreeGas(tx, method, inputData[4:])
-		return true, result, err
 	case "addAuthorizedWallet":
 		result, err = h.handleAddAuthorizedWallet(tx, method, inputData[4:])
 		return true, result, err
 	case "removeAuthorizedWallet":
 		result, err = h.handleRemoveAuthorizedWallet(tx, method, inputData[4:])
+		return true, result, err
+	case "addHelpPayWallet":
+		result, err = h.handleAddHelpPayWallet(tx, method, inputData[4:])
+		return true, result, err
+	case "removeHelpPayWallet":
+		result, err = h.handleRemoveHelpPayWallet(tx, method, inputData[4:])
 		return true, result, err
 	case "addAdmin":
 		result, err = h.handleAddAdmin(tx, method, inputData[4:])
@@ -151,12 +160,12 @@ func (h *AccountHandlerNoReceipt) HandleEthCall(ctx context.Context, data []byte
 		return h.handleGetNotifications(method, data[4:])
 	case "getConfig":
 		return h.handleGetConfig(method, data[4:])
-	case "getAllContractFreeGas":
-		return h.handleGetAllContractFreeGas(method, data[4:])
 	case "getMyContracts":
 		return h.handleGetMyContracts(method, data[4:], fromAddress)
 	case "getAllAuthorizedWallets":
 		return h.handleGetAllAuthorizedWallets(method, data[4:], fromAddress)
+	case "getAllHelpPayWallets":
+		return h.handleGetAllHelpPayWallets(method, data[4:], fromAddress)
 	case "getAllAdmins":
 		return h.handleGetAllAdmins(method, data[4:], fromAddress)
 	case "getPublickeyBls":
@@ -378,9 +387,9 @@ func (h *AccountHandlerNoReceipt) handleConfirmAccountWithoutSign(
 	}
 	newTxHash := rs.Result.(string)
 
-	// Gửi reward qua owner queue (tuần tự)
+	// Gửi reward qua worker pool
 	if h.appCtx.Cfg.RewardAmount != nil && h.appCtx.Cfg.RewardAmount.Cmp(big.NewInt(0)) > 0 {
-		h.SendOwnerTransfer(ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress), ethCommon.Address(pendingTx.Address), h.appCtx.Cfg.RewardAmount)
+		h.SendHelpPayTransfer(ethCommon.Address(pendingTx.Address), h.appCtx.Cfg.RewardAmount)
 	}
 
 	if err := h.storage.MarkAccountConfirmed(accountAddress, mtTx.Hash().Bytes(), pendingTx.BlsPublicKey); err != nil {
@@ -498,9 +507,9 @@ func (h *AccountHandlerNoReceipt) handleConfirmAccount(
 	}
 	newTxHash := rs.Result.(string)
 
-	// Gửi reward qua owner queue (tuần tự)
+	// Gửi reward qua worker pool
 	if h.appCtx.Cfg.RewardAmount != nil && h.appCtx.Cfg.RewardAmount.Cmp(big.NewInt(0)) > 0 {
-		h.SendOwnerTransfer(ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress), ethCommon.Address(pendingTx.Address), h.appCtx.Cfg.RewardAmount)
+		h.SendHelpPayTransfer(ethCommon.Address(pendingTx.Address), h.appCtx.Cfg.RewardAmount)
 	}
 
 	if err := h.storage.MarkAccountConfirmed(accountAddress, mtTx.Hash().Bytes(), pendingTx.BlsPublicKey); err != nil {
@@ -563,8 +572,8 @@ func (h *AccountHandlerNoReceipt) handleTransferFrom(
 		return "", fmt.Errorf("invalid signature: signer %s does not match sender %s", signerAddress.Hex(), fromAddress.Hex())
 	}
 
-	// Gửi transfer qua owner queue (tuần tự, tránh nonce conflict)
-	result := h.SendOwnerTransfer(fromAddress, toAddress, transferAmount)
+	// Gửi transfer qua user queue (tuần tự, tránh nonce conflict)
+	result := h.SendTransfer(fromAddress, toAddress, transferAmount)
 
 	msgNotiSender := fmt.Sprintf("You transferred %s to %s", transferAmount.String(), toAddress.Hex())
 	notificationSender := &pb.Notification{
@@ -893,177 +902,6 @@ func (h *AccountHandlerNoReceipt) verifySignature(
 	return true, nil
 }
 
-// ========== CONTRACT FREE GAS HANDLERS ==========
-
-func (h *AccountHandlerNoReceipt) handleAddContractFreeGas(
-	tx mt_types.Transaction,
-	method *abi.Method,
-	inputData []byte,
-) (string, error) {
-	logger.Info("Handling addContractFreeGas for tx %s", tx.Hash().Hex())
-
-	// Unpack input data
-	args, err := method.Inputs.Unpack(inputData)
-	if err != nil {
-		return "", fmt.Errorf("failed to unpack input: %w", err)
-	}
-	contractAddress, _ := args[0].(ethCommon.Address)
-
-	// Verify sender
-	fromAddress := tx.FromAddress()
-	ownerAddress := ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress)
-
-	isOwner := fromAddress == ownerAddress
-	isAuthorized := false
-	if !isOwner {
-		var errAuth error
-		isAuthorized, errAuth = h.appCtx.LdbContractFreeGas.IsAuthorized(fromAddress)
-		if errAuth != nil {
-			return "", fmt.Errorf("failed to check authorization: %w", errAuth)
-		}
-	}
-
-	if !isOwner && !isAuthorized {
-		// Check admin list
-		isAdminInList, errAdmin := h.appCtx.LdbContractFreeGas.IsAdmin(fromAddress)
-		if errAdmin == nil && isAdminInList {
-			isAuthorized = true
-		}
-	}
-
-	if !isOwner && !isAuthorized {
-		return "", fmt.Errorf("only owner or authorized wallet can add contract free gas")
-	}
-
-	// Add contract to storage
-	if err := h.appCtx.LdbContractFreeGas.AddContract(contractAddress, fromAddress); err != nil {
-		return "", fmt.Errorf("failed to add contract: %w", err)
-	}
-
-	logger.Info("✅ Added contract %s to free gas list by %s", contractAddress.Hex(), fromAddress.Hex())
-	return tx.Hash().Hex(), nil
-}
-
-func (h *AccountHandlerNoReceipt) handleRemoveContractFreeGas(
-	tx mt_types.Transaction,
-	method *abi.Method,
-	inputData []byte,
-) (string, error) {
-	logger.Info("Handling removeContractFreeGas for tx %s", tx.Hash().Hex())
-
-	// Unpack input data
-	args, err := method.Inputs.Unpack(inputData)
-	if err != nil {
-		return "", fmt.Errorf("failed to unpack input: %w", err)
-	}
-
-	contractAddress, _ := args[0].(ethCommon.Address)
-
-	// Verify sender
-	fromAddress := tx.FromAddress()
-	ownerAddress := ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress)
-
-	contractData, err := h.appCtx.LdbContractFreeGas.GetContract(contractAddress)
-	if err != nil {
-		return "", fmt.Errorf("failed to get contract data: %w", err)
-	}
-
-	if fromAddress != ownerAddress && fromAddress != ethCommon.BytesToAddress(contractData.AddedBy) {
-		return "", fmt.Errorf("only owner or the original creator can remove this contract")
-	}
-
-	// Remove contract from storage
-	if err := h.appCtx.LdbContractFreeGas.RemoveContract(contractAddress); err != nil {
-		return "", fmt.Errorf("failed to remove contract: %w", err)
-	}
-
-	logger.Info("✅ Removed contract %s from free gas list by %s", contractAddress.Hex(), fromAddress.Hex())
-	return tx.Hash().Hex(), nil
-}
-
-func (h *AccountHandlerNoReceipt) handleGetAllContractFreeGas(
-	method *abi.Method,
-	inputData []byte,
-) (interface{}, error) {
-	logger.Info("Handling getAllContractFreeGas")
-
-	// Unpack input data
-	args, err := method.Inputs.Unpack(inputData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unpack input: %w", err)
-	}
-
-	page, _ := args[0].(*big.Int)
-	pageSize, _ := args[1].(*big.Int)
-	timestamp, _ := args[2].(*big.Int)
-	signatureBytes, _ := args[3].([]byte)
-
-	// Verify timestamp
-	if err := h.verifyTimestamp(timestamp); err != nil {
-		return nil, err
-	}
-
-	// Build message: page (32 bytes) + pageSize (32 bytes) + timestamp (32 bytes)
-	pageBytes := make([]byte, 32)
-	page.FillBytes(pageBytes)
-
-	pageSizeBytes := make([]byte, 32)
-	pageSize.FillBytes(pageSizeBytes)
-
-	timestampBytes := make([]byte, 32)
-	timestamp.FillBytes(timestampBytes)
-
-	message := make([]byte, 0, 96)
-	message = append(message, pageBytes...)
-	message = append(message, pageSizeBytes...)
-	message = append(message, timestampBytes...)
-
-	// Verify signature
-	if err := h.verifyOwnerSignature(message, signatureBytes); err != nil {
-		return nil, err
-	}
-
-	// Parse page và pageSize từ big.Int
-	pageInt := int(page.Int64())
-	pageSizeInt := int(pageSize.Int64())
-
-	// Validate pagination parameters
-	if pageInt < 0 {
-		return nil, fmt.Errorf("page must be >= 0")
-	}
-	if pageSizeInt <= 0 || pageSizeInt > 100 {
-		return nil, fmt.Errorf("pageSize must be between 1 and 100")
-	}
-
-	// Lấy contracts từ LevelDB
-	contracts, total, err := h.appCtx.LdbContractFreeGas.GetContracts(pageInt, pageSizeInt)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get contracts: %w", err)
-	}
-
-	// Calculate total pages
-	totalPages := (total + pageSizeInt - 1) / pageSizeInt
-
-	// Convert contracts to JSON-serializable format
-	contractList := make([]map[string]interface{}, 0, len(contracts))
-	for _, contract := range contracts {
-		contractList = append(contractList, map[string]interface{}{
-			"contract_address": ethCommon.BytesToAddress(contract.ContractAddress).Hex(),
-			"added_at":         contract.AddedAt,
-			"added_by":         ethCommon.BytesToAddress(contract.AddedBy).Hex(),
-		})
-	}
-
-	// Trả về kết quả
-	return map[string]interface{}{
-		"contracts":   contractList,
-		"total":       total,
-		"page":        pageInt,
-		"page_size":   pageSizeInt,
-		"total_pages": totalPages,
-	}, nil
-}
-
 func (h *AccountHandlerNoReceipt) handleGetMyContracts(
 	method *abi.Method,
 	inputData []byte,
@@ -1363,4 +1201,166 @@ func (h *AccountHandlerNoReceipt) handleGetPublickeyBls(
 	logger.Info("✅ getPublickeyBls returning public key: %s", publicKeyString)
 	// Trả về string trực tiếp (sẽ được JSON marshal thành "0x...")
 	return publicKeyString, nil
+}
+
+// ==================== HELP PAY WALLET ====================
+
+func (h *AccountHandlerNoReceipt) syncHelpPayWorkers() {
+	h.workerMu.Lock()
+	defer h.workerMu.Unlock()
+	
+	wallets, _, err := h.appCtx.LdbContractFreeGas.GetHelpPayWallets(0, 1000)
+	if err != nil {
+		logger.Error("Failed to get HelpPayWallets from DB: %v", err)
+		return
+	}
+	
+	validWallets := make(map[ethCommon.Address]bool)
+	ownerAddr := ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress)
+	foundOwner := false
+	
+	for _, w := range wallets {
+		addr := ethCommon.BytesToAddress(w.WalletAddress)
+		if addr == ownerAddr {
+			foundOwner = true
+		}
+		// Tất cả các ví trả hộ đều sử dụng chung private key với RPC node
+		validWallets[addr] = true
+	}
+
+	// Nếu ví Owner chưa có trong Database, tự động Add vào DB luôn (chạy 1 lần lúc startup)
+	if !foundOwner {
+		logger.Info("✅ Auto-adding default Owner Wallet to HelpPay DB: %s", ownerAddr.Hex())
+		_ = h.appCtx.LdbContractFreeGas.AddHelpPayWallet(ownerAddr, ownerAddr)
+		validWallets[ownerAddr] = true
+	}
+	
+	// Dừng các worker đã bị admin xóa
+	for addr, cancel := range h.helpPayWorkers {
+		if !validWallets[addr] {
+			logger.Info("Stopping worker for removed wallet: %s", addr.Hex())
+			cancel()
+			delete(h.helpPayWorkers, addr)
+		}
+	}
+	
+	// Khởi động các worker mới được thêm
+	for addr := range validWallets {
+		if _, exists := h.helpPayWorkers[addr]; !exists {
+			logger.Info("Starting worker for wallet: %s", addr.Hex())
+			ctx, cancel := context.WithCancel(context.Background())
+			h.helpPayWorkers[addr] = cancel
+			go h.helpPayWorkerLoop(ctx, addr)
+		}
+	}
+}
+
+func (h *AccountHandlerNoReceipt) helpPayWorkerLoop(ctx context.Context, wallet ethCommon.Address) {
+	for {
+		select {
+		case <-ctx.Done():
+			return // Kết thúc goroutine khi bị xóa
+		case req := <-h.helpPayTxQueue:
+			// Bị block chờ gửi xong -> "Ví đang bận"
+			// Khi gửi xong, loop quay lại -> "Ví đang rảnh", tự động giật task mới
+			res := h.SendTransfer(wallet, req.ToAddress, req.Amount)
+			req.ResultCh <- res
+		}
+	}
+}
+
+func (h *AccountHandlerNoReceipt) handleAddHelpPayWallet(
+	tx mt_types.Transaction,
+	method *abi.Method,
+	inputData []byte,
+) (string, error) {
+	args, err := method.Inputs.Unpack(inputData)
+	if err != nil {
+		return "", fmt.Errorf("failed to unpack input data: %v", err)
+	}
+	walletAddress := args[0].(ethCommon.Address)
+
+	fromAddress := tx.FromAddress()
+	// Validate permissions
+	isAdmin, err := h.appCtx.LdbContractFreeGas.IsAdmin(fromAddress)
+	if err != nil {
+		return "", fmt.Errorf("failed to check admin status: %w", err)
+	}
+
+	ownerAddr := ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress)
+	if !isAdmin && fromAddress != ownerAddr {
+		return "", fmt.Errorf("only admin or owner can add help pay wallet")
+	}
+
+	err = h.appCtx.LdbContractFreeGas.AddHelpPayWallet(walletAddress, fromAddress)
+	if err != nil {
+		return "", fmt.Errorf("failed to add help pay wallet: %w", err)
+	}
+	
+	// Cập nhật RAM Cache
+	h.syncHelpPayWorkers()
+
+	return "", nil
+}
+
+func (h *AccountHandlerNoReceipt) handleRemoveHelpPayWallet(
+	tx mt_types.Transaction,
+	method *abi.Method,
+	inputData []byte,
+) (string, error) {
+	args, err := method.Inputs.Unpack(inputData)
+	if err != nil {
+		return "", fmt.Errorf("failed to unpack input data: %v", err)
+	}
+	walletAddress := args[0].(ethCommon.Address)
+
+	fromAddress := tx.FromAddress()
+	// Validate permissions
+	isAdmin, err := h.appCtx.LdbContractFreeGas.IsAdmin(fromAddress)
+	if err != nil {
+		return "", fmt.Errorf("failed to check admin status: %w", err)
+	}
+
+	ownerAddr := ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress)
+	if !isAdmin && fromAddress != ownerAddr {
+		return "", fmt.Errorf("only admin or owner can remove help pay wallet")
+	}
+
+	err = h.appCtx.LdbContractFreeGas.RemoveHelpPayWallet(walletAddress)
+	if err != nil {
+		return "", fmt.Errorf("failed to remove help pay wallet: %w", err)
+	}
+	
+	// Cập nhật RAM Cache
+	h.syncHelpPayWorkers()
+
+	return "", nil
+}
+
+func (h *AccountHandlerNoReceipt) handleGetAllHelpPayWallets(
+	method *abi.Method,
+	inputData []byte,
+	fromAddress ethCommon.Address,
+) (interface{}, error) {
+	args := make(map[string]interface{})
+	err := method.Inputs.UnpackIntoMap(args, inputData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unpack input data: %v", err)
+	}
+
+	page := args["page"].(*big.Int).Int64()
+	pageSize := args["pageSize"].(*big.Int).Int64()
+
+	wallets, total, err := h.appCtx.LdbContractFreeGas.GetHelpPayWallets(int(page), int(pageSize))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get help pay wallets: %w", err)
+	}
+
+	return &pb.AuthorizedWalletList{
+		Wallets:    wallets,
+		Total:      int32(total),
+		Page:       int32(page),
+		PageSize:   int32(pageSize),
+		TotalPages: int32((total + int(pageSize) - 1) / int(pageSize)),
+	}, nil
 }

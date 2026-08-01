@@ -118,8 +118,7 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTxTCP(
 	}
 	// Chỉ check free gas khi tài khoản cần được top-up (balance thấp, đã có lịch sử giao dịch)
 	if !cfgCom.DisableFreeGas && ethTx.To() != nil && as.Balance().Cmp(cfgCom.GetFreeGasMinBalance()) < 0 && as.Nonce() != 0 {
-		exist, _ := ldbContractFree.HasContract(*ethTx.To())
-		if exist && topUpFunc != nil {
+		if topUpFunc != nil {
 			// Đưa vào hàng chờ owner để tránh nonce conflict
 			if err := topUpFunc(fromAddress); err != nil {
 				return nil, nil, nil, fmt.Errorf("topUpFunc failed: %v", err)
@@ -254,19 +253,7 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKeyTCP(
 	if cfg == nil {
 		return nil, nil, nil, fmt.Errorf("cfg is nil")
 	}
-	// Chỉ check free gas khi tài khoản cần được top-up (balance thấp, đã có lịch sử giao dịch)
-	// if !cfgCom.DisableFreeGas && ethTx.To() != nil && as.Balance().Cmp(cfgCom.GetFreeGasMinBalance()) < 0 && as.Nonce() != 0 {
-	// 	exist, err := ldbContractFree.HasContract(*ethTx.To())
-	// 	if err != nil {
-	// 		return nil, nil, nil, fmt.Errorf("lỗi khi kiểm tra contract free gas: %v", err)
-	// 	}
-	// 	if exist && topUpFunc != nil {
-	// 		// Đưa vào hàng chờ owner để tránh nonce conflict
-	// 		if err := topUpFunc(fromAddress); err != nil {
-	// 			return nil, nil, nil, fmt.Errorf("topUpFunc failed: %v", err)
-	// 		}
-	// 	}
-	// }
+
 	deviceKey, err := c.GetDeviceKeyTCP(as.LastHash(), chainClient)
 	if err != nil {
 		logger.Info("lỗi khi get deviceKey via TCP", err)

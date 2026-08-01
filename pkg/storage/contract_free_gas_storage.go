@@ -25,6 +25,10 @@ const (
 	PREFIX_AUTHORIZED_WALLET_DATA  = "awd:"
 	PREFIX_AUTHORIZED_WALLET_COUNT = "awc:count"
 
+	PREFIX_HELP_PAY_WALLET_INDEX = "hpw:"
+	PREFIX_HELP_PAY_WALLET_DATA  = "hpwd:"
+	PREFIX_HELP_PAY_WALLET_COUNT = "hpwc:count"
+
 	PREFIX_CONTRACT_FREE_GAS_INDEX = "cfg:"
 	PREFIX_CONTRACT_FREE_GAS_DATA  = "cfgd:"
 	PREFIX_CONTRACT_FREE_GAS_COUNT = "cfgc:count"
@@ -449,6 +453,76 @@ func (s *ContractFreeGasStorage) GetWallets(page, pageSize int) ([]*pb.Authorize
 }
 
 // ==================== ADMIN LIST ====================
+
+// ==================== HELP PAY WALLETS ====================
+
+func (s *ContractFreeGasStorage) AddHelpPayWallet(walletAddress, addedBy ethCommon.Address) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, exists, err := s.genericGetReverseIndex(PREFIX_HELP_PAY_WALLET_INDEX, walletAddress); err != nil {
+		return err
+	} else if exists {
+		return fmt.Errorf("help pay wallet %s already exists", walletAddress.Hex())
+	}
+
+	msg := &pb.AuthorizedWalletData{
+		WalletAddress: walletAddress.Bytes(),
+		AddedAt:       time.Now().Unix(),
+		AddedBy:       addedBy.Bytes(),
+	}
+	return s.genericAdd(
+		PREFIX_HELP_PAY_WALLET_DATA,
+		PREFIX_HELP_PAY_WALLET_INDEX,
+		PREFIX_HELP_PAY_WALLET_COUNT,
+		walletAddress.Hex(), msg,
+	)
+}
+
+func (s *ContractFreeGasStorage) RemoveHelpPayWallet(walletAddress ethCommon.Address) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.genericRemove(
+		PREFIX_HELP_PAY_WALLET_DATA,
+		PREFIX_HELP_PAY_WALLET_INDEX,
+		PREFIX_HELP_PAY_WALLET_COUNT,
+		walletAddress,
+		func(b []byte) (ethCommon.Address, error) {
+			d := &pb.AuthorizedWalletData{}
+			if err := proto.Unmarshal(b, d); err != nil {
+				return ethCommon.Address{}, err
+			}
+			return ethCommon.BytesToAddress(d.WalletAddress), nil
+		},
+	)
+}
+
+func (s *ContractFreeGasStorage) IsHelpPayWallet(walletAddress ethCommon.Address) (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, exists, err := s.genericGetReverseIndex(PREFIX_HELP_PAY_WALLET_INDEX, walletAddress)
+	return exists, err
+}
+
+func (s *ContractFreeGasStorage) GetHelpPayWallets(page, pageSize int) ([]*pb.AuthorizedWalletData, int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	count, err := s.genericGetCount(PREFIX_HELP_PAY_WALLET_COUNT)
+	if err != nil {
+		return nil, 0, err
+	}
+	total := int(count)
+
+	startID, endID, ok := paginateRange(page, pageSize, count)
+	if !ok {
+		return []*pb.AuthorizedWalletData{}, total, nil
+	}
+
+	items, err := genericScan(s, PREFIX_HELP_PAY_WALLET_DATA, count, startID, endID, func() *pb.AuthorizedWalletData { return &pb.AuthorizedWalletData{} })
+	return items, total, err
+}
 
 func (s *ContractFreeGasStorage) AddAdmin(adminAddress, addedBy ethCommon.Address) error {
 	s.mu.Lock()
