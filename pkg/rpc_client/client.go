@@ -509,6 +509,20 @@ func (c *ClientRPC) SendRawTransactionBinary(metaTx []byte, releaseMeta func(), 
 	}
 }
 
+// SendRawEthTransaction gửi trực tiếp raw transaction hex của người dùng lên chain qua JSON-RPC eth_sendRawTransaction
+func (c *ClientRPC) SendRawEthTransaction(rawTxHex string, id interface{}) *JSONRPCResponse {
+	if id == nil {
+		id = 1
+	}
+	request := &JSONRPCRequest{
+		Jsonrpc: "2.0",
+		Method:  "eth_sendRawTransaction",
+		Params:  []interface{}{rawTxHex},
+		Id:      id,
+	}
+	return c.SendHTTPRequest(request)
+}
+
 func (c *ClientRPC) SendCallTransaction(input hexutil.Bytes) JSONRPCResponse {
 	request := &JSONRPCRequest{
 		Jsonrpc: "2.0",

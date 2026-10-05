@@ -1,6 +1,6 @@
 {
-  "rpc_server_url": "http://192.168.1.231:10746",
-  "wss_server_url": "ws://192.168.1.231:10746/ws",
+  "rpc_server_url": "http://192.168.1.234:8747",
+  "wss_server_url": "ws://192.168.1.234:8747/ws",
   "private_key": "2b3aa0f620d2d73c046cd93eb64f2eb687a95b22e278500aa251c8c9dda1203b",
   "server_port": ":8545",
   "chain_id": 991,

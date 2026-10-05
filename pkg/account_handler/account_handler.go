@@ -16,7 +16,6 @@ import (
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/app"
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/utils"
 	"github.com/meta-node-blockchain/meta-node/pkg/account_handler/abi_account"
-	"github.com/meta-node-blockchain/meta-node/pkg/bls"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	pb "github.com/meta-node-blockchain/meta-node/pkg/proto"
 	"github.com/meta-node-blockchain/meta-node/pkg/storage"
@@ -51,8 +50,9 @@ type TransferTxRequest struct {
 
 // TransferTxResult là kết quả xử lý transaction
 type TransferTxResult struct {
-	TxHash string
-	Err    error
+	FromAddress ethCommon.Address
+	TxHash      string
+	Err         error
 }
 
 var (
@@ -351,48 +351,37 @@ func (h *AccountHandlerNoReceipt) handleConfirmAccountWithoutSign(
 	if fromAddress != accountAddress {
 		return "", fmt.Errorf("sender mismatch: expected %s, got %s", accountAddress.Hex(), fromAddress.Hex())
 	}
-	var (
-		bTx       []byte
-		mtTx      mt_types.Transaction
-		releaseTx func()
-		buildErr  error
-	)
-	exists, err := h.appCtx.PKS.HasPrivateKey(fromAddress)
-	if err != nil {
-		return "", fmt.Errorf("error checking private key store: %w", err)
-	}
-	if !exists {
-		bTx, mtTx, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTx(ethTx, h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas, false, nil)
+	newTxHash := ethTx.Hash().Hex()
+	isInterceptorTx := ethTx.To() == nil || *ethTx.To() == ethCommon.HexToAddress(h.appCtx.Cfg.ContractsInterceptor[0])
+
+	if !isInterceptorTx {
+		resp := h.appCtx.ClientRpc.SendRawEthTransaction(rawTransactionHex, 1)
+		releaseDecodedOnce()
+		if resp.Error != nil {
+			return "", fmt.Errorf("failed to send transaction: code=%d message=%s", resp.Error.Code, resp.Error.Message)
+		}
+		if resp.Result != nil {
+			if txHashStr, ok := resp.Result.(string); ok && txHashStr != "" {
+				newTxHash = txHashStr
+			}
+		}
 	} else {
-		senderPkString, _ := h.appCtx.PKS.GetPrivateKey(fromAddress)
-		keyPair := bls.NewKeyPair(ethCommon.FromHex(senderPkString))
-		bTx, mtTx, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(
-			ethTx,
-			h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas,
-			keyPair.PrivateKey(), nil,
-		)
+		releaseDecodedOnce()
 	}
-	if buildErr != nil {
-		return "", fmt.Errorf("failed to build transaction: %w", buildErr)
-	}
-	rs := h.appCtx.ClientRpc.SendRawTransactionBinary(
-		bTx,
-		releaseTx,
-		decodedTxBytes,
-		releaseDecodedOnce,
-		nil,
-	)
-	if rs.Error != nil {
-		return "", fmt.Errorf("failed to send transaction: %v", rs.Error)
-	}
-	newTxHash := rs.Result.(string)
 
 	// Gửi reward qua worker pool
 	if h.appCtx.Cfg.RewardAmount != nil && h.appCtx.Cfg.RewardAmount.Cmp(big.NewInt(0)) > 0 {
-		h.SendHelpPayTransfer(ethCommon.Address(pendingTx.Address), h.appCtx.Cfg.RewardAmount)
+		rewardResult := h.SendHelpPayTransfer(ethCommon.Address(pendingTx.Address), h.appCtx.Cfg.RewardAmount)
+		if rewardResult != nil {
+			if rewardResult.Err != nil {
+				logger.Error("❌ [ConfirmAccount] Gửi tiền thưởng/phí tới %s thất bại: %v", ethCommon.Address(pendingTx.Address).Hex(), rewardResult.Err)
+			} else if rewardResult.TxHash != "" {
+				newTxHash = rewardResult.TxHash
+			}
+		}
 	}
 
-	if err := h.storage.MarkAccountConfirmed(accountAddress, mtTx.Hash().Bytes(), pendingTx.BlsPublicKey); err != nil {
+	if err := h.storage.MarkAccountConfirmed(accountAddress, ethTx.Hash().Bytes(), pendingTx.BlsPublicKey); err != nil {
 		logger.Error("Failed to mark account as confirmed: %v", err)
 	}
 	if err := h.storage.DeletePendingTransaction(accountAddress); err != nil {
@@ -471,48 +460,37 @@ func (h *AccountHandlerNoReceipt) handleConfirmAccount(
 	if fromAddress != accountAddress {
 		return "", fmt.Errorf("sender mismatch: expected %s, got %s", accountAddress.Hex(), fromAddress.Hex())
 	}
-	var (
-		bTx       []byte
-		mtTx      mt_types.Transaction
-		releaseTx func()
-		buildErr  error
-	)
-	exists, err := h.appCtx.PKS.HasPrivateKey(fromAddress)
-	if err != nil {
-		return "", fmt.Errorf("error checking private key store: %w", err)
-	}
-	if !exists {
-		bTx, mtTx, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTx(ethTx, h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas, false, nil)
+	newTxHash := ethTx.Hash().Hex()
+	isInterceptorTx := ethTx.To() == nil || *ethTx.To() == ethCommon.HexToAddress(h.appCtx.Cfg.ContractsInterceptor[0])
+
+	if !isInterceptorTx {
+		resp := h.appCtx.ClientRpc.SendRawEthTransaction(rawTransactionHex, 1)
+		releaseDecodedOnce()
+		if resp.Error != nil {
+			return "", fmt.Errorf("failed to send transaction: code=%d message=%s", resp.Error.Code, resp.Error.Message)
+		}
+		if resp.Result != nil {
+			if txHashStr, ok := resp.Result.(string); ok && txHashStr != "" {
+				newTxHash = txHashStr
+			}
+		}
 	} else {
-		senderPkString, _ := h.appCtx.PKS.GetPrivateKey(fromAddress)
-		keyPair := bls.NewKeyPair(ethCommon.FromHex(senderPkString))
-		bTx, mtTx, releaseTx, buildErr = h.appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(
-			ethTx,
-			h.appCtx.TcpCfg, h.appCtx.Cfg, h.appCtx.LdbContractFreeGas,
-			keyPair.PrivateKey(), nil,
-		)
+		releaseDecodedOnce()
 	}
-	if buildErr != nil {
-		return "", fmt.Errorf("failed to build transaction: %w", buildErr)
-	}
-	rs := h.appCtx.ClientRpc.SendRawTransactionBinary(
-		bTx,
-		releaseTx,
-		decodedTxBytes,
-		releaseDecodedOnce,
-		nil,
-	)
-	if rs.Error != nil {
-		return "", fmt.Errorf("failed to send transaction: %v", rs.Error)
-	}
-	newTxHash := rs.Result.(string)
 
 	// Gửi reward qua worker pool
 	if h.appCtx.Cfg.RewardAmount != nil && h.appCtx.Cfg.RewardAmount.Cmp(big.NewInt(0)) > 0 {
-		h.SendHelpPayTransfer(ethCommon.Address(pendingTx.Address), h.appCtx.Cfg.RewardAmount)
+		rewardResult := h.SendHelpPayTransfer(ethCommon.Address(pendingTx.Address), h.appCtx.Cfg.RewardAmount)
+		if rewardResult != nil {
+			if rewardResult.Err != nil {
+				logger.Error("❌ [ConfirmAccount] Gửi tiền thưởng/phí tới %s thất bại: %v", ethCommon.Address(pendingTx.Address).Hex(), rewardResult.Err)
+			} else if rewardResult.TxHash != "" {
+				newTxHash = rewardResult.TxHash
+			}
+		}
 	}
 
-	if err := h.storage.MarkAccountConfirmed(accountAddress, mtTx.Hash().Bytes(), pendingTx.BlsPublicKey); err != nil {
+	if err := h.storage.MarkAccountConfirmed(accountAddress, ethTx.Hash().Bytes(), pendingTx.BlsPublicKey); err != nil {
 		logger.Error("Failed to mark account as confirmed: %v", err)
 	}
 	if err := h.storage.DeletePendingTransaction(accountAddress); err != nil {
@@ -1264,6 +1242,9 @@ func (h *AccountHandlerNoReceipt) helpPayWorkerLoop(ctx context.Context, wallet 
 			// Bị block chờ gửi xong -> "Ví đang bận"
 			// Khi gửi xong, loop quay lại -> "Ví đang rảnh", tự động giật task mới
 			res := h.SendTransfer(wallet, req.ToAddress, req.Amount)
+			if res != nil && res.Err != nil {
+				logger.Error("❌ [HelpPayWorker] Ví chuyển tiền hộ %s thực hiện chuyển %s tới %s thất bại: %v", wallet.Hex(), req.Amount.String(), req.ToAddress.Hex(), res.Err)
+			}
 			req.ResultCh <- res
 		}
 	}

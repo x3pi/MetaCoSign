@@ -1,13 +1,17 @@
 package account_handler
 
 import (
-	"encoding/hex"
+	"crypto/ecdsa"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	ethCommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
+	mt_transaction "github.com/meta-node-blockchain/meta-node/pkg/transaction"
 	utilsPkg "github.com/meta-node-blockchain/meta-node/pkg/utils"
 )
 
@@ -66,30 +70,95 @@ func (h *AccountHandlerNoReceipt) processUserTxQueue(fromAddress ethCommon.Addre
 func (h *AccountHandlerNoReceipt) executeTransfer(req *TransferTxRequest) *TransferTxResult {
 	chainConn, err := h.appCtx.ChainPool.Get()
 	if err != nil {
-		return &TransferTxResult{Err: fmt.Errorf("get chain connection error: %w", err)}
+		return &TransferTxResult{
+			FromAddress: req.FromAddress,
+			Err:         fmt.Errorf("lấy kết nối chain thất bại cho ví chuyển tiền %s: %w", req.FromAddress.Hex(), err),
+		}
 	}
 
-	metaTxData, _, releaseFunc, err := h.appCtx.ClientRpc.BuildTransferTransactionTCP(
-		req.FromAddress, req.ToAddress, req.Amount, chainConn,
-	)
-	if err != nil {
-		return &TransferTxResult{Err: fmt.Errorf("failed to build transfer transaction (From: %s): %w", req.FromAddress.Hex(), err)}
+	// 1. Lấy private key secp256k1 của FromAddress
+	var privKey *ecdsa.PrivateKey
+	if exists, _ := h.appCtx.PKS.HasPrivateKey(req.FromAddress); exists {
+		pkHex, _ := h.appCtx.PKS.GetPrivateKey(req.FromAddress)
+		privKey, err = crypto.HexToECDSA(strings.TrimPrefix(pkHex, "0x"))
+	} else if h.appCtx.Cfg.PrivateKey != "" {
+		privKey, err = crypto.HexToECDSA(strings.TrimPrefix(h.appCtx.Cfg.PrivateKey, "0x"))
+	}
+	if err != nil || privKey == nil {
+		return &TransferTxResult{
+			FromAddress: req.FromAddress,
+			Err:         fmt.Errorf("không tìm thấy private key cho ví chuyển tiền %s: %v", req.FromAddress.Hex(), err),
+		}
 	}
 
-	txBLS, err := chainConn.SendTransactionWithDeviceKey(metaTxData, 120*time.Second)
-	if releaseFunc != nil {
-		releaseFunc()
-	}
+	// 2. Lấy account state qua TCP để kiểm tra số dư và lấy nonce
+	as, err := h.appCtx.ClientRpc.GetAccountStateTCP(req.FromAddress, chainConn)
 	if err != nil {
-		return &TransferTxResult{Err: fmt.Errorf("TCP send transfer error (From: %s): %w", req.FromAddress.Hex(), err)}
+		return &TransferTxResult{
+			FromAddress: req.FromAddress,
+			Err:         fmt.Errorf("lỗi lấy account state của ví chuyển tiền %s: %w", req.FromAddress.Hex(), err),
+		}
 	}
-	txHash := "0x" + hex.EncodeToString(txBLS)
-	logger.Info("✅ Transfer sent via TCP, tx hash: %s", txHash)
+	if as.Balance().Cmp(req.Amount) < 0 {
+		return &TransferTxResult{
+			FromAddress: req.FromAddress,
+			Err:         fmt.Errorf("ví chuyển tiền %s không đủ số dư: hiện có %s, cần chuyển %s", req.FromAddress.Hex(), as.Balance().String(), req.Amount.String()),
+		}
+	}
+	nonce := as.Nonce()
+
+	// 3. Tạo và ký Ethereum transaction (ECDSA secp256k1)
+	gasLimit := uint64(21000)
+	gasPrice := big.NewInt(100000)
+	signer := types.LatestSignerForChainID(h.appCtx.ClientRpc.ChainId)
+	ethTx := types.NewTransaction(nonce, req.ToAddress, req.Amount, gasLimit, gasPrice, nil)
+	signedTx, err := types.SignTx(ethTx, signer, privKey)
+	if err != nil {
+		return &TransferTxResult{
+			FromAddress: req.FromAddress,
+			Err:         fmt.Errorf("lỗi ký giao dịch từ ví chuyển tiền %s: %w", req.FromAddress.Hex(), err),
+		}
+	}
+
+	// 4. Chuyển đổi thành MetaNode Transaction và gửi qua TCP
+	mtTx, err := mt_transaction.NewTransactionFromEth(signedTx)
+	if err != nil {
+		return &TransferTxResult{
+			FromAddress: req.FromAddress,
+			Err:         fmt.Errorf("lỗi convert eth tx sang metanode tx cho ví chuyển tiền %s: %w", req.FromAddress.Hex(), err),
+		}
+	}
+	bTransaction, err := mtTx.Marshal()
+	if err != nil {
+		return &TransferTxResult{
+			FromAddress: req.FromAddress,
+			Err:         fmt.Errorf("lỗi marshal metanode tx cho ví chuyển tiền %s: %w", req.FromAddress.Hex(), err),
+		}
+	}
+
+	err = chainConn.SendTransaction(bTransaction)
+	if err != nil {
+		return &TransferTxResult{
+			FromAddress: req.FromAddress,
+			Err:         fmt.Errorf("lỗi gửi TCP giao dịch từ ví chuyển tiền %s: %w", req.FromAddress.Hex(), err),
+		}
+	}
+
+	txHash := signedTx.Hash().Hex()
+	logger.Info("✅ Giao dịch chuyển tiền từ ví %s đến %s (số lượng %s) đã gửi qua TCP, tx hash: %s", req.FromAddress.Hex(), req.ToAddress.Hex(), req.Amount.String(), txHash)
 
 	_, err = utilsPkg.WaitForReceiptTCP(chainConn, txHash, 30*time.Second)
 	if err != nil {
-		logger.Error("Wait for transfer receipt error: %v", err)
+		logger.Error("❌ Lỗi chờ receipt cho giao dịch từ ví chuyển tiền %s (tx: %s): %v", req.FromAddress.Hex(), txHash, err)
+		return &TransferTxResult{
+			FromAddress: req.FromAddress,
+			TxHash:      txHash,
+			Err:         fmt.Errorf("lỗi chờ receipt giao dịch từ ví chuyển tiền %s (tx %s): %w", req.FromAddress.Hex(), txHash, err),
+		}
 	}
 
-	return &TransferTxResult{TxHash: txHash}
+	return &TransferTxResult{
+		FromAddress: req.FromAddress,
+		TxHash:      txHash,
+	}
 }

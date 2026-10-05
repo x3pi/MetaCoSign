@@ -1,28 +1,21 @@
 package handlers
 
 import (
-	"bytes"
-	"errors"
-
 	"context"
 	"fmt"
-	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/store"
-	mt_common "github.com/meta-node-blockchain/meta-node/pkg/common"
 
 	ethCommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/app"
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/models"
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/utils"
 	"github.com/meta-node-blockchain/meta-node/pkg/account_handler"
-	"github.com/meta-node-blockchain/meta-node/pkg/bls"
 	"github.com/meta-node-blockchain/meta-node/pkg/file_handler"
-
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	pb "github.com/meta-node-blockchain/meta-node/pkg/proto"
 	"github.com/meta-node-blockchain/meta-node/pkg/rpc_client"
 	"github.com/meta-node-blockchain/meta-node/pkg/transaction"
-	mt_types "github.com/meta-node-blockchain/meta-node/types"
 	"github.com/tidwall/gjson"
 	"google.golang.org/protobuf/proto"
 )
@@ -62,26 +55,12 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 		releaseDecodedOnce()
 		return utils.MakeInternalError(id, "Failed to derive sender from transaction "+err.Error())
 	}
-	var customBlsKey interface{}
-	senderPkString, err := appCtx.PKS.GetPrivateKey(fromAddress)
+	as, err := appCtx.ClientRpc.GetAccountState(fromAddress, rpc.BlockNumberOrHashWithNumber(rpc.LatestBlockNumber))
 	if err != nil {
-		if !errors.Is(err, store.ErrKeyNotFound) {
-			releaseDecodedOnce()
-			return utils.MakeInternalError(id, "Error checking private key store")
-		}
-	} else {
-		keyPair := bls.NewKeyPair(ethCommon.FromHex(senderPkString))
-		if !bytes.Equal(keyPair.PrivateKey().Bytes(), appCtx.ClientRpc.KeyPair.PrivateKey().Bytes()) {
-			customBlsKey = keyPair.PrivateKey()
-		}
+		releaseDecodedOnce()
+		return utils.MakeInternalError(id, "Failed to get account state: "+err.Error())
 	}
-	var (
-		bTx       []byte
-		releaseTx func()
-		buildErr  error
 
-		tx mt_types.Transaction
-	)
 	topUpFunc := func(toAddress ethCommon.Address) error {
 		ah, err := account_handler.GetAccountHandler(appCtx)
 		if err != nil {
@@ -92,24 +71,27 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 		return result.Err
 	}
 
-	if customBlsKey == nil {
-		bTx, tx, releaseTx, buildErr = appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTx(ethTx, appCtx.TcpCfg, appCtx.Cfg, appCtx.LdbContractFreeGas, false, topUpFunc)
-	} else {
-		bTx, tx, releaseTx, buildErr = appCtx.ClientRpc.BuildTransactionWithDeviceKeyFromEthTxAndBlsPrivateKey(
-			ethTx, appCtx.TcpCfg, appCtx.Cfg, appCtx.LdbContractFreeGas, customBlsKey.(mt_common.PrivateKey), topUpFunc,
-		)
-	}
-	if buildErr != nil {
-		releaseDecodedOnce()
-		if releaseTx != nil {
-			releaseTx()
+	if !appCtx.Cfg.DisableFreeGas && ethTx.To() != nil && as.Balance().Cmp(appCtx.Cfg.GetFreeGasMinBalance()) < 0 && as.Nonce() != 0 {
+		if topUpFunc != nil {
+			// Đưa vào hàng chờ owner để tránh nonce conflict
+			if err := topUpFunc(fromAddress); err != nil {
+				releaseDecodedOnce()
+				return utils.MakeInternalError(id, fmt.Sprintf("topUpFunc failed: %v", err))
+			}
 		}
-		return utils.MakeInternalError(id, "Failed to build transaction: "+buildErr.Error())
 	}
+
+	tx, err := transaction.NewTransactionFromEth(ethTx)
+	if err != nil {
+		releaseDecodedOnce()
+		return utils.MakeInternalError(id, "Failed to build transaction: "+err.Error())
+	}
+
 	if tx != nil {
 		if tx.ToAddress() == ethCommon.HexToAddress(appCtx.Cfg.ContractsInterceptor[0]) {
 			accountHandler, err := account_handler.GetAccountHandler(appCtx)
 			if err != nil {
+				releaseDecodedOnce()
 				return utils.MakeInternalError(id, "Failed to get account: "+err.Error())
 			}
 			handled, result, err := accountHandler.HandleAccountTransaction(
@@ -119,9 +101,6 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 			)
 			if handled {
 				releaseDecodedOnce()
-				if releaseTx != nil {
-					releaseTx()
-				}
 				if err != nil {
 					logger.Error("Account handler transaction error: %v", err)
 					return utils.MakeInternalError(id, "Account handler transaction error: "+err.Error())
@@ -139,76 +118,20 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 					Id:      id,
 				}
 			} else if !handled && err == nil {
-				rs := appCtx.ClientRpc.SendRawTransactionBinary(bTx, releaseTx, decodedTxBytes, releaseDecodedOnce, nil)
+				rs := *appCtx.ClientRpc.SendRawEthTransaction(rawTransactionHex, id)
 				releaseDecodedOnce()
-				rs.Id = id
 				return rs
 			}
+			releaseDecodedOnce()
 			return utils.MakeInternalError(id, "method notfound in abi account")
 
 		}
-		// if tx.ToAddress() == ethCommon.HexToAddress(appCtx.Cfg.ContractsInterceptor[1]) {
-		// 	robotHandler, err := robothandler.GetRobotHandler(appCtx)
-		// 	if err != nil {
-		// 		logger.Error("❌ [sendRawTransaction] Failed to get robot handler: %v", err)
-		// 		return utils.MakeInternalError(id, "Failed to get robot handler: "+err.Error())
-		// 	}
-		// 	handled, result, err := robotHandler.HandleRobotTransaction(
-		// 		context.Background(),
-		// 		tx,
-		// 		rawTransactionHex,
-		// 	)
-		// 	// Transaction đã được lưu trong robot_handler.handleDispatchImmediate
-		// 	if handled {
-		// 		releaseDecodedOnce()
-		// 		if releaseTx != nil {
-		// 			releaseTx()
-		// 		}
-		// 		if err != nil {
-		// 			logger.Error("❌ [sendRawTransaction] Robot handler transaction error: %v", err)
-		// 			return utils.MakeInternalError(id, "Account handler transaction error: "+err.Error())
-		// 		}
-		// 		// Luôn trả về transaction hash (string) để viem có thể parse được
-		// 		// ĐẢM BẢO KHÔNG BAO GIỜ NULL
-		// 		txHash := tx.Hash().Hex()
-		// 		var finalResult string
-		// 		if result != nil {
-		// 			if txHashStr, ok := result.(string); ok && txHashStr != "" {
-		// 				finalResult = txHashStr
-		// 			}
-		// 		} else {
-		// 			finalResult = txHash
-		// 		}
-		// 		response := rpc_client.JSONRPCResponse{
-		// 			Jsonrpc: "2.0",
-		// 			Result:  finalResult,
-		// 			Id:      id,
-		// 		}
-		// 		return response
-		// 	} else if !handled && err == nil {
-		// 		rs := appCtx.ClientRpc.SendRawTransactionBinary(bTx, releaseTx, decodedTxBytes, releaseDecodedOnce, nil)
-		// 		releaseDecodedOnce()
-		// 		if rs.Error != nil && tx.ToAddress() != (ethCommon.Address{}) {
-		// 			appCtx.ErrorDecoder.DecodeError(
-		// 				context.Background(),
-		// 				&rs,
-		// 				tx.ToAddress().Hex(),
-		// 				0,
-		// 			)
-		// 		}
-		// 		rs.Id = id
-		// 		if rs.Error != nil {
-		// 			logger.Info("✅✅✅ send raw rs.Error.Message : %s Code %d", rs.Error.Message, rs.Error.Code)
-		// 		}
-		// 		return rs
-		// 	}
-		// 	return utils.MakeInternalError(id, "method notfound in abi robot")
-		// }
+
 		fileAbi, _ := file_handler.GetFileAbi()
 		name, _ := fileAbi.ParseMethodName(tx)
 
 		if !(tx.ToAddress() == file_handler.PredictContractAddress(ethCommon.HexToAddress(appCtx.ClientTcp.GetClientContext().Config.OwnerFileStorageAddress)) && name == "uploadChunk") {
-			rs := appCtx.ClientRpc.SendRawTransactionBinary(bTx, releaseTx, decodedTxBytes, releaseDecodedOnce, nil)
+			rs := *appCtx.ClientRpc.SendRawEthTransaction(rawTransactionHex, id)
 			releaseDecodedOnce()
 			if rs.Error != nil && tx.ToAddress() != (ethCommon.Address{}) && appCtx.ErrorDecoder != nil {
 				appCtx.ErrorDecoder.DecodeError(
@@ -218,7 +141,6 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 					0,
 				)
 			}
-			rs.Id = id
 			if rs.Error != nil {
 				logger.Info("✅✅✅ rs.Error.Message : %s Data %s Code %d", rs.Error.Message, rs.Error.Data, rs.Error.Code)
 			}
@@ -226,29 +148,29 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 		} else {
 			fileHandler, err := file_handler.GetFileHandlerTCP(appCtx.ClientTcp, appCtx.TcpCfg)
 			if err != nil {
+				releaseDecodedOnce()
 				return utils.MakeInternalError(id, "Failed to build transaction: "+err.Error())
 			}
 			isPrevent, err := fileHandler.HandleFileTransactionNoReceipt(context.Background(), tx)
 			if err != nil {
+				releaseDecodedOnce()
 				return utils.MakeInternalError(id, "Failed to build transaction: "+err.Error())
 			}
 			if isPrevent {
 				releaseDecodedOnce()
-				releaseTx()
 				return rpc_client.JSONRPCResponse{
 					Jsonrpc: "2.0",
 					Result:  tx.Hash().Hex(),
 					Id:      id,
 				}
 			}
+			releaseDecodedOnce()
 			return utils.MakeInternalError(id, "Failed to build transaction: "+err.Error())
 		}
 
 	} else {
 		errMsg := "null transaction"
-		if buildErr != nil {
-			errMsg += ": " + buildErr.Error()
-		} else if err != nil {
+		if err != nil {
 			errMsg += ": " + err.Error()
 		}
 		return utils.MakeInternalError(id, errMsg)
