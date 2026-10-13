@@ -51,3 +51,5 @@ hybrid-storage-demo/storage-rust/storage_server2logs/
 cmd/rpc-client/logs/
 cmd/rpc-client/private.key
 cmd/rpc-client/certificate.pem
+cmd/rpc-client/rpc-client
+rpc-client

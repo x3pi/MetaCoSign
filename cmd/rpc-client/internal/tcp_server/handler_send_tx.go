@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	ethCommon "github.com/ethereum/go-ethereum/common"
 	e_types "github.com/ethereum/go-ethereum/core/types"
@@ -85,8 +86,6 @@ func (srv *RpcTcpServer) handleSendRawTransaction(request t_network.Request) err
 func (srv *RpcTcpServer) handleSendRawTransactionTCP(conn t_network.Connection, msgID string, rawTxBytes []byte, ethTx *e_types.Transaction, chainClient *connection_client.ConnectionClient) error {
 	// Tạo rawTxHex cho interceptor handlers (cần hex string)
 	rawTxHex := "0x" + hex.EncodeToString(rawTxBytes)
-	// Lưu original ETH tx hash trước khi build transaction
-	ethTxHash := ethTx.Hash()
 
 	// Retrieve fromAddress
 	signer := e_types.LatestSignerForChainID(srv.AppCtx.ClientRpc.ChainId)
@@ -156,7 +155,7 @@ func (srv *RpcTcpServer) handleSendRawTransactionTCP(conn t_network.Connection, 
 				resultBytes, _ := proto.Marshal(hashResp)
 				return srv.sendRpcResponse(conn, msgID, resultBytes, nil)
 			} else if !handled && err == nil {
-				return srv.sendNormalTransaction(conn, msgID, rawTxHex, ethTxHash)
+				return srv.sendNormalTCPTransaction(conn, msgID, rawTxBytes, chainClient)
 			}
 			return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{Code: -32603, Message: "Method not found in ABI account"})
 		}
@@ -186,12 +185,12 @@ func (srv *RpcTcpServer) handleSendRawTransactionTCP(conn t_network.Connection, 
 				resultBytes, _ := proto.Marshal(hashResp)
 				return srv.sendRpcResponse(conn, msgID, resultBytes, nil)
 			} else if !handled && err == nil {
-				return srv.sendNormalTransaction(conn, msgID, rawTxHex, ethTxHash)
+				return srv.sendNormalTCPTransaction(conn, msgID, rawTxBytes, chainClient)
 			}
 			return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{Code: -32603, Message: "Method not found in ABI robot"})
 		}
-		// 3. Normal Transaction
-		return srv.sendNormalTransaction(conn, msgID, rawTxHex, ethTxHash)
+		// 3. Normal Transaction (Dùng TCP pool gửi lên chain và đợi receipt)
+		return srv.sendNormalTCPTransaction(conn, msgID, rawTxBytes, chainClient)
 
 	} else {
 		return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{
@@ -201,25 +200,21 @@ func (srv *RpcTcpServer) handleSendRawTransactionTCP(conn t_network.Connection, 
 	}
 }
 
-// Helper: gửi trực tiếp transaction người dùng lên chain qua HTTP JSON-RPC eth_sendRawTransaction
-func (srv *RpcTcpServer) sendNormalTransaction(conn t_network.Connection, msgID string, rawTxHex string, ethTxHash ethCommon.Hash) error {
-	resp := srv.AppCtx.ClientRpc.SendRawEthTransaction(rawTxHex, msgID)
-	if resp.Error != nil {
+// sendNormalTCPTransaction gửi transaction người dùng lên chain qua TCP connection pool và đợi Receipt
+func (srv *RpcTcpServer) sendNormalTCPTransaction(conn t_network.Connection, msgID string, rawTxBytes []byte, chainClient *connection_client.ConnectionClient) error {
+	responseBytes, err := chainClient.SendRawTransactionAndWaitReceipt(rawTxBytes, 60*time.Second)
+	if err != nil {
+		logger.Error("SendRawTransactionAndWaitReceipt TCP error: %v", err)
 		return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{
-			Code:    int32(resp.Error.Code),
-			Message: resp.Error.Message,
-			Data:    resp.Error.Data,
+			Code:    -32603,
+			Message: "SendRawTransaction error: " + err.Error(),
 		})
 	}
-	finalHash := ethTxHash
-	if resp.Result != nil {
-		if txHashStr, ok := resp.Result.(string); ok && txHashStr != "" {
-			finalHash = ethCommon.HexToHash(txHashStr)
-		}
-	}
-	hashResp := &pb.TcpHashParam{Hash: finalHash.Bytes()}
-	resultBytes, _ := proto.Marshal(hashResp)
-	return srv.sendRpcResponse(conn, msgID, resultBytes, nil)
+
+	logger.Info("✅ TCP eth_sendRawTransaction: got RECEIPT (%d bytes)", len(responseBytes))
+	// Forward receipt cho toAddress nếu TX là chuyển tiền
+	go srv.forwardReceiptToRecipient(responseBytes)
+	return srv.sendRpcResponse(conn, msgID, responseBytes, nil)
 }
 
 // forwardReceiptToRecipient parse receipt, nếu TX là chuyển tiền (Amount > 0)

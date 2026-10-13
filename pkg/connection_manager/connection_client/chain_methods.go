@@ -32,6 +32,7 @@ const (
 	cmdDeviceKey                    = "DeviceKey"
 	cmdGetNonce                     = "GetNonce"
 	cmdNonce                        = "Nonce"
+	cmdSendRawTransaction           = "SendRawTransaction"
 )
 
 // ===================== Chain-Direct Methods =====================
@@ -202,6 +203,76 @@ func (c *ConnectionClient) SendTransactionWithDeviceKeyAndWaitReceipt(txWithDKBy
 				continue
 			default:
 				return nil, fmt.Errorf("invalid response type: %T", res)
+			}
+		case err := <-c.errorNotifyChan:
+			return nil, fmt.Errorf("connection error: %w", err)
+		case <-deadline:
+			return nil, fmt.Errorf("timeout waiting for receipt (id=%s)", id)
+		case <-c.ctx.Done():
+			return nil, fmt.Errorf("context cancelled")
+		}
+	}
+}
+
+// SendRawTransaction gửi SendRawTransaction command lên chain (fire-and-forget).
+func (c *ConnectionClient) SendRawTransaction(rawEth []byte) error {
+	if atomic.LoadInt32(&c.connected) != 1 || c.connection == nil {
+		return fmt.Errorf("not connected to cluster %s", c.key)
+	}
+
+	if err := c.messageSender.SendBytes(c.connection, cmdSendRawTransaction, rawEth); err != nil {
+		return fmt.Errorf("failed to send SendRawTransaction: %w", err)
+	}
+	return nil
+}
+
+// SendRawTransactionAndWaitReceipt gửi SendRawTransaction command lên chain
+// và đợi Receipt trực tiếp (proto Receipt bytes).
+// TransactionSuccess bị bỏ qua (không cần chờ). TransactionError → trả error.
+// Timeout → trả error.
+func (c *ConnectionClient) SendRawTransactionAndWaitReceipt(rawEth []byte, timeout time.Duration) ([]byte, error) {
+	if atomic.LoadInt32(&c.connected) != 1 || c.connection == nil {
+		return nil, fmt.Errorf("not connected to cluster %s", c.key)
+	}
+
+	id := uuid.New().String()
+
+	responseChan := make(chan interface{}, 2) // Buffer 2: có thể nhận TransactionSuccess + Receipt
+	c.pendingRequests.Store(id, responseChan)
+	defer c.pendingRequests.Delete(id)
+
+	msg := network.NewMessage(&pb.Message{
+		Header: &pb.Header{
+			Command: cmdSendRawTransaction,
+			ID:      id,
+		},
+		Body: rawEth,
+	})
+
+	if err := c.connection.SendMessage(msg); err != nil {
+		return nil, fmt.Errorf("failed to send SendRawTransaction: %w", err)
+	}
+
+	deadline := time.After(timeout)
+	for {
+		select {
+		case res := <-responseChan:
+			switch v := res.(type) {
+			case []byte:
+				// Receipt bytes (proto Receipt) — trả về ngay
+				return v, nil
+			case *TransactionErrorResponse:
+				// TransactionError from chain
+				txErr := &pb.TransactionHashWithError{}
+				if unmarshalErr := proto.Unmarshal(v.Body, txErr); unmarshalErr == nil {
+					return nil, fmt.Errorf("transaction error from chain (code=%d): %s", txErr.Code, txErr.Description)
+				}
+				return nil, fmt.Errorf("transaction error from chain: 0x%x", v.Body)
+			case *TransactionSuccessResponse:
+				// Bỏ qua TransactionSuccess — tiếp tục đợi Receipt
+				continue
+			default:
+				return nil, fmt.Errorf("invalid response type for SendRawTransaction: %T", res)
 			}
 		case err := <-c.errorNotifyChan:
 			return nil, fmt.Errorf("connection error: %w", err)
