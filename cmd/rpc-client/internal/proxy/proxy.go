@@ -28,9 +28,18 @@ func New(appCtx *app.Context) (*RpcReverseProxy, error) {
 		return nil, fmt.Errorf("invalid RPC server URL '%s': %w", cfg.RPCServerURL, err)
 	}
 
+	stripUpstreamCORS := func(resp *http.Response) error {
+		resp.Header.Del("Access-Control-Allow-Origin")
+		resp.Header.Del("Access-Control-Allow-Methods")
+		resp.Header.Del("Access-Control-Allow-Headers")
+		resp.Header.Del("Access-Control-Allow-Credentials")
+		return nil
+	}
+
 	// Create HTTP reverse proxy
 	defaultProxy := httputil.NewSingleHostReverseProxy(targetHTTPURL)
 	defaultProxy.Transport = createCustomTransport()
+	defaultProxy.ModifyResponse = stripUpstreamCORS
 
 	// Create readonly proxy if configured
 	var readonlyProxy *httputil.ReverseProxy
@@ -41,6 +50,7 @@ func New(appCtx *app.Context) (*RpcReverseProxy, error) {
 		}
 		readonlyProxy = httputil.NewSingleHostReverseProxy(readonlyTargetURL)
 		readonlyProxy.Transport = createCustomTransport()
+		readonlyProxy.ModifyResponse = stripUpstreamCORS
 	}
 
 	proxy := &RpcReverseProxy{
