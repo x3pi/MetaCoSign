@@ -33,6 +33,15 @@ const (
 	cmdGetNonce                     = "GetNonce"
 	cmdNonce                        = "Nonce"
 	cmdSendRawTransaction           = "SendRawTransaction"
+
+	// Account Gate Registration TCP commands
+	cmdGetRegistrationMessage = "GetRegistrationMessage"
+	cmdRegistrationMessage    = "RegistrationMessage"
+	cmdGetRegistrationStatus  = "GetRegistrationStatus"
+	cmdRegistrationStatus     = "RegistrationStatus"
+	cmdRegisterAccount        = "RegisterAccount"
+	cmdRegisterAccountAck     = "RegisterAccountAck"
+	cmdRegistrationResult     = "RegistrationResult"
 )
 
 // ===================== Chain-Direct Methods =====================
@@ -451,6 +460,164 @@ func (c *ConnectionClient) GetNonce(addressBytes []byte, timeout time.Duration) 
 			return 0, fmt.Errorf("timeout waiting for GetNonce (id=%s)", id)
 		case <-c.ctx.Done():
 			return 0, fmt.Errorf("context cancelled")
+		}
+	}
+}
+
+// ===================== Account Gate Registration Methods =====================
+
+// GetRegistrationMessage gửi GetRegistrationMessage command lên chain qua TCP để lấy 32-byte hash to sign.
+// Body chứa address bytes (20 bytes).
+// Chain trả về RegistrationMessage command với body = 32-byte hash.
+func (c *ConnectionClient) GetRegistrationMessage(addressBytes []byte, timeout time.Duration) ([]byte, error) {
+	if atomic.LoadInt32(&c.connected) != 1 || c.connection == nil {
+		return nil, fmt.Errorf("not connected to cluster %s", c.key)
+	}
+
+	id := uuid.New().String()
+
+	responseChan := make(chan interface{}, 1)
+	c.pendingRequests.Store(id, responseChan)
+	defer c.pendingRequests.Delete(id)
+
+	msg := network.NewMessage(&pb.Message{
+		Header: &pb.Header{
+			Command: cmdGetRegistrationMessage,
+			ID:      id,
+		},
+		Body: addressBytes,
+	})
+
+	if err := c.connection.SendMessage(msg); err != nil {
+		return nil, fmt.Errorf("failed to send GetRegistrationMessage: %w", err)
+	}
+
+	for {
+		select {
+		case res := <-responseChan:
+			if data, ok := res.([]byte); ok {
+				return data, nil
+			}
+			return nil, fmt.Errorf("invalid response type for GetRegistrationMessage: %T", res)
+		case err := <-c.errorNotifyChan:
+			return nil, fmt.Errorf("connection error: %w", err)
+		case <-time.After(timeout):
+			return nil, fmt.Errorf("timeout waiting for GetRegistrationMessage (id=%s)", id)
+		case <-c.ctx.Done():
+			return nil, fmt.Errorf("context cancelled")
+		}
+	}
+}
+
+// GetRegistrationStatus gửi GetRegistrationStatus command lên chain qua TCP để tra cứu trạng thái đăng ký.
+// Body chứa address bytes (20 bytes).
+// Chain trả về RegistrationStatus command với body = proto.Marshal(pb.RegistrationResult).
+func (c *ConnectionClient) GetRegistrationStatus(addressBytes []byte, timeout time.Duration) ([]byte, error) {
+	if atomic.LoadInt32(&c.connected) != 1 || c.connection == nil {
+		return nil, fmt.Errorf("not connected to cluster %s", c.key)
+	}
+
+	id := uuid.New().String()
+
+	responseChan := make(chan interface{}, 1)
+	c.pendingRequests.Store(id, responseChan)
+	defer c.pendingRequests.Delete(id)
+
+	msg := network.NewMessage(&pb.Message{
+		Header: &pb.Header{
+			Command: cmdGetRegistrationStatus,
+			ID:      id,
+		},
+		Body: addressBytes,
+	})
+
+	if err := c.connection.SendMessage(msg); err != nil {
+		return nil, fmt.Errorf("failed to send GetRegistrationStatus: %w", err)
+	}
+
+	for {
+		select {
+		case res := <-responseChan:
+			if data, ok := res.([]byte); ok {
+				return data, nil
+			}
+			return nil, fmt.Errorf("invalid response type for GetRegistrationStatus: %T", res)
+		case err := <-c.errorNotifyChan:
+			return nil, fmt.Errorf("connection error: %w", err)
+		case <-time.After(timeout):
+			return nil, fmt.Errorf("timeout waiting for GetRegistrationStatus (id=%s)", id)
+		case <-c.ctx.Done():
+			return nil, fmt.Errorf("context cancelled")
+		}
+	}
+}
+
+// RegisterAccount gửi RegisterAccount command lên chain qua TCP.
+// onAck được gọi khi nhận được RegisterAccountAck (thường có status PENDING hoặc CONFIRMED).
+// Trả về final result bytes, isPush (nếu nhận được push notification RegistrationResult), và error.
+func (c *ConnectionClient) RegisterAccount(reqBytes []byte, onAck func([]byte), timeout time.Duration) ([]byte, bool, error) {
+	if atomic.LoadInt32(&c.connected) != 1 || c.connection == nil {
+		return nil, false, fmt.Errorf("not connected to cluster %s", c.key)
+	}
+
+	id := uuid.New().String()
+
+	responseChan := make(chan interface{}, 4)
+	c.pendingRequests.Store(id, responseChan)
+	defer c.pendingRequests.Delete(id)
+
+	msg := network.NewMessage(&pb.Message{
+		Header: &pb.Header{
+			Command: cmdRegisterAccount,
+			ID:      id,
+		},
+		Body: reqBytes,
+	})
+
+	if err := c.connection.SendMessage(msg); err != nil {
+		return nil, false, fmt.Errorf("failed to send RegisterAccount: %w", err)
+	}
+
+	deadline := time.After(timeout)
+	for {
+		select {
+		case res := <-responseChan:
+			switch v := res.(type) {
+			case *RegisterAccountAckResponse:
+				if onAck != nil {
+					onAck(v.Body)
+				}
+				var ackRes pb.RegistrationResult
+				if err := proto.Unmarshal(v.Body, &ackRes); err == nil {
+					if ackRes.Status == "FAILED" || ackRes.Status == "REJECTED" {
+						return v.Body, false, fmt.Errorf("node registration error: %s (%s)", ackRes.Status, ackRes.Reason)
+					}
+					if ackRes.Status == "CONFIRMED" {
+						// Nếu đã CONFIRMED ngay lập tức, đợi nhẹ xem RegistrationResult push có tới không
+						select {
+						case nextRes := <-responseChan:
+							if pushRes, ok := nextRes.(*RegistrationResultResponse); ok {
+								return pushRes.Body, true, nil
+							}
+						case <-time.After(500 * time.Millisecond):
+						}
+						return v.Body, false, nil
+					}
+				}
+				// Nếu PENDING, tiếp tục đợi RegistrationResult
+			case *RegistrationResultResponse:
+				return v.Body, true, nil
+			case *TransactionErrorResponse:
+				return nil, false, fmt.Errorf("transaction error from chain: 0x%x", v.Body)
+			default:
+				return nil, false, fmt.Errorf("invalid response type for RegisterAccount: %T", res)
+			}
+		case err := <-c.errorNotifyChan:
+			return nil, false, fmt.Errorf("connection error: %w", err)
+		case <-deadline:
+			return nil, false, fmt.Errorf("timeout waiting for RegisterAccount confirmation (id=%s)", id)
+		case <-c.ctx.Done():
+			return nil, false, fmt.Errorf("context cancelled")
 		}
 	}
 }

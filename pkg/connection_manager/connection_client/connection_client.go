@@ -29,6 +29,16 @@ type TransactionSuccessResponse struct {
 	Body []byte
 }
 
+// RegisterAccountAckResponse wraps a RegisterAccountAck body.
+type RegisterAccountAckResponse struct {
+	Body []byte
+}
+
+// RegistrationResultResponse wraps a RegistrationResult body.
+type RegistrationResultResponse struct {
+	Body []byte
+}
+
 // ConnectionClient manages connection to a specific blockchain cluster
 type ConnectionClient struct {
 	key               string
@@ -234,6 +244,21 @@ func (c *ConnectionClient) dispatchMessage(req t_network.Request) {
 			logger.Error("Nonce: body too short: %d bytes", len(body))
 			return
 		}
+	case cmdRegistrationMessage, cmdRegistrationStatus:
+		id = msg.ID()
+		bodyCopy := make([]byte, len(body))
+		copy(bodyCopy, body)
+		responseData = bodyCopy
+	case cmdRegisterAccountAck:
+		id = msg.ID()
+		bodyCopy := make([]byte, len(body))
+		copy(bodyCopy, body)
+		responseData = &RegisterAccountAckResponse{Body: bodyCopy}
+	case cmdRegistrationResult:
+		id = msg.ID()
+		bodyCopy := make([]byte, len(body))
+		copy(bodyCopy, body)
+		responseData = &RegistrationResultResponse{Body: bodyCopy}
 	default:
 		logger.Debug("Received unhandled command: %s", cmd)
 		return

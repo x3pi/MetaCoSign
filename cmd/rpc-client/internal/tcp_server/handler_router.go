@@ -47,6 +47,13 @@ func (srv *RpcTcpServer) HandleRequest(request t_network.Request) error {
 		return srv.handleChainIdDirect(request)
 	case "GetAccountState":
 		return srv.handleGetAccountState(request)
+	// === Account Gate Registration ===
+	case "GetRegistrationMessage":
+		return srv.handleGetRegistrationMessage(request)
+	case "GetRegistrationStatus":
+		return srv.handleGetRegistrationStatus(request)
+	case "RegisterAccount":
+		return srv.handleRegisterAccount(request)
 	// === Default ===
 	default:
 		return srv.sendRpcResponse(request.Connection(), request.Message().ID(), nil, &pb.RpcError{
