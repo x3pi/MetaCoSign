@@ -133,7 +133,10 @@ func (srv *RpcTcpServer) handleEthCallTCP(conn t_network.Connection, msgID strin
 	lastDeviceKey := common.HexToHash("0000000000000000000000000000000000000000000000000000000000000000")
 	newDeviceKey := common.HexToHash("0000000000000000000000000000000000000000000000000000000000000000")
 	
-	chainId := srv.AppCtx.ClientTcp.GetClientContext().Config.ChainId
+	var chainId uint64
+	if srv.AppCtx.Cfg.ChainId != nil {
+		chainId = srv.AppCtx.Cfg.ChainId.Uint64()
+	}
 	tx := transaction.NewTransaction(
 		fromAddr,
 		toAddr,
@@ -153,8 +156,10 @@ func (srv *RpcTcpServer) handleEthCallTCP(conn t_network.Connection, msgID strin
 		senderPkString, _ := srv.AppCtx.PKS.GetPrivateKey(fromAddr)
 		keyPair := bls.NewKeyPair(common.FromHex(senderPkString))
 		tx.SetSign(keyPair.PrivateKey())
-	} else {
-		tx.SetSign(srv.AppCtx.ClientTcp.GetClientContext().KeyPair.PrivateKey())
+	} else if srv.keyPair != nil {
+		tx.SetSign(srv.keyPair.PrivateKey())
+	} else if srv.AppCtx.ClientRpc != nil && srv.AppCtx.ClientRpc.KeyPair != nil {
+		tx.SetSign(srv.AppCtx.ClientRpc.KeyPair.PrivateKey())
 	}
 	
 	txBytes, err := tx.Marshal()

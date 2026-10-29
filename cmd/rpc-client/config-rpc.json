@@ -1,6 +1,7 @@
 {
-  "rpc_server_url": "http://192.168.1.231:8748",
-  "wss_server_url": "ws://192.168.1.231:8748/ws",
+  "rpc_server_url": "http://192.168.1.230:8749",
+  "wss_server_url": "ws://192.168.1.230:8749/ws",
+  "chain_tcp_url": "192.168.1.230:4202",
   "private_key": "2b3aa0f620d2d73c046cd93eb64f2eb687a95b22e278500aa251c8c9dda1203b",
   "server_port": ":8545",
   "chain_id": 991,
@@ -14,6 +15,7 @@
   "ldb_contract_free_gas": "./db/ldb_contract_free_gas",
   "ldb_artifact_registry": "./db/ldb_artifact_registry",
   "ldb_robot_transaction": "./db/ldb_robot_transaction",
+  "pk_owner_rpc": "48d0959736be4999d4fcfce48423e2e0f98610663ae3ee87f879eb69f74a0746",
   "owner_rpc_address": "0x0b143e894a600114c4a3729874214e5fc5ea9cbc",
   "contracts_interceptor": [
     "0x00000000000000000000000000000000D844bb55",

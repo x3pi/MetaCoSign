@@ -116,8 +116,7 @@ func (c *ClientRPC) BuildTransactionWithDeviceKeyFromEthTxTCP(
 	if cfg == nil {
 		return nil, nil, nil, fmt.Errorf("cfg is nil")
 	}
-	// Chỉ check free gas khi tài khoản cần được top-up (balance thấp, đã có lịch sử giao dịch)
-	if !cfgCom.DisableFreeGas && ethTx.To() != nil && as.Balance().Cmp(cfgCom.GetFreeGasMinBalance()) < 0 && as.Nonce() != 0 {
+	if !cfgCom.DisableFreeGas && as.Balance().Cmp(cfgCom.GetFreeGasMinBalance()) < 0 {
 		if topUpFunc != nil {
 			// Đưa vào hàng chờ owner để tránh nonce conflict
 			if err := topUpFunc(fromAddress); err != nil {

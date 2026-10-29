@@ -11,13 +11,10 @@ import (
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/models"
 	"github.com/meta-node-blockchain/meta-node/cmd/rpc-client/utils"
 	"github.com/meta-node-blockchain/meta-node/pkg/account_handler"
-	"github.com/meta-node-blockchain/meta-node/pkg/file_handler"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
-	pb "github.com/meta-node-blockchain/meta-node/pkg/proto"
 	"github.com/meta-node-blockchain/meta-node/pkg/rpc_client"
 	"github.com/meta-node-blockchain/meta-node/pkg/transaction"
 	"github.com/tidwall/gjson"
-	"google.golang.org/protobuf/proto"
 )
 
 func HandleSendRawTransaction(appCtx *app.Context, req models.JSONRPCRequestRaw) rpc_client.JSONRPCResponse {
@@ -71,7 +68,7 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 		return result.Err
 	}
 
-	if !appCtx.Cfg.DisableFreeGas && ethTx.To() != nil && as.Balance().Cmp(appCtx.Cfg.GetFreeGasMinBalance()) < 0 && as.Nonce() != 0 {
+	if !appCtx.Cfg.DisableFreeGas && as.Balance().Cmp(appCtx.Cfg.GetFreeGasMinBalance()) < 0 {
 		if topUpFunc != nil {
 			// Đưa vào hàng chờ owner để tránh nonce conflict
 			if err := topUpFunc(fromAddress); err != nil {
@@ -88,86 +85,20 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 	}
 
 	if tx != nil {
-		if tx.ToAddress() == ethCommon.HexToAddress(appCtx.Cfg.ContractsInterceptor[0]) {
-			accountHandler, err := account_handler.GetAccountHandler(appCtx)
-			if err != nil {
-				releaseDecodedOnce()
-				return utils.MakeInternalError(id, "Failed to get account: "+err.Error())
-			}
-			handled, result, err := accountHandler.HandleAccountTransaction(
+		rs := *appCtx.ClientRpc.SendRawEthTransaction(rawTransactionHex, id)
+		releaseDecodedOnce()
+		if rs.Error != nil && tx.ToAddress() != (ethCommon.Address{}) && appCtx.ErrorDecoder != nil {
+			appCtx.ErrorDecoder.DecodeError(
 				context.Background(),
-				tx,
-				rawTransactionHex,
+				&rs,
+				tx.ToAddress().Hex(),
+				0,
 			)
-			if handled {
-				releaseDecodedOnce()
-				if err != nil {
-					logger.Error("Account handler transaction error: %v", err)
-					return utils.MakeInternalError(id, "Account handler transaction error: "+err.Error())
-				}
-				if result != nil {
-					return rpc_client.JSONRPCResponse{
-						Jsonrpc: "2.0",
-						Result:  result,
-						Id:      id,
-					}
-				}
-				return rpc_client.JSONRPCResponse{
-					Jsonrpc: "2.0",
-					Result:  tx.Hash().Hex(),
-					Id:      id,
-				}
-			} else if !handled && err == nil {
-				rs := *appCtx.ClientRpc.SendRawEthTransaction(rawTransactionHex, id)
-				releaseDecodedOnce()
-				return rs
-			}
-			releaseDecodedOnce()
-			return utils.MakeInternalError(id, "method notfound in abi account")
-
 		}
-
-		fileAbi, _ := file_handler.GetFileAbi()
-		name, _ := fileAbi.ParseMethodName(tx)
-
-		if !(tx.ToAddress() == file_handler.PredictContractAddress(ethCommon.HexToAddress(appCtx.ClientTcp.GetClientContext().Config.OwnerFileStorageAddress)) && name == "uploadChunk") {
-			rs := *appCtx.ClientRpc.SendRawEthTransaction(rawTransactionHex, id)
-			releaseDecodedOnce()
-			if rs.Error != nil && tx.ToAddress() != (ethCommon.Address{}) && appCtx.ErrorDecoder != nil {
-				appCtx.ErrorDecoder.DecodeError(
-					context.Background(),
-					&rs,
-					tx.ToAddress().Hex(),
-					0,
-				)
-			}
-			if rs.Error != nil {
-				logger.Info("✅✅✅ rs.Error.Message : %s Data %s Code %d", rs.Error.Message, rs.Error.Data, rs.Error.Code)
-			}
-			return rs
-		} else {
-			fileHandler, err := file_handler.GetFileHandlerTCP(appCtx.ClientTcp, appCtx.TcpCfg)
-			if err != nil {
-				releaseDecodedOnce()
-				return utils.MakeInternalError(id, "Failed to build transaction: "+err.Error())
-			}
-			isPrevent, err := fileHandler.HandleFileTransactionNoReceipt(context.Background(), tx)
-			if err != nil {
-				releaseDecodedOnce()
-				return utils.MakeInternalError(id, "Failed to build transaction: "+err.Error())
-			}
-			if isPrevent {
-				releaseDecodedOnce()
-				return rpc_client.JSONRPCResponse{
-					Jsonrpc: "2.0",
-					Result:  tx.Hash().Hex(),
-					Id:      id,
-				}
-			}
-			releaseDecodedOnce()
-			return utils.MakeInternalError(id, "Failed to build transaction: "+err.Error())
+		if rs.Error != nil {
+			logger.Info("✅✅✅ rs.Error.Message : %s Data %s Code %d", rs.Error.Message, rs.Error.Data, rs.Error.Code)
 		}
-
+		return rs
 	} else {
 		errMsg := "null transaction"
 		if err != nil {
@@ -178,42 +109,5 @@ func ProcessSendRawTransaction(appCtx *app.Context, rawTransactionHex string, id
 }
 
 func ProcessSendRawTransactionWithDeviceKey(appCtx *app.Context, rawTransactionHex string, id interface{}) (bool, string, error) {
-	decodedTxBytes, releaseDecoded, err := utils.DecodeHexPooled(rawTransactionHex)
-	if err != nil {
-		return false, "", fmt.Errorf("Invalid raw transaction hex data")
-	}
-	defer func() {
-		if releaseDecoded != nil {
-			releaseDecoded()
-		}
-	}()
-
-	txD := &pb.TransactionWithDeviceKey{}
-	err = proto.Unmarshal(decodedTxBytes, txD)
-	if err != nil {
-		return false, "", fmt.Errorf("Error Unmarshal input: %v", err)
-	}
-
-	txM := &transaction.Transaction{}
-	txM.FromProto(txD.Transaction)
-
-	fileAbi, _ := file_handler.GetFileAbi()
-	name, _ := fileAbi.ParseMethodName(txM)
-
-	if txM.ToAddress() == file_handler.PredictContractAddress(ethCommon.HexToAddress(appCtx.ClientTcp.GetClientContext().Config.OwnerFileStorageAddress)) && name == "uploadChunk" {
-		fileHandler, err := file_handler.GetFileHandlerTCP(appCtx.ClientTcp, appCtx.TcpCfg)
-		if err != nil {
-			return true, "", fmt.Errorf("Failed to build transaction: " + err.Error())
-		}
-		isPrevent, err := fileHandler.HandleFileTransactionNoReceipt(context.Background(), txM)
-		if err != nil {
-			return true, "", fmt.Errorf("Failed to build transaction: " + err.Error())
-		}
-		if isPrevent {
-			return true, txM.Hash().Hex(), nil
-		}
-		return true, "", fmt.Errorf("Failed to process transaction in fast-path")
-	}
-
 	return false, "", nil
 }

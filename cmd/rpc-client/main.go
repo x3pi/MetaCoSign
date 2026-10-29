@@ -31,7 +31,7 @@ func main() {
 	var tcpConfigPath string
 	flag.StringVar(&defaultLogsDir, "logs-root", "./logs", "Root directory to store rpc-client logs (YYYY/MM/DD)")
 	flag.StringVar(&configPath, "config", "config-rpc.json", "Path to the RPC configuration file")
-	flag.StringVar(&tcpConfigPath, "tcp-config", "config-client-tcp.json", "Path to the TCP client configuration file")
+	flag.StringVar(&tcpConfigPath, "tcp-config", "", "Path to the TCP client configuration file (optional)")
 	flag.Parse()
 
 	if err := setup.SetupLogging(defaultLogsDir); err != nil {

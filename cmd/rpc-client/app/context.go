@@ -84,12 +84,8 @@ func New(cfg *config.Config, tcpCfg *tcp_config.ClientConfig) (*Context, error) 
 		return nil, fmt.Errorf("failed to create RPC client: %w", err)
 	}
 	clientRpc.ChainId = cfg.ChainId
-	// 4. Create TCP client
-	clientTcp, err := client_tcp.NewClient(tcpCfg)
-	if err != nil {
-		pkStore.Close()
-		return nil, fmt.Errorf("failed to create TCP client: %w", err)
-	}
+	// 4. Create TCP client (disabled per user request)
+	var clientTcp *client_tcp.Client
 	// 5. Initialize LevelDB for BLS wallets
 	ldbBlsWallets, err := ldb_storage.NewLevelDBStorage(cfg.LdbBlsWalletsPath)
 	if err != nil {
@@ -182,10 +178,14 @@ func New(cfg *config.Config, tcpCfg *tcp_config.ClientConfig) (*Context, error) 
 	}
 
 	// 10. Initialize Chain Connection Pool (TCP)
-	if tcpCfg != nil && tcpCfg.ParentConnectionAddress != "" {
+	chainAddr := cfg.ChainTcpURL
+	if chainAddr == "" && tcpCfg != nil {
+		chainAddr = tcpCfg.ParentConnectionAddress
+	}
+	if chainAddr != "" {
 		msgSender := network.NewMessageSender("1.0.0")
 		chainPool, err := connection_manager.NewChainConnectionPool(
-			tcpCfg.ParentConnectionAddress,
+			chainAddr,
 			10, // 10 connections trong pool
 			msgSender,
 		)
@@ -193,7 +193,7 @@ func New(cfg *config.Config, tcpCfg *tcp_config.ClientConfig) (*Context, error) 
 			logger.Warn("⚠️ Failed to initialize ChainConnectionPool: %v (falling back to HTTP)", err)
 		} else {
 			ctx.ChainPool = chainPool
-			logger.Info("✅ ChainConnectionPool initialized: %d connections to %s", chainPool.ActiveCount(), tcpCfg.ParentConnectionAddress)
+			logger.Info("✅ ChainConnectionPool initialized: %d connections to %s", chainPool.ActiveCount(), chainAddr)
 		}
 	}
 

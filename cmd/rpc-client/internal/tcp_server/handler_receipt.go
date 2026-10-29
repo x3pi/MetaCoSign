@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	pkgCommon "github.com/meta-node-blockchain/meta-node/pkg/common"
+	"github.com/meta-node-blockchain/meta-node/pkg/logger"
 	"github.com/meta-node-blockchain/meta-node/pkg/network"
 	pb "github.com/meta-node-blockchain/meta-node/pkg/proto"
 	"github.com/meta-node-blockchain/meta-node/pkg/receipt"
@@ -114,30 +114,22 @@ func (srv *RpcTcpServer) handleGetNonce(request t_network.Request) error {
 		})
 	}
 
-	address := common.BytesToAddress(body)
-	logger.Info("🔄 TCP GetNonce from %s (addr=%s)", conn.RemoteAddrSafe(), address.Hex())
-
-	if srv.AppCtx == nil || srv.AppCtx.ChainPool == nil {
-		return nil
-	}
-
 	chainClient, err := srv.AppCtx.ChainPool.Get()
 	if err != nil {
-		return err
+		return fmt.Errorf("lấy kết nối ChainPool thất bại: %w", err)
 	}
 
-	nonce, err := chainClient.GetNonce(address.Bytes(), 30*time.Second)
+	nonce, err := chainClient.GetNonce(body, 10*time.Second)
 	if err != nil {
-		return err
+		return fmt.Errorf("lỗi lấy nonce qua TCP cho %s: %w", common.BytesToAddress(body).Hex(), err)
 	}
 
-	// Trả về byte luôn k cần bọc sendRpcResponse
 	bodyResp := make([]byte, 8)
 	binary.BigEndian.PutUint64(bodyResp, nonce)
-	
+
 	respMsg := network.NewMessage(&pb.Message{
 		Header: &pb.Header{
-			Command:   pkgCommon.Nonce, // Or pkgCommon.Nonce if imported
+			Command:   pkgCommon.Nonce,
 			Version:   msg.Version(),
 			ToAddress: conn.Address().Bytes(),
 			ID:        msg.ID(),
@@ -145,7 +137,7 @@ func (srv *RpcTcpServer) handleGetNonce(request t_network.Request) error {
 		Body: bodyResp,
 	})
 
-	logger.Info("✅ TCP GetNonce: %s nonce=%d", address.Hex(), nonce)
+	logger.Info("✅ TCP GetNonce: %s nonce=%d", common.BytesToAddress(body).Hex(), nonce)
 	return conn.SendMessage(respMsg)
 }
 

@@ -11,7 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
-	mt_transaction "github.com/meta-node-blockchain/meta-node/pkg/transaction"
 	utilsPkg "github.com/meta-node-blockchain/meta-node/pkg/utils"
 )
 
@@ -78,9 +77,14 @@ func (h *AccountHandlerNoReceipt) executeTransfer(req *TransferTxRequest) *Trans
 
 	// 1. Lấy private key secp256k1 của FromAddress
 	var privKey *ecdsa.PrivateKey
-	if exists, _ := h.appCtx.PKS.HasPrivateKey(req.FromAddress); exists {
+	ownerAddr := ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress)
+	if (req.FromAddress == ownerAddr || req.FromAddress == ethCommon.Address{}) && h.appCtx.Cfg.PkOwnerRpc != "" {
+		privKey, err = crypto.HexToECDSA(strings.TrimPrefix(h.appCtx.Cfg.PkOwnerRpc, "0x"))
+	} else if exists, _ := h.appCtx.PKS.HasPrivateKey(req.FromAddress); exists {
 		pkHex, _ := h.appCtx.PKS.GetPrivateKey(req.FromAddress)
 		privKey, err = crypto.HexToECDSA(strings.TrimPrefix(pkHex, "0x"))
+	} else if h.appCtx.Cfg.PkOwnerRpc != "" {
+		privKey, err = crypto.HexToECDSA(strings.TrimPrefix(h.appCtx.Cfg.PkOwnerRpc, "0x"))
 	} else if h.appCtx.Cfg.PrivateKey != "" {
 		privKey, err = crypto.HexToECDSA(strings.TrimPrefix(h.appCtx.Cfg.PrivateKey, "0x"))
 	}
@@ -89,6 +93,13 @@ func (h *AccountHandlerNoReceipt) executeTransfer(req *TransferTxRequest) *Trans
 			FromAddress: req.FromAddress,
 			Err:         fmt.Errorf("không tìm thấy private key cho ví chuyển tiền %s: %v", req.FromAddress.Hex(), err),
 		}
+	}
+
+	// Đảm bảo FromAddress khớp với địa chỉ từ private key thực tế
+	actualSender := crypto.PubkeyToAddress(privKey.PublicKey)
+	if req.FromAddress != actualSender {
+		logger.Info("ℹ️ Chuyển sender từ %s sang %s (khớp với private key)", req.FromAddress.Hex(), actualSender.Hex())
+		req.FromAddress = actualSender
 	}
 
 	// 2. Lấy account state qua TCP để kiểm tra số dư và lấy nonce
@@ -120,27 +131,20 @@ func (h *AccountHandlerNoReceipt) executeTransfer(req *TransferTxRequest) *Trans
 		}
 	}
 
-	// 4. Chuyển đổi thành MetaNode Transaction và gửi qua TCP
-	mtTx, err := mt_transaction.NewTransactionFromEth(signedTx)
+	// 4. Lấy raw Ethereum binary (EIP-2718) và gửi qua SendRawTransaction
+	rawTx, err := signedTx.MarshalBinary()
 	if err != nil {
 		return &TransferTxResult{
 			FromAddress: req.FromAddress,
-			Err:         fmt.Errorf("lỗi convert eth tx sang metanode tx cho ví chuyển tiền %s: %w", req.FromAddress.Hex(), err),
-		}
-	}
-	bTransaction, err := mtTx.Marshal()
-	if err != nil {
-		return &TransferTxResult{
-			FromAddress: req.FromAddress,
-			Err:         fmt.Errorf("lỗi marshal metanode tx cho ví chuyển tiền %s: %w", req.FromAddress.Hex(), err),
+			Err:         fmt.Errorf("lỗi marshal raw eth tx cho ví chuyển tiền %s: %w", req.FromAddress.Hex(), err),
 		}
 	}
 
-	err = chainConn.SendTransaction(bTransaction)
+	err = chainConn.SendRawTransaction(rawTx)
 	if err != nil {
 		return &TransferTxResult{
 			FromAddress: req.FromAddress,
-			Err:         fmt.Errorf("lỗi gửi TCP giao dịch từ ví chuyển tiền %s: %w", req.FromAddress.Hex(), err),
+			Err:         fmt.Errorf("lỗi gửi TCP SendRawTransaction từ ví chuyển tiền %s: %w", req.FromAddress.Hex(), err),
 		}
 	}
 

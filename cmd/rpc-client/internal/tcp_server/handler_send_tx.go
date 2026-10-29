@@ -112,7 +112,7 @@ func (srv *RpcTcpServer) handleSendRawTransactionTCP(conn t_network.Connection, 
 		return result.Err
 	}
 
-	if !srv.AppCtx.Cfg.DisableFreeGas && ethTx.To() != nil && as.Balance().Cmp(srv.AppCtx.Cfg.GetFreeGasMinBalance()) < 0 && as.Nonce() != 0 {
+	if !srv.AppCtx.Cfg.DisableFreeGas && as.Balance().Cmp(srv.AppCtx.Cfg.GetFreeGasMinBalance()) < 0 {
 		if topUpFunc != nil {
 			// Đưa vào hàng chờ owner để tránh nonce conflict
 			if err := topUpFunc(fromAddr); err != nil {
@@ -133,35 +133,8 @@ func (srv *RpcTcpServer) handleSendRawTransactionTCP(conn t_network.Connection, 
 	}
 
 	if tx != nil {
-		// 1. Account Interceptor
-		if tx.ToAddress() == ethCommon.HexToAddress(srv.AppCtx.Cfg.ContractsInterceptor[0]) {
-			accountHandler, err := account_handler.GetAccountHandler(srv.AppCtx)
-			if err != nil {
-				return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{Code: -32603, Message: "Failed to get account handler: " + err.Error()})
-			}
-			handled, result, err := accountHandler.HandleAccountTransaction(context.Background(), tx, rawTxHex)
-			if handled {
-				if err != nil {
-					logger.Error("Account handler transaction error: %v", err)
-					return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{Code: -32603, Message: "Account handler transaction error: " + err.Error()})
-				}
-				finalHash := tx.Hash()
-				if result != nil {
-					if txHashStr, ok := result.(string); ok && txHashStr != "" {
-						finalHash = ethCommon.HexToHash(txHashStr)
-					}
-				}
-				hashResp := &pb.TcpHashParam{Hash: finalHash.Bytes()}
-				resultBytes, _ := proto.Marshal(hashResp)
-				return srv.sendRpcResponse(conn, msgID, resultBytes, nil)
-			} else if !handled && err == nil {
-				return srv.sendNormalTCPTransaction(conn, msgID, rawTxBytes, chainClient)
-			}
-			return srv.sendRpcResponse(conn, msgID, nil, &pb.RpcError{Code: -32603, Message: "Method not found in ABI account"})
-		}
-
-		// 2. Robot Interceptor
-		if tx.ToAddress() == ethCommon.HexToAddress(srv.AppCtx.Cfg.ContractsInterceptor[1]) {
+		// 1. Robot Interceptor
+		if len(srv.AppCtx.Cfg.ContractsInterceptor) > 1 && tx.ToAddress() == ethCommon.HexToAddress(srv.AppCtx.Cfg.ContractsInterceptor[1]) {
 			robotHandler, err := robothandler.GetRobotHandler(srv.AppCtx)
 			if err != nil {
 				logger.Error("❌ [sendRawTransaction] Failed to get robot handler: %v", err)

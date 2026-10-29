@@ -30,8 +30,10 @@ type Config struct {
 	LdbArtifactRegistryPath string   `json:"ldb_artifact_registry"`
 	LdbRobotTransactionPath string   `json:"ldb_robot_transaction"` // Path cho transaction storage
 	OwnerRpcAddress         string   `json:"owner_rpc_address"`
+	PkOwnerRpc              string   `json:"pk_owner_rpc"`          // Private key của owner_rpc_address để ký giao dịch chuyển tiền tự động
 	ContractsInterceptor    []string `json:"contracts_interceptor"` // Địa chỉ contract dùng để intercept
 	RewardAmount            *big.Int `json:"reward_amount"`         // Số lượng reward cho mỗi giao dịch được intercept
+	ChainTcpURL             string   `json:"chain_tcp_url"`         // Địa chỉ TCP của chain node (e.g. 192.168.1.231:4201)
 	TcpServerPort           string   `json:"tcp_server_port"`       // Port cho TCP RPC server (ví dụ: ":9545")
 	ExtraAmount             *big.Int `json:"extra_account"`         // Số tiền top-up cho account khi balance thấp
 	FreeGasMinBalance       *big.Int `json:"free_gas_min_balance"`  // Ngưỡng balance (wei) dưới đây sẽ top-up. Mặc định: 10^16
@@ -59,14 +61,13 @@ func Load(path string, tcpCfgPath string) (*Config, *tcp_config.ClientConfig, er
 		return nil, nil, fmt.Errorf("failed to read config file %s: %w", path, err)
 	}
 
-	tcpCfg, err := tcp_config.LoadConfig(tcpCfgPath)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to load tcp config from %s: %w", tcpCfgPath, err)
-	}
-
-	clientTcpCfg, ok := tcpCfg.(*tcp_config.ClientConfig)
-	if !ok {
-		return nil, nil, fmt.Errorf("invalid config type loaded from %s", tcpCfgPath)
+	var clientTcpCfg *tcp_config.ClientConfig
+	if tcpCfgPath != "" {
+		if tcpCfg, err := tcp_config.LoadConfig(tcpCfgPath); err == nil {
+			if parsed, ok := tcpCfg.(*tcp_config.ClientConfig); ok {
+				clientTcpCfg = parsed
+			}
+		}
 	}
 
 	var rawConfig map[string]interface{}
