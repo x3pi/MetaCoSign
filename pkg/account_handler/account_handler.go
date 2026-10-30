@@ -1202,18 +1202,34 @@ func (h *AccountHandlerNoReceipt) syncHelpPayWorkers() {
 		if addr == ownerAddr {
 			foundOwner = true
 		}
-		// Tất cả các ví trả hộ đều sử dụng chung private key với RPC node
-		validWallets[addr] = true
+		// Mỗi ví trả hộ phải có private key riêng trong PKS hoặc pk_owner_rpc (với ví owner)
+		hasKey := false
+		if h.appCtx.PKS != nil {
+			if exists, _ := h.appCtx.PKS.HasPrivateKey(addr); exists {
+				hasKey = true
+			}
+		}
+		if addr == ownerAddr && h.appCtx.Cfg.PkOwnerRpc != "" {
+			hasKey = true
+		}
+		if hasKey {
+			validWallets[addr] = true
+		} else {
+			logger.Warn("⚠️ Bỏ qua ví trả hộ %s do không tìm thấy private key riêng trong PKS", addr.Hex())
+		}
 	}
 
-	// Nếu ví Owner chưa có trong Database, tự động Add vào DB luôn (chạy 1 lần lúc startup)
-	if !foundOwner {
+	// Nếu ví Owner có pk_owner_rpc và chưa có trong Database, tự động Add vào DB luôn (chạy 1 lần lúc startup)
+	if !foundOwner && h.appCtx.Cfg.PkOwnerRpc != "" && ownerAddr != (ethCommon.Address{}) {
 		logger.Info("✅ Auto-adding default Owner Wallet to HelpPay DB: %s", ownerAddr.Hex())
 		_ = h.appCtx.LdbContractFreeGas.AddHelpPayWallet(ownerAddr, ownerAddr)
+		if h.appCtx.PKS != nil {
+			_ = h.appCtx.PKS.SetPrivateKey(ownerAddr, strings.TrimPrefix(h.appCtx.Cfg.PkOwnerRpc, "0x"))
+		}
 		validWallets[ownerAddr] = true
 	}
 	
-	// Dừng các worker đã bị admin xóa
+	// Dừng các worker đã bị admin xóa hoặc không còn private key
 	for addr, cancel := range h.helpPayWorkers {
 		if !validWallets[addr] {
 			logger.Info("Stopping worker for removed wallet: %s", addr.Hex())
@@ -1259,7 +1275,29 @@ func (h *AccountHandlerNoReceipt) handleAddHelpPayWallet(
 	if err != nil {
 		return "", fmt.Errorf("failed to unpack input data: %v", err)
 	}
-	walletAddress := args[0].(ethCommon.Address)
+
+	if len(args) == 0 {
+		return "", fmt.Errorf("missing input argument for addHelpPayWallet")
+	}
+
+	var walletAddress ethCommon.Address
+	var cleanKey string
+
+	switch v := args[0].(type) {
+	case string:
+		cleanKey = strings.TrimSpace(v)
+		cleanKey = strings.TrimPrefix(cleanKey, "0x")
+		cleanKey = strings.TrimPrefix(cleanKey, "0X")
+		privKey, err := crypto.HexToECDSA(cleanKey)
+		if err != nil {
+			return "", fmt.Errorf("invalid ECDSA private key: %w", err)
+		}
+		walletAddress = crypto.PubkeyToAddress(privKey.PublicKey)
+	case ethCommon.Address:
+		walletAddress = v
+	default:
+		return "", fmt.Errorf("unsupported input type for addHelpPayWallet: %T", args[0])
+	}
 
 	fromAddress := tx.FromAddress()
 	// Validate permissions
@@ -1273,15 +1311,23 @@ func (h *AccountHandlerNoReceipt) handleAddHelpPayWallet(
 		return "", fmt.Errorf("only admin or owner can add help pay wallet")
 	}
 
+	// Lưu private key riêng vào PKS (được mã hóa bởi master password & pepper)
+	if cleanKey != "" && h.appCtx.PKS != nil {
+		if err := h.appCtx.PKS.SetPrivateKey(walletAddress, cleanKey); err != nil {
+			return "", fmt.Errorf("failed to store private key in PKS: %w", err)
+		}
+		logger.Info("🔐 Đã lưu private key riêng cho ví trả hộ %s vào PKS", walletAddress.Hex())
+	}
+
 	err = h.appCtx.LdbContractFreeGas.AddHelpPayWallet(walletAddress, fromAddress)
 	if err != nil {
 		return "", fmt.Errorf("failed to add help pay wallet: %w", err)
 	}
 	
-	// Cập nhật RAM Cache
+	// Cập nhật RAM Cache & khởi động worker mới
 	h.syncHelpPayWorkers()
 
-	return "", nil
+	return walletAddress.Hex(), nil
 }
 
 func (h *AccountHandlerNoReceipt) handleRemoveHelpPayWallet(
@@ -1293,7 +1339,13 @@ func (h *AccountHandlerNoReceipt) handleRemoveHelpPayWallet(
 	if err != nil {
 		return "", fmt.Errorf("failed to unpack input data: %v", err)
 	}
-	walletAddress := args[0].(ethCommon.Address)
+	if len(args) == 0 {
+		return "", fmt.Errorf("missing input argument for removeHelpPayWallet")
+	}
+	walletAddress, ok := args[0].(ethCommon.Address)
+	if !ok {
+		return "", fmt.Errorf("invalid input type for removeHelpPayWallet, expected address")
+	}
 
 	fromAddress := tx.FromAddress()
 	// Validate permissions
@@ -1310,6 +1362,12 @@ func (h *AccountHandlerNoReceipt) handleRemoveHelpPayWallet(
 	err = h.appCtx.LdbContractFreeGas.RemoveHelpPayWallet(walletAddress)
 	if err != nil {
 		return "", fmt.Errorf("failed to remove help pay wallet: %w", err)
+	}
+
+	// Xóa private key khỏi PKS nếu có
+	if h.appCtx.PKS != nil {
+		_ = h.appCtx.PKS.DeletePrivateKey(walletAddress)
+		logger.Info("🗑️ Đã xóa private key của ví trả hộ %s khỏi PKS", walletAddress.Hex())
 	}
 	
 	// Cập nhật RAM Cache

@@ -185,9 +185,9 @@ const AccountABI = `[
     {
         "inputs": [
             {
-                "internalType": "address",
-                "name": "walletAddress",
-                "type": "address"
+                "internalType": "string",
+                "name": "privateKey",
+                "type": "string"
             }
         ],
         "name": "addHelpPayWallet",

@@ -75,7 +75,7 @@ func (h *AccountHandlerNoReceipt) executeTransfer(req *TransferTxRequest) *Trans
 		}
 	}
 
-	// 1. Lấy private key secp256k1 của FromAddress
+	// 1. Lấy private key secp256k1 riêng của FromAddress
 	var privKey *ecdsa.PrivateKey
 	ownerAddr := ethCommon.HexToAddress(h.appCtx.Cfg.OwnerRpcAddress)
 	if (req.FromAddress == ownerAddr || req.FromAddress == ethCommon.Address{}) && h.appCtx.Cfg.PkOwnerRpc != "" {
@@ -83,15 +83,13 @@ func (h *AccountHandlerNoReceipt) executeTransfer(req *TransferTxRequest) *Trans
 	} else if exists, _ := h.appCtx.PKS.HasPrivateKey(req.FromAddress); exists {
 		pkHex, _ := h.appCtx.PKS.GetPrivateKey(req.FromAddress)
 		privKey, err = crypto.HexToECDSA(strings.TrimPrefix(pkHex, "0x"))
-	} else if h.appCtx.Cfg.PkOwnerRpc != "" {
+	} else if h.appCtx.Cfg.PkOwnerRpc != "" && req.FromAddress == (ethCommon.Address{}) {
 		privKey, err = crypto.HexToECDSA(strings.TrimPrefix(h.appCtx.Cfg.PkOwnerRpc, "0x"))
-	} else if h.appCtx.Cfg.PrivateKey != "" {
-		privKey, err = crypto.HexToECDSA(strings.TrimPrefix(h.appCtx.Cfg.PrivateKey, "0x"))
 	}
 	if err != nil || privKey == nil {
 		return &TransferTxResult{
 			FromAddress: req.FromAddress,
-			Err:         fmt.Errorf("không tìm thấy private key cho ví chuyển tiền %s: %v", req.FromAddress.Hex(), err),
+			Err:         fmt.Errorf("không tìm thấy private key riêng cho ví chuyển tiền %s: %v", req.FromAddress.Hex(), err),
 		}
 	}
 
