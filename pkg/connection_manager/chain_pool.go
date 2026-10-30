@@ -2,9 +2,12 @@ package connection_manager
 
 import (
 	"context"
+	crand "crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/meta-node-blockchain/meta-node/pkg/connection_manager/connection_client"
 	"github.com/meta-node-blockchain/meta-node/pkg/logger"
@@ -20,6 +23,7 @@ import (
 //   - Auto-reconnect khi conn bị lỗi
 //   - Round-robin phân tải đều giữa các connection
 type ChainConnectionPool struct {
+	instanceID        string
 	connections       []*poolEntry
 	size              int
 	index             uint64 // atomic, round-robin counter
@@ -51,7 +55,12 @@ func NewChainConnectionPool(
 
 	ctx, cancel := context.WithCancel(context.Background())
 
+	randomBytes := make([]byte, 6)
+	_, _ = crand.Read(randomBytes)
+	instanceID := fmt.Sprintf("%x_%s", time.Now().UnixNano(), hex.EncodeToString(randomBytes))
+
 	pool := &ChainConnectionPool{
+		instanceID:        instanceID,
 		connections:       make([]*poolEntry, poolSize),
 		size:              poolSize,
 		connectionAddress: connectionAddress,
@@ -60,14 +69,14 @@ func NewChainConnectionPool(
 		cancel:            cancel,
 	}
 
-	// Tạo tất cả connections
+	// Tạo tất cả connections với key ngẫu nhiên duy nhất cho mỗi session
 	connectedCount := 0
 	for i := 0; i < poolSize; i++ {
-		key := fmt.Sprintf("chain_pool_%d", i)
+		key := fmt.Sprintf("chain_pool_%s_%d", instanceID, i)
 		client := connection_client.NewConnectionClient(ctx, key, connectionAddress, messageSender)
 
 		if err := client.Connect(); err != nil {
-			logger.Warn("⚠️ ChainPool: failed to connect slot %d: %v (will retry on use)", i, err)
+			logger.Warn("⚠️ ChainPool: failed to connect slot %d (key: %s): %v (will retry on use)", i, key, err)
 			pool.connections[i] = &poolEntry{client: client}
 		} else {
 			pool.connections[i] = &poolEntry{client: client}
@@ -118,18 +127,18 @@ func (p *ChainConnectionPool) tryReconnect(entry *poolEntry, idx int) bool {
 	if entry.client != nil && entry.client.IsConnected() {
 		return true
 	}
-	// Tạo connection mới
-	key := fmt.Sprintf("chain_pool_%d", idx)
+	// Tạo connection mới với key ngẫu nhiên duy nhất
+	key := fmt.Sprintf("chain_pool_%s_%d_%d", p.instanceID, idx, time.Now().UnixNano())
 	client := connection_client.NewConnectionClient(p.ctx, key, p.connectionAddress, p.msgSender)
 
 	if err := client.Connect(); err != nil {
-		logger.Error("❌ ChainPool: reconnect slot %d failed: %v", idx, err)
+		logger.Error("❌ ChainPool: reconnect slot %d (key: %s) failed: %v", idx, key, err)
 		entry.client = client // giữ lại để lần sau thử lại
 		return false
 	}
 
 	entry.client = client
-	logger.Info("🔄 ChainPool: reconnected slot %d to %s", idx, p.connectionAddress)
+	logger.Info("🔄 ChainPool: reconnected slot %d (key: %s) to %s", idx, key, p.connectionAddress)
 	return true
 }
 
